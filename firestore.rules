@@ -9,6 +9,13 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/authorizedPublishers/$(request.auth.uid)).data.role in ['systemAdmin', 'publisher'];
     }
 
+    function isEnabledSystemAdmin() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/authorizedPublishers/$(request.auth.uid))
+        && get(/databases/$(database)/documents/authorizedPublishers/$(request.auth.uid)).data.enabled == true
+        && get(/databases/$(database)/documents/authorizedPublishers/$(request.auth.uid)).data.role == 'systemAdmin';
+    }
+
     function isOwnVerifiedPublisherRequest(publisherUid) {
       return request.auth != null
         && request.auth.uid == publisherUid
@@ -51,10 +58,12 @@ service cloud.firestore {
     }
 
     match /publisherRequests/{publisherUid} {
-      allow get: if request.auth != null && request.auth.uid == publisherUid;
+      allow get: if (request.auth != null && request.auth.uid == publisherUid)
+        || isEnabledSystemAdmin();
+      allow list: if isEnabledSystemAdmin();
       allow create: if isOwnVerifiedPublisherRequest(publisherUid)
         && isValidNewPublisherRequest();
-      allow list, update, delete: if false;
+      allow update, delete: if false;
     }
 
     match /{document=**} {

@@ -72,7 +72,8 @@ test("publisherRequest 只能由本人以已驗證且相符的 Auth email 建立
   assert.match(ownershipFunction, /request\.auth\.token\.email is string/);
   assert.match(rules, /request\.resource\.data\.email == request\.auth\.token\.email/);
   assert.match(requestMatch, /allow create: if isOwnVerifiedPublisherRequest\(publisherUid\)/);
-  assert.match(requestMatch, /allow list, update, delete: if false/);
+  assert.match(requestMatch, /allow list: if isEnabledSystemAdmin\(\)/);
+  assert.match(requestMatch, /allow update, delete: if false/);
 });
 
 test("publisherRequest 僅允許既定欄位與 pending 狀態", () => {

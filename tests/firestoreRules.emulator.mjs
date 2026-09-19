@@ -288,3 +288,26 @@ test("37 未定義 collection 維持 default deny", async () => {
   await assertFails(getDoc(doc(database, "privateData/secretA")));
   await assertFails(setDoc(doc(database, "privateData/secretB"), { secret: true }));
 });
+
+test("38 enabled systemAdmin 可以 list publisherRequests", async () => {
+  await seed("authorizedPublishers/adminA", profile("systemAdmin", true));
+  await seed("publisherRequests/userA", { email: VERIFIED_EMAIL, status: "pending" });
+  await assertSucceeds(getDocs(collection(userDb("adminA"), "publisherRequests")));
+});
+
+test("39 publisher 不能 list publisherRequests", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await seed("publisherRequests/userB", { email: "user-b@example.test", status: "pending" });
+  await assertFails(getDocs(collection(userDb("userA"), "publisherRequests")));
+});
+
+test("40 disabled systemAdmin 不能 list publisherRequests", async () => {
+  await seed("authorizedPublishers/adminA", profile("systemAdmin", false));
+  await seed("publisherRequests/userA", { email: VERIFIED_EMAIL, status: "pending" });
+  await assertFails(getDocs(collection(userDb("adminA"), "publisherRequests")));
+});
+
+test("41 未登入者不能 list publisherRequests", async () => {
+  await seed("publisherRequests/userA", { email: VERIFIED_EMAIL, status: "pending" });
+  await assertFails(getDocs(collection(anonymousDb(), "publisherRequests")));
+});
