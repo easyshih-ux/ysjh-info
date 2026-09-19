@@ -1,0 +1,26 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAuthorizedPublisher() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/authorizedPublishers/$(request.auth.uid))
+        && get(/databases/$(database)/documents/authorizedPublishers/$(request.auth.uid)).data.enabled == true;
+    }
+
+    match /announcements/{announcementId} {
+      allow read: if true;
+      allow create, update: if isAuthorizedPublisher();
+      allow delete: if false;
+    }
+
+    match /authorizedPublishers/{publisherUid} {
+      allow get: if request.auth != null && request.auth.uid == publisherUid;
+      allow list, create, update, delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

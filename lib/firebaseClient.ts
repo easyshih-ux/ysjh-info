@@ -1,4 +1,4 @@
-import { getApp, getApps, initializeApp } from "firebase/app";
+import { getApp, getApps, initializeApp, type FirebaseApp } from "firebase/app";
 import { browserLocalPersistence, getAuth, setPersistence } from "firebase/auth";
 
 const firebaseConfig = {
@@ -14,10 +14,13 @@ export const missingFirebaseConfigKeys = Object.entries(firebaseConfig)
 
 export const isFirebaseConfigured = missingFirebaseConfigKeys.length === 0;
 
-export async function getFirebaseAuthClient() {
+export function getFirebaseApp(): FirebaseApp {
   if (!isFirebaseConfigured) throw new Error("firebase/config-missing");
-  const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
-  const auth = getAuth(app);
+  return getApps().length ? getApp() : initializeApp(firebaseConfig);
+}
+
+export async function getFirebaseAuthClient() {
+  const auth = getAuth(getFirebaseApp());
   await setPersistence(auth, browserLocalPersistence);
   return auth;
 }

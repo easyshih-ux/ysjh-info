@@ -18,12 +18,30 @@ export interface PublishImageAttachment {
   name: string;
   caption: string;
   previewUrl: string;
+  file?: File;
 }
 
-export interface ImageFileLike { name: string; type: string }
+export interface ImageFileLike { name: string; type: string; size?: number }
+
+export const MAX_PUBLISH_IMAGES = 5;
+export const MAX_ORIGINAL_IMAGE_BYTES = 10 * 1024 * 1024;
 
 export function isSupportedImage(file: ImageFileLike) {
-  return ["image/jpeg", "image/png", "image/webp"].includes(file.type);
+  return file.type.startsWith("image/");
+}
+
+export function limitPublishImageSelection<T>(items: readonly T[], currentCount: number) {
+  const available = Math.max(0, MAX_PUBLISH_IMAGES - currentCount);
+  const accepted = items.slice(0, available);
+  return { accepted, rejectedCount: items.length - accepted.length };
+}
+
+export function selectPublishImages<T extends ImageFileLike>(items: readonly T[], currentCount: number) {
+  const images = items.filter(isSupportedImage);
+  const validSize = images.filter(item => (item.size ?? 0) <= MAX_ORIGINAL_IMAGE_BYTES);
+  const oversizedCount = images.length - validSize.length;
+  const { accepted, rejectedCount: overLimitCount } = limitPublishImageSelection(validSize, currentCount);
+  return { accepted, oversizedCount, overLimitCount };
 }
 
 export function removePublishAttachment(attachments: PublishImageAttachment[], id: string) {
@@ -42,7 +60,7 @@ export function publishDraftToAnnouncement(draft: BasicAnnouncementDraft, id: st
     importantEvents: draft.importantEvents.filter(event => event.date || event.time || event.title),
     deadlines: draft.deadlines.filter(deadline => deadline.date || deadline.time || deadline.label),
     links: draft.links,
-    attachments: draft.attachments.map(({ previewUrl, ...attachment }) => ({ ...attachment, url: previewUrl })),
+    attachments: draft.attachments.map(({ previewUrl, file: _file, ...attachment }) => ({ ...attachment, url: previewUrl })),
     followUps: [],
   };
 }
