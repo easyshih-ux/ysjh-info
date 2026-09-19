@@ -46,10 +46,23 @@ test("只顯示主要連結，沒有 primary link 時不產生空白區塊", () 
 });
 
 test("網站首頁連結集中取得並正確加入摘要", () => {
-  assert.equal(getPublicSiteUrl("https://school.example/manage?x=1#top"), "https://school.example/");
-  assert.match(createLineAnnouncementSummary(complete, "https://school.example/", 2026), /🔎 完整公告、附件及最新補充請至「義學公務資訊站」查看：\nhttps:\/\/school\.example\/$/);
-});
+  const previous = process.env.NEXT_PUBLIC_SITE_URL;
+  delete process.env.NEXT_PUBLIC_SITE_URL;
 
+  try {
+    assert.equal(
+      getPublicSiteUrl("https://school.example/manage?x=1#top"),
+      "https://school.example/"
+    );
+    assert.match(
+      createLineAnnouncementSummary(complete, "https://school.example/", 2026),
+      /🔎 完整公告、附件及最新補充請至「義學公務資訊站」查看：\nhttps:\/\/school\.example\/$/
+    );
+  } finally {
+    if (previous === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
+    else process.env.NEXT_PUBLIC_SITE_URL = previous;
+  }
+});
 test("GitHub Project Pages 網址保留 repository base path", () => {
   const previous = process.env.NEXT_PUBLIC_SITE_URL;
   process.env.NEXT_PUBLIC_SITE_URL = "https://easyshih-ux.github.io/ysjh-info/?source=test#top";
