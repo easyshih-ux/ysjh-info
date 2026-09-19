@@ -1,0 +1,61 @@
+"use client";
+
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
+import { AdminAuthGuard, useAuthorizedPublisher } from "@/components/admin-auth-guard";
+import { usePublisherRequests } from "@/hooks/use-publisher-requests";
+import styles from "./publishers.module.css";
+
+export default function PublisherManagementPage() {
+  return <AdminAuthGuard><PublisherRequestList /></AdminAuthGuard>;
+}
+
+function PublisherRequestList() {
+  const publisher = useAuthorizedPublisher();
+  const isSystemAdmin = publisher.role === "systemAdmin";
+  const state = usePublisherRequests(isSystemAdmin);
+
+  if (!isSystemAdmin) {
+    return <main className={styles.page}><section className={styles.panel}>
+      <Link className={styles.back} href="/admin"><ArrowLeft />返回行政管理</Link>
+      <h1>發布者管理</h1>
+      <p className={styles.error} role="alert">此功能僅供系統管理員使用。</p>
+    </section></main>;
+  }
+
+  return <main className={styles.page}><section className={styles.panel}>
+    <Link className={styles.back} href="/admin"><ArrowLeft />返回行政管理</Link>
+    <p className={styles.kicker}>PUBLISHER MANAGEMENT</p>
+    <h1>發布者管理</h1>
+    <div className={styles.heading}>
+      <h2>待核准發布者</h2>
+      <span aria-label={`待核准 ${state.requests.length} 筆`}>{state.requests.length}</span>
+    </div>
+
+    {state.status === "loading" && <p className={styles.notice} role="status">正在讀取發布權限申請…</p>}
+    {state.status === "error" && <p className={styles.error} role="alert">目前無法讀取發布權限申請，請稍後再試。</p>}
+    {state.status === "ready" && state.requests.length === 0 && <p className={styles.notice}>目前沒有待核准的發布權限申請。</p>}
+    {state.status === "ready" && state.requests.length > 0 && <div className={styles.list}>
+      {state.requests.map(request => <article key={request.uid}>
+        <div>
+          <h3>{request.displayName?.trim() || "未提供名稱"}</h3>
+          <p>{request.email}</p>
+          <time dateTime={request.requestedAt.toDate().toISOString()}>
+            申請時間：{formatRequestedAt(request.requestedAt.toDate())}
+          </time>
+        </div>
+        <span>待核准</span>
+      </article>)}
+    </div>}
+  </section></main>;
+}
+
+function formatRequestedAt(value: Date) {
+  return new Intl.DateTimeFormat("zh-TW", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(value);
+}
