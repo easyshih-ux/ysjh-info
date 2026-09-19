@@ -12,14 +12,20 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AdminAuthGuard, useAuthorizedPublisher } from "@/components/admin-auth-guard";
 import styles from "./publish.module.css";
 
 const emptyImportantEvents = () => Array.from({ length: 3 }, () => ({ date: "", time: "", title: "" }));
 const emptyDeadlines = () => Array.from({ length: 3 }, () => ({ date: "", time: "", label: "" }));
-const emptyDraft: BasicAnnouncementDraft = { department: "", title: "", audiences: [], content: "", attachments: [], importantEvents: emptyImportantEvents(), deadlines: emptyDeadlines(), links: [] };
+const createEmptyDraft = (department: Department | "" = ""): BasicAnnouncementDraft => ({ department, title: "", audiences: [], content: "", attachments: [], importantEvents: emptyImportantEvents(), deadlines: emptyDeadlines(), links: [] });
 
 export default function PublishPage() {
-  const [draft, setDraft] = useState<BasicAnnouncementDraft>(emptyDraft);
+  return <AdminAuthGuard><PublishForm /></AdminAuthGuard>;
+}
+
+function PublishForm() {
+  const publisher = useAuthorizedPublisher();
+  const [draft, setDraft] = useState<BasicAnnouncementDraft>(() => createEmptyDraft(publisher.defaultDepartment));
   const [errors, setErrors] = useState<DraftErrors>({});
   const [previewOpen, setPreviewOpen] = useState(false);
   const [preview, setPreview] = useState<Announcement | null>(null);

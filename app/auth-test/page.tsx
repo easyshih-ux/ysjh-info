@@ -1,51 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { FirebaseError } from "firebase/app";
-import { GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut, type User } from "firebase/auth";
-import { getFirebaseAuthClient, isFirebaseConfigured, missingFirebaseConfigKeys } from "@/lib/firebaseClient";
+import { missingFirebaseConfigKeys } from "@/lib/firebaseClient";
 import { getEmailDomain, isExpectedSchoolEmail } from "@/lib/schoolAuth";
+import { useFirebaseAuth } from "@/hooks/use-firebase-auth";
 import styles from "./auth-test.module.css";
 
-type AuthStatus = "checking" | "signed-out" | "signed-in" | "configuration-missing";
-
 export default function AuthTestPage() {
-  const [status, setStatus] = useState<AuthStatus>("checking");
-  const [user, setUser] = useState<User | null>(null);
-  const [errorCode, setErrorCode] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    if (!isFirebaseConfigured) { setStatus("configuration-missing"); return; }
-    let unsubscribe = () => {};
-    let cancelled = false;
-    getFirebaseAuthClient().then(auth => {
-      if (cancelled) return;
-      unsubscribe = onAuthStateChanged(auth, nextUser => {
-        setUser(nextUser);
-        setStatus(nextUser ? "signed-in" : "signed-out");
-      }, error => { setErrorCode(error.code); setStatus("signed-out"); });
-    }).catch(error => { setErrorCode(authErrorCode(error)); setStatus("signed-out"); });
-    return () => { cancelled = true; unsubscribe(); };
-  }, []);
-
-  const login = async () => {
-    setBusy(true); setErrorCode("");
-    try {
-      const auth = await getFirebaseAuthClient();
-      const provider = new GoogleAuthProvider();
-      provider.setCustomParameters({ prompt: "select_account" });
-      await signInWithPopup(auth, provider);
-    } catch (error) { setErrorCode(authErrorCode(error)); }
-    finally { setBusy(false); }
-  };
-
-  const logout = async () => {
-    setBusy(true); setErrorCode("");
-    try { await signOut(await getFirebaseAuthClient()); }
-    catch (error) { setErrorCode(authErrorCode(error)); }
-    finally { setBusy(false); }
-  };
+  const { status, user, errorCode, busy, login, logout } = useFirebaseAuth();
 
   return <main className={styles.page}><section className={styles.card}>
     <p className={styles.kicker}>Firebase Authentication Prototype</p>
@@ -62,10 +23,4 @@ export default function AuthTestPage() {
 
     {errorCode && <div className={styles.error} role="alert"><strong>Firebase Auth 錯誤</strong><code>{errorCode}</code><span>未顯示 token 或敏感憑證。</span></div>}
   </section></main>;
-}
-
-function authErrorCode(error: unknown) {
-  if (error instanceof FirebaseError) return error.code;
-  if (error instanceof Error && error.message === "firebase/config-missing") return "firebase/config-missing";
-  return "auth/unknown-error";
 }
