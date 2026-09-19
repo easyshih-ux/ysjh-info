@@ -76,6 +76,18 @@ test("預覽 Modal 有固定操作、防重複送出與分階段狀態", () => {
   assert.match(styles, /\.previewFooter\{/);
 });
 
+test("預覽與確認發布按鈕具備獨立的 enabled 與 disabled 對比樣式", () => {
+  const page = source("app/publish/page.tsx");
+  const styles = source("app/publish/publish.module.css");
+  const buttonStyles = styles.slice(styles.indexOf(".previewButton"));
+  assert.match(page, /className=\{styles\.previewButton\}[^>]*type="submit"/);
+  assert.match(page, /className=\{styles\.publishButton\}[^>]*disabled=\{publishing\}/);
+  assert.match(styles, /\.previewButton\{[^}]*#dceeff[^}]*#17324d/);
+  assert.match(styles, /\.publishButton\{[^}]*#3f6f9f[^}]*#fff/);
+  assert.match(styles, /\.previewButton:disabled,\.publishButton:disabled\{[^}]*#e7edf2[^}]*#73808d[^}]*opacity:1/);
+  assert.doesNotMatch(buttonStyles, /!important/);
+});
+
 test("圖片新增 UI、五張上限與本機預覽仍存在", () => {
   const page = source("app/publish/page.tsx");
   assert.match(page, /公告圖片／附件/);
