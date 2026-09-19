@@ -1,6 +1,7 @@
 "use client";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { BellRing, CalendarDays, ChevronRight, Clock3, ImageIcon, Search, ZoomIn } from "lucide-react";
+import { BellRing, CalendarDays, ChevronRight, Clock3, ImageIcon, Search, Settings, ZoomIn } from "lucide-react";
 import { DEPARTMENTS, USER_IDENTITIES, type Announcement, type Attachment, type Audience, type UserIdentity } from "@/lib/announcements";
 import { announcementsForIdentity, daysUntil, deadlineDateLabel, deadlineRelativeLabel, filterAnnouncements, importantEventDateLabel, needsAcademicYearConfirmation, readSavedIdentity, saveIdentity, type SavedIdentity, upcomingDeadlines, weekBounds, weeklyEvents } from "@/lib/announcementLogic";
 import { announcementsForAcademicYear, CURRENT_ACADEMIC_YEAR, FRONTEND_ACADEMIC_YEARS } from "@/lib/academicYear";
@@ -49,7 +50,7 @@ export default function Home() {
   if (identity === undefined) return <main className="identity-screen" aria-busy="true" />;
   if (identity === null) return <main className="identity-screen"><section className="identity-card"><div className="welcome-mark">義</div><p className="eyebrow-dark">{CURRENT_ACADEMIC_YEAR} 學年度 · 校內公務公告</p><h1>義學公務資訊站</h1><p className="welcome-copy">{newAcademicYear ? "新的學年度開始，請確認您本學年度的身分" : "快速找到與你相關的重要資訊"}</p><h2>請選擇您的身分</h2><IdentityChoices onChoose={chooseIdentity} /><p className="privacy-note">不需要登入，也不會要求姓名或帳號。</p></section></main>;
   return <main>
-    <header className="site-header"><div className="header-inner"><div className="brand-mark" aria-hidden="true">義</div><div><p className="eyebrow">校內公務公告</p><h1>義學公務資訊站</h1></div><div className="date-stamp"><span>今天</span><strong>{fmtDate(localDateKey(now))}</strong></div></div></header>
+    <header className="site-header"><div className="header-inner"><div className="brand-mark" aria-hidden="true">義</div><div className="brand-copy"><p className="eyebrow">校內公務公告</p><h1>義學公務資訊站</h1></div><div className="date-stamp"><span>今天</span><strong>{fmtDate(localDateKey(now))}</strong></div><Link className="admin-entry" href="/admin"><Settings aria-hidden="true" />行政管理</Link></div></header>
     <div className="identity-toolbar"><span>{CURRENT_ACADEMIC_YEAR} 學年度 · 目前身分：<strong>{identity === "全部" ? "查看全部" : identity}</strong></span><div><button onClick={() => setSwitchingIdentity(true)}>切換身分</button>{viewMode === "related" ? <button className="mode-button" onClick={() => { setViewMode("all"); setQuery(""); }}>查看全部公告</button> : identity !== "全部" && <button className="mode-button active" onClick={() => { setViewMode("related"); setQuery(""); }}>返回與我相關</button>}</div></div>
     <div className="page-shell">
       {announcementsLoading ? <section className="announcement-state" aria-live="polite">公告載入中…</section> : announcementsError ? <section className="announcement-state error-state" role="alert">目前無法載入公告，請稍後再試。</section> : announcements.length === 0 ? <section className="announcement-state">目前沒有公告。</section> : <>

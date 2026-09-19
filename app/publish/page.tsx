@@ -108,11 +108,11 @@ function PublishForm() {
   };
 
   if (publishedAnnouncement) {
-    return <main className={styles.page}><section className={styles.publishSuccess} role="status"><p>發布完成</p><h1>公告發布成功</h1><span>公告已寫入公務資訊資料庫。</span><LineSummaryCard announcement={publishedAnnouncement} /><Link href="/admin">返回行政工作台</Link></section></main>;
+    return <main className={styles.page}><section className={styles.publishSuccess} role="status"><p>發布完成</p><h1>公告發布成功</h1><span>公告已寫入公務資訊資料庫。</span><LineSummaryCard announcement={publishedAnnouncement} /><Link href="/admin">返回行政管理</Link></section></main>;
   }
 
   return <main className={styles.page}>
-    <header className={styles.header}><div><nav className={styles.headerNav} aria-label="發布頁導覽"><Link href="/admin" className={styles.back}><ArrowLeft />返回發布工作台</Link><Link href="/" className={styles.secondaryBack}>公務資訊站</Link></nav><p>{CURRENT_ACADEMIC_YEAR} 學年度 · 處室登錄 Prototype</p><h1>公務資訊發布</h1><span>登錄需要留存、查詢或提醒的重要公務資訊</span></div></header>
+    <header className={styles.header}><div><nav className={styles.headerNav} aria-label="發布頁導覽"><Link href="/admin" className={styles.back}><ArrowLeft />返回行政管理</Link><Link href="/" className={styles.secondaryBack}>公務資訊站</Link></nav><p>{CURRENT_ACADEMIC_YEAR} 學年度 · 處室登錄 Prototype</p><h1>公務資訊發布</h1><span>登錄需要留存、查詢或提醒的重要公務資訊</span></div></header>
     <form className={styles.form} onSubmit={submit} noValidate>
       <section className={styles.section} aria-labelledby="basic-title">
         <div className={styles.sectionTitle}><span>01</span><div><h2 id="basic-title">基本資料</h2><p>先填寫老師查閱公告時最需要的內容。</p></div></div>
