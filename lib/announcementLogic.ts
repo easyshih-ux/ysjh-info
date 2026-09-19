@@ -37,9 +37,14 @@ export function announcementsForIdentity(announcements: Announcement[], identity
 }
 
 export const localDate = (value: string | Date) => {
-  const date = typeof value === "string" ? new Date(`${value}T00:00:00`) : value;
+  const date = typeof value === "string" ? calendarDate(value) : value;
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 };
+
+function calendarDate(value: string) {
+  const [year, month, day] = value.slice(0, 10).split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
 
 export function weekBounds(now: Date) {
   const day = now.getDay() || 7;
@@ -50,16 +55,17 @@ export function weekBounds(now: Date) {
 
 export function weeklyEvents(announcements: Announcement[], now: Date) {
   const { start, end } = weekBounds(now);
+  const today = localDate(now);
   return announcements.flatMap(a => a.importantEvents.map(event => ({ ...event, announcement: a })))
-    .filter(item => { const d = localDate(item.date); return d >= start && d <= end; })
+    .filter(item => { const d = localDate(item.date); return d >= today && d >= start && d <= end; })
     .sort((a, b) => a.date.localeCompare(b.date) || (a.time || "99:99").localeCompare(b.time || "99:99"));
 }
 
 export function upcomingDeadlines(announcements: Announcement[], now: Date) {
   return announcements.flatMap(a => a.deadlines.map(d => {
-    const at = new Date(`${d.date}T${d.time || "23:59"}:00`);
+    const at = localDate(d.date);
     return { announcement: a, deadline: d, at };
-  })).filter(item => item.at >= now).sort((a, b) => a.at.getTime() - b.at.getTime());
+  })).filter(item => item.at >= localDate(now)).sort((a, b) => itemDateKey(a.deadline.date, a.deadline.time).localeCompare(itemDateKey(b.deadline.date, b.deadline.time)));
 }
 
 export function filterAnnouncements(announcements: Announcement[], query: string, audience: Audience | "全部", department: string) {
@@ -73,5 +79,31 @@ export function filterAnnouncements(announcements: Announcement[], query: string
 }
 
 export function daysUntil(date: string, now: Date) {
-  return Math.round((localDate(date).getTime() - localDate(now).getTime()) / 86400000);
+  const target = localDate(date);
+  const today = localDate(now);
+  return Math.round((Date.UTC(target.getFullYear(), target.getMonth(), target.getDate()) - Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())) / 86400000);
+}
+
+export function importantEventDateLabel(date: string, now: Date) {
+  const days = daysUntil(date, now);
+  if (days === 0) return "今天";
+  if (days === 1) return "明天";
+  const value = localDate(date);
+  return `${value.getMonth() + 1}/${value.getDate()}（${["日", "一", "二", "三", "四", "五", "六"][value.getDay()]}）`;
+}
+
+export function deadlineRelativeLabel(date: string, now: Date) {
+  const days = daysUntil(date, now);
+  if (days === 0) return "今天截止";
+  if (days === 1) return "明天截止";
+  return `剩 ${days} 天`;
+}
+
+export function deadlineDateLabel(date: string) {
+  const value = localDate(date);
+  return `${String(value.getMonth() + 1).padStart(2, "0")}/${String(value.getDate()).padStart(2, "0")} 截止`;
+}
+
+function itemDateKey(date: string, time?: string) {
+  return `${date}T${time || "23:59"}`;
 }

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mockAnnouncements, DEMO_NOW } from "../data/mockAnnouncements.ts";
-import { ACADEMIC_YEAR_STORAGE_KEY, announcementsForIdentity, isForIdentity, needsAcademicYearConfirmation, readSavedIdentity, ROLE_STORAGE_KEY, saveIdentity, upcomingDeadlines, filterAnnouncements, weeklyEvents } from "../lib/announcementLogic.ts";
+import { ACADEMIC_YEAR_STORAGE_KEY, announcementsForIdentity, daysUntil, deadlineDateLabel, deadlineRelativeLabel, importantEventDateLabel, isForIdentity, localDate, needsAcademicYearConfirmation, readSavedIdentity, ROLE_STORAGE_KEY, saveIdentity, upcomingDeadlines, filterAnnouncements, weeklyEvents } from "../lib/announcementLogic.ts";
 import { announcementsForAcademicYear, CURRENT_ACADEMIC_YEAR, FRONTEND_ACADEMIC_YEARS, isFrontendAcademicYear } from "../lib/academicYear.ts";
 test("本週日期只包含週一至週日",()=>{const events=weeklyEvents(mockAnnouncements,DEMO_NOW);assert.ok(events.every(e=>e.date>="2026-09-14"&&e.date<="2026-09-20"));assert.ok(!events.some(e=>e.date==="2026-09-21"))});
 test("同一天多事項不互相覆蓋，且依時間排序",()=>{const items=weeklyEvents(mockAnnouncements,DEMO_NOW).filter(e=>e.date==="2026-09-18");assert.equal(items.length,2);assert.deepEqual(items.map(e=>e.time),["07:52","10:30"])});
@@ -42,3 +42,26 @@ test("連結資料涵蓋零個、單一與多個網址",()=>{assert.ok(mockAnnou
 test("具有 primary link 的公告可取得單一首頁操作",()=>{const items=mockAnnouncements.filter(a=>a.links.some(link=>link.isPrimary));assert.ok(items.length>0);for(const item of items)assert.equal(item.links.filter(link=>link.isPrimary).length,1)});
 test("家長日公告包含重要事項、長文與指定導航 primary link",()=>{const item=mockAnnouncements.find(a=>a.id==="ann-008")!;assert.ok(item.importantEvents.length>0);assert.ok(item.content.length>100);const link=item.links.find(link=>link.isPrimary)!;assert.equal(link.label,"家長日班級導航地圖（手機版）");assert.equal(link.url,"https://easyshih-ux.github.io/parent-day-map/")});
 test("所有公告均使用 links 陣列資料模型",()=>{assert.ok(mockAnnouncements.every(a=>Array.isArray(a.links)));assert.ok(mockAnnouncements.flatMap(a=>a.links).every(link=>link.id&&link.label&&link.url&&link.type==="website"))});
+
+const reminderNow=new Date("2026-09-16T23:30:00+08:00");
+const reminderAnnouncement={...mockAnnouncements[0],id:"reminder-test",audiences:["七年級導師"] as const,importantEvents:[
+  {date:"2026-09-15",time:"09:00",title:"昨天事項"},
+  {date:"2026-09-16",time:"08:00",title:"今天事項"},
+  {date:"2026-09-17",time:"09:00",title:"明天事項"},
+  {date:"2026-09-18",time:"10:00",title:"本週稍後事項"},
+  {date:"2026-09-21",time:"11:00",title:"下週事項"},
+],deadlines:[
+  {date:"2026-09-15",time:"23:59",label:"昨天截止"},
+  {date:"2026-09-16",time:"08:00",label:"今天早上已過但仍是今天"},
+  {date:"2026-09-17",time:"12:00",label:"明天截止"},
+  {date:"2026-09-20",time:"17:00",label:"稍後截止"},
+]};
+test("本週重要事項只顯示今天起至本週日",()=>{assert.deepEqual(weeklyEvents([reminderAnnouncement],reminderNow).map(item=>item.title),["今天事項","明天事項","本週稍後事項"])});
+test("本週事項排除同週已過日期且不納入下週",()=>{const titles=weeklyEvents([reminderAnnouncement],reminderNow).map(item=>item.title);assert.ok(!titles.includes("昨天事項"));assert.ok(!titles.includes("下週事項"))});
+test("重要事項日期顯示今天、明天與正式日期星期",()=>{assert.equal(importantEventDateLabel("2026-09-16",reminderNow),"今天");assert.equal(importantEventDateLabel("2026-09-17",reminderNow),"明天");assert.equal(importantEventDateLabel("2026-09-18",reminderNow),"9/18（五）")});
+test("即將截止排除昨天但保留今天已過時間的期限",()=>{const labels=upcomingDeadlines([reminderAnnouncement],reminderNow).map(item=>item.deadline.label);assert.ok(!labels.includes("昨天截止"));assert.ok(labels.includes("今天早上已過但仍是今天"))});
+test("期限相對文字為今天、明天與剩餘天數",()=>{assert.equal(deadlineRelativeLabel("2026-09-16",reminderNow),"今天截止");assert.equal(deadlineRelativeLabel("2026-09-17",reminderNow),"明天截止");assert.equal(deadlineRelativeLabel("2026-09-20",reminderNow),"剩 4 天")});
+test("期限同時提供補零的正式日期",()=>{assert.equal(deadlineDateLabel("2026-09-16"),"09/16 截止");assert.equal(deadlineDateLabel("2027-01-03"),"01/03 截止")});
+test("日期計算以台灣本地日曆日為準，不受午夜與 UTC 位移影響",()=>{assert.equal(daysUntil("2026-09-16",reminderNow),0);assert.equal(daysUntil("2026-09-17",reminderNow),1);const parsed=localDate("2026-09-16");assert.deepEqual([parsed.getFullYear(),parsed.getMonth()+1,parsed.getDate()],[2026,9,16])});
+test("首頁提醒仍先套用使用者身分篩選",()=>{const unrelated={...reminderAnnouncement,id:"unrelated",audiences:["行政"] as const,importantEvents:[{date:"2026-09-16",title:"行政限定事項"}],deadlines:[{date:"2026-09-16",label:"行政限定期限"}]};const related=announcementsForIdentity([reminderAnnouncement,unrelated],"七年級導師");assert.deepEqual(weeklyEvents(related,reminderNow).map(item=>item.announcement.id),["reminder-test","reminder-test","reminder-test"]);assert.ok(upcomingDeadlines(related,reminderNow).every(item=>item.announcement.id==="reminder-test"))});
+test("提醒篩選不改動最新公告或完整公告中的歷史資料",()=>{const source=[reminderAnnouncement];weeklyEvents(source,reminderNow);upcomingDeadlines(source,reminderNow);assert.equal(source.length,1);assert.ok(source[0].importantEvents.some(item=>item.title==="昨天事項"));assert.ok(source[0].deadlines.some(item=>item.label==="昨天截止"))});
