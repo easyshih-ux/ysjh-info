@@ -66,7 +66,7 @@ export async function publishAnnouncement(
     onStage?.("publishing");
     const document = createFirestoreAnnouncement(draft, academicYear, publishedAt, attachments);
     await setDoc(announcementReference, document);
-    return announcementReference.id;
+    return { id: announcementReference.id, ...document } satisfies Announcement;
   } catch (error) {
     if (error instanceof ImageCompressionError) throw error;
     throw new AnnouncementPublishError(

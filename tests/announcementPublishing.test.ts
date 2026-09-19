@@ -62,7 +62,7 @@ test("Storage 上傳失敗時不會執行後面的 Firestore setDoc", () => {
 test("預覽 Modal 有固定操作、防重複送出與分階段狀態", () => {
   const page = source("app/publish/page.tsx");
   const styles = source("app/publish/publish.module.css");
-  const confirmPublish = page.slice(page.indexOf("const confirmPublish"), page.indexOf("if (published)"));
+  const confirmPublish = page.slice(page.indexOf("const confirmPublish"), page.indexOf("if (publishedAnnouncement)"));
   assert.match(page, />返回修改</);
   assert.match(page, /"確認發布"/);
   assert.match(page, /disabled=\{publishing\}/);

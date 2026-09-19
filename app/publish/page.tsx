@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AdminAuthGuard, useAuthorizedPublisher } from "@/components/admin-auth-guard";
+import { LineSummaryCard } from "@/components/line-summary-card";
 import styles from "./publish.module.css";
 
 const emptyImportantEvents = () => Array.from({ length: 3 }, () => ({ date: "", time: "", title: "" }));
@@ -33,7 +34,7 @@ function PublishForm() {
   const [preview, setPreview] = useState<Announcement | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState("");
-  const [published, setPublished] = useState(false);
+  const [publishedAnnouncement, setPublishedAnnouncement] = useState<Announcement | null>(null);
   const [imageNotice, setImageNotice] = useState("");
   const [publishStage, setPublishStage] = useState<PublishStage | null>(null);
   const publishingRef = useRef(false);
@@ -94,9 +95,9 @@ function PublishForm() {
     setPublishStage(draft.attachments.length > 0 ? "processing-images" : "publishing");
     setPublishError("");
     try {
-      await publishAnnouncement(draft, CURRENT_ACADEMIC_YEAR, setPublishStage);
+      const announcement = await publishAnnouncement(draft, CURRENT_ACADEMIC_YEAR, setPublishStage);
       setPreviewOpen(false);
-      setPublished(true);
+      setPublishedAnnouncement(announcement);
     } catch (error) {
       setPublishError(error instanceof ImageCompressionError || error instanceof AnnouncementPublishError ? error.message : "公告發布失敗，請確認網路連線與發布權限後再試一次。");
     } finally {
@@ -106,8 +107,8 @@ function PublishForm() {
     }
   };
 
-  if (published) {
-    return <main className={styles.page}><section className={styles.publishSuccess} role="status"><p>發布完成</p><h1>公告發布成功</h1><span>公告已寫入公務資訊資料庫。</span><Link href="/admin">返回行政工作台</Link></section></main>;
+  if (publishedAnnouncement) {
+    return <main className={styles.page}><section className={styles.publishSuccess} role="status"><p>發布完成</p><h1>公告發布成功</h1><span>公告已寫入公務資訊資料庫。</span><LineSummaryCard announcement={publishedAnnouncement} /><Link href="/admin">返回行政工作台</Link></section></main>;
   }
 
   return <main className={styles.page}>
