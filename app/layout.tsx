@@ -5,8 +5,8 @@ export const metadata: Metadata = {
   title: "義學公務資訊站",
   description: "快速查看校內本週重要事項、即將截止與歷史公告。",
   icons: {
-    icon: "/favicon.svg",
-    shortcut: "/favicon.svg",
+    icon: "/ysjh-info/favicon.svg",
+    shortcut: "/ysjh-info/favicon.svg",
   },
 };
 

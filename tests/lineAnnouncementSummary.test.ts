@@ -50,6 +50,17 @@ test("網站首頁連結集中取得並正確加入摘要", () => {
   assert.match(createLineAnnouncementSummary(complete, "https://school.example/", 2026), /🔎 完整公告、附件及最新補充請至「義學公務資訊站」查看：\nhttps:\/\/school\.example\/$/);
 });
 
+test("GitHub Project Pages 網址保留 repository base path", () => {
+  const previous = process.env.NEXT_PUBLIC_SITE_URL;
+  process.env.NEXT_PUBLIC_SITE_URL = "https://easyshih-ux.github.io/ysjh-info/?source=test#top";
+  try {
+    assert.equal(getPublicSiteUrl(), "https://easyshih-ux.github.io/ysjh-info/");
+  } finally {
+    if (previous === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
+    else process.env.NEXT_PUBLIC_SITE_URL = previous;
+  }
+});
+
 test("Clipboard 成功與失敗都回傳狀態且不拋出例外", async () => {
   let copied = "";
   assert.equal(await copyLineAnnouncement("摘要", { writeText: async value => { copied = value; } }), true);
