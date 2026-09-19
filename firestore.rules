@@ -5,7 +5,38 @@ service cloud.firestore {
     function isAuthorizedPublisher() {
       return request.auth != null
         && exists(/databases/$(database)/documents/authorizedPublishers/$(request.auth.uid))
-        && get(/databases/$(database)/documents/authorizedPublishers/$(request.auth.uid)).data.enabled == true;
+        && get(/databases/$(database)/documents/authorizedPublishers/$(request.auth.uid)).data.enabled == true
+        && get(/databases/$(database)/documents/authorizedPublishers/$(request.auth.uid)).data.role in ['systemAdmin', 'publisher'];
+    }
+
+    function isOwnVerifiedPublisherRequest(publisherUid) {
+      return request.auth != null
+        && request.auth.uid == publisherUid
+        && request.auth.token.email_verified == true
+        && request.auth.token.email is string;
+    }
+
+    function isValidNewPublisherRequest() {
+      return request.resource.data.keys().hasAll([
+          'email',
+          'displayName',
+          'requestedAt',
+          'lastSeenAt',
+          'status'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'email',
+          'displayName',
+          'requestedAt',
+          'lastSeenAt',
+          'status'
+        ])
+        && request.resource.data.email == request.auth.token.email
+        && (request.resource.data.displayName == null
+          || request.resource.data.displayName is string)
+        && request.resource.data.requestedAt == request.time
+        && request.resource.data.lastSeenAt == request.time
+        && request.resource.data.status == 'pending';
     }
 
     match /announcements/{announcementId} {
@@ -17,6 +48,13 @@ service cloud.firestore {
     match /authorizedPublishers/{publisherUid} {
       allow get: if request.auth != null && request.auth.uid == publisherUid;
       allow list, create, update, delete: if false;
+    }
+
+    match /publisherRequests/{publisherUid} {
+      allow get: if request.auth != null && request.auth.uid == publisherUid;
+      allow create: if isOwnVerifiedPublisherRequest(publisherUid)
+        && isValidNewPublisherRequest();
+      allow list, update, delete: if false;
     }
 
     match /{document=**} {

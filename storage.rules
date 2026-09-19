@@ -1,0 +1,29 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isAuthorizedPublisher() {
+      return request.auth != null
+        && firestore.exists(
+          /databases/(default)/documents/authorizedPublishers/$(request.auth.uid)
+        )
+        && firestore.get(
+          /databases/(default)/documents/authorizedPublishers/$(request.auth.uid)
+        ).data.enabled == true;
+    }
+
+    match /announcements/{announcementId}/{fileName} {
+      allow read: if true;
+
+      allow create: if isAuthorizedPublisher()
+        && request.resource.size <= 2 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+
+      allow update, delete: if false;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

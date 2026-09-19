@@ -4,6 +4,7 @@ import type { Announcement } from "./announcements.ts";
 
 export const ANNOUNCEMENTS_COLLECTION = "announcements";
 export const AUTHORIZED_PUBLISHERS_COLLECTION = "authorizedPublishers";
+export const PUBLISHER_REQUESTS_COLLECTION = "publisherRequests";
 
 // Firestore document IDs are stored outside the document body.
 // All other fields stay aligned with the existing Announcement model.
