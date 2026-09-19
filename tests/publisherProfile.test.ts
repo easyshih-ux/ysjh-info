@@ -135,3 +135,38 @@ test("三個行政路由仍只共用 AdminAuthGuard", () => {
   assert.doesNotMatch(source("app/publish/page.tsx"), /resolvePublisherAccess|usePublisherProfile/);
   assert.doesNotMatch(source("app/manage/layout.tsx"), /resolvePublisherAccess|usePublisherProfile/);
 });
+
+test("profile 不存在時由共用 Guard 讀取自己的 publisherRequest", () => {
+  const guard = source("components/admin-auth-guard.tsx");
+  const hook = source("hooks/use-publisher-request.ts");
+  assert.match(guard, /profileAuthorization\.reason === "not-found"/);
+  assert.match(guard, /enabled: canRequestAccess/);
+  assert.match(guard, /尚未取得發布權限/);
+  assert.match(guard, /申請發布權限/);
+  assert.match(guard, /發布權限申請中/);
+  assert.match(hook, /readPublisherRequest\(uid\)/);
+});
+
+test("未獲 legacy allowlist 授權的舊格式文件仍可進入申請流程但不取得權限", () => {
+  const guard = source("components/admin-auth-guard.tsx");
+  assert.match(guard, /profileAuthorization\.reason === "legacy-not-allowed"/);
+  assert.match(guard, /authorization\.reason === "not-found" \|\| authorization\.reason === "legacy-not-allowed"/);
+  assert.doesNotMatch(guard, /invalid-profile" \|\| authorization\.reason === "legacy-not-allowed/);
+});
+
+test("申請只寫入 Rules 允許的五個欄位並使用 serverTimestamp", () => {
+  const repository = source("lib/publisherRequest.ts");
+  assert.match(repository, /PUBLISHER_REQUESTS_COLLECTION, uid/);
+  assert.match(repository, /email,\s*displayName,\s*requestedAt: serverTimestamp\(\),\s*lastSeenAt: serverTimestamp\(\),\s*status: "pending"/s);
+  assert.doesNotMatch(repository, /\b(role|enabled|approvedBy|defaultDepartment)\s*:/);
+});
+
+test("既有 pending 與 rejected request 顯示對應狀態且不重複建立", () => {
+  const guard = source("components/admin-auth-guard.tsx");
+  const hook = source("hooks/use-publisher-request.ts");
+  assert.match(guard, /requestState\.status === "pending"/);
+  assert.match(guard, /申請已送出，請等待系統管理員核准。/);
+  assert.match(guard, /requestState\.status === "rejected"/);
+  assert.match(guard, /目前的發布權限申請未通過，請洽系統管理員。/);
+  assert.match(hook, /state\.status !== "not-found"/);
+});

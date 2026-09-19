@@ -8,6 +8,7 @@ import {
 } from "@/lib/publisherAccess";
 import { useFirebaseAuth } from "@/hooks/use-firebase-auth";
 import { usePublisherProfile } from "@/hooks/use-publisher-profile";
+import { usePublisherRequest } from "@/hooks/use-publisher-request";
 import styles from "./admin-auth-guard.module.css";
 
 const AuthorizedPublisherContext = createContext<AuthorizedPublisherContextValue | null>(null);
@@ -15,6 +16,17 @@ const AuthorizedPublisherContext = createContext<AuthorizedPublisherContextValue
 export function AdminAuthGuard({ children }: { children: ReactNode }) {
   const { status, user, errorCode, busy, login, logout } = useFirebaseAuth();
   const profileState = usePublisherProfile(user?.uid);
+  const profileAuthorization = profileState.status === "not-found" || profileState.status === "legacy"
+    ? resolvePublisherAccess(profileState, user?.email)
+    : null;
+  const canRequestAccess = profileAuthorization?.status === "unauthorized"
+    && (profileAuthorization.reason === "not-found" || profileAuthorization.reason === "legacy-not-allowed");
+  const requestState = usePublisherRequest({
+    uid: user?.uid,
+    email: user?.email,
+    displayName: user?.displayName,
+    enabled: canRequestAccess,
+  });
 
   if (status === "checking") {
     return <AuthShell><div className={styles.status} role="status"><span className={styles.spinner} />正在確認發布者身分…</div></AuthShell>;
@@ -52,6 +64,51 @@ export function AdminAuthGuard({ children }: { children: ReactNode }) {
 
   if (authorization.status === "unauthorized") {
     const readError = authorization.reason === "read-error";
+    if (authorization.reason === "not-found" || authorization.reason === "legacy-not-allowed") {
+      if (requestState.status === "idle" || requestState.status === "loading") {
+        return <AuthShell><div className={styles.status} role="status"><span className={styles.spinner} />正在確認發布權限申請…</div></AuthShell>;
+      }
+
+      if (requestState.status === "pending") {
+        return <RequestShell
+          title="發布權限申請中"
+          description="申請已送出，請等待系統管理員核准。"
+          email={user.email}
+          busy={busy}
+          logout={logout}
+        />;
+      }
+
+      if (requestState.status === "rejected") {
+        return <RequestShell
+          title="尚未取得發布權限"
+          description="目前的發布權限申請未通過，請洽系統管理員。"
+          email={user.email}
+          busy={busy}
+          logout={logout}
+        />;
+      }
+
+      const requestError = requestState.status === "error" || requestState.status === "invalid";
+      return <AuthShell>
+        <div className={styles.denied} role="alert">
+          <h2>尚未取得發布權限</h2>
+          <p>{requestError
+            ? "目前無法確認或送出發布權限申請，請稍後再試。"
+            : "你的帳號尚未取得義學公務資訊站的公告發布權限。"}</p>
+          <p>目前帳號</p>
+          <strong>{user.email || "Google 帳號未提供 Email"}</strong>
+          <div className={styles.actions}>
+            {!requestError && <button
+              type="button"
+              onClick={requestState.submit}
+              disabled={requestState.submitting || !user.email}
+            >{requestState.submitting ? "申請送出中…" : "申請發布權限"}</button>}
+            <button type="button" className={styles.secondary} onClick={logout} disabled={busy}>登出帳號</button>
+          </div>
+        </div>
+      </AuthShell>;
+    }
     return <AuthShell>
       <div className={styles.denied} role="alert">
         <h2>{readError ? "目前無法確認公務資訊發布權限" : "此帳號尚未取得公務資訊發布權限"}</h2>
@@ -77,6 +134,32 @@ export function AdminAuthGuard({ children }: { children: ReactNode }) {
       {children}
     </div>
   </AuthorizedPublisherContext.Provider>;
+}
+
+function RequestShell({
+  title,
+  description,
+  email,
+  busy,
+  logout,
+}: {
+  title: string;
+  description: string;
+  email: string | null;
+  busy: boolean;
+  logout: () => Promise<void>;
+}) {
+  return <AuthShell>
+    <div className={styles.denied} role="status">
+      <h2>{title}</h2>
+      <p>{description}</p>
+      <p>目前帳號</p>
+      <strong>{email || "Google 帳號未提供 Email"}</strong>
+      <div className={styles.actions}>
+        <button type="button" className={styles.secondary} onClick={logout} disabled={busy}>登出帳號</button>
+      </div>
+    </div>
+  </AuthShell>;
 }
 
 function DeniedShell({
