@@ -75,5 +75,16 @@ export function validateBasicDraft(draft: BasicAnnouncementDraft): DraftErrors {
   if (!draft.content.trim()) errors.content = "請輸入完整公告內容";
   if (draft.importantEvents.some(item => (item.date || item.time || item.title) && (!item.date || !item.title.trim()))) errors.importantEvents = "已填寫的重要事項需要完整的日期與事項名稱";
   if (draft.deadlines.some(item => (item.date || item.time || item.label) && (!item.date || !item.label.trim()))) errors.deadlines = "已填寫的繳交期限需要完整的截止日期與事項名稱";
+  if (draft.links.some(item => !item.label.trim() || !isHttpUrl(item.url))) errors.links = "相關網址需要完整名稱與有效的 http/https 網址";
+  if (draft.links.filter(item => item.isPrimary).length > 1) errors.links = "相關網址最多只能設定一個主要連結";
   return errors;
+}
+
+function isHttpUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
