@@ -20,6 +20,11 @@ test("importantEvents 有資料顯示，空陣列時整區不顯示", () => {
   assert.doesNotMatch(createLineAnnouncementSummary({ ...complete, importantEvents: [] }, "https://school.example/", 2026), /📅 重要日期：/);
 });
 
+test("importantEvents 日期區間顯示開始與結束日期", () => {
+  const summary = createLineAnnouncementSummary({ ...complete, importantEvents: [{ date: "2026-09-18", endDate: "2026-09-20", title: "跨日活動" }] }, "https://school.example/", 2026);
+  assert.match(summary, /9\/18 ～ 9\/20 跨日活動/);
+});
+
 test("deadlines 有資料顯示，空陣列時整區不顯示", () => {
   assert.match(createLineAnnouncementSummary(complete, "https://school.example/", 2026), /⏰ 截止：[\s\S]*・9\/18 16:00 七年級閱讀調查表繳交截止/);
   assert.doesNotMatch(createLineAnnouncementSummary({ ...complete, deadlines: [] }, "https://school.example/", 2026), /⏰ 截止：/);

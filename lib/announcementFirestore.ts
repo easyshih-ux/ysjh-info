@@ -1,6 +1,6 @@
 import { collection, getDocs } from "firebase/firestore";
 import { ANNOUNCEMENTS_COLLECTION, getFirestoreClient } from "./firestoreClient.ts";
-import { AUDIENCES, type Announcement, type AnnouncementLink, type Attachment, type Audience, type Deadline, type FollowUp, type ImportantEvent } from "./announcements.ts";
+import { AUDIENCES, normalizeAudiences, type Announcement, type AnnouncementLink, type Attachment, type Audience, type Deadline, type FollowUp, type ImportantEvent } from "./announcements.ts";
 import { isDepartment } from "./departments.ts";
 
 type UnknownRecord = Record<string, unknown>;
@@ -14,7 +14,7 @@ const records = (value: unknown) => Array.isArray(value) ? value.filter(isRecord
 
 function normalizeImportantEvents(value: unknown): ImportantEvent[] {
   return records(value).flatMap(item => isDateOnly(item.date) && isNonEmptyString(item.title)
-    ? [{ date: item.date, ...(isNonEmptyString(item.time) ? { time: item.time } : {}), title: item.title }]
+    ? [{ date: item.date, ...(isDateOnly(item.endDate) ? { endDate: item.endDate } : {}), ...(isNonEmptyString(item.time) ? { time: item.time } : {}), title: item.title }]
     : []);
 }
 
@@ -56,7 +56,7 @@ export function announcementFromFirestore(id: string, value: unknown): Announcem
     ...(isNonEmptyString(value.updatedAt) ? { updatedAt: value.updatedAt } : {}),
     department: value.department,
     title: value.title,
-    audiences,
+    audiences: normalizeAudiences(audiences),
     content: value.content,
     importantEvents: normalizeImportantEvents(value.importantEvents),
     deadlines: normalizeDeadlines(value.deadlines),

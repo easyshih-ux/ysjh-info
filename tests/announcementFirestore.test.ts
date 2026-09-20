@@ -48,6 +48,12 @@ test("Firestore importantEvents 與 deadlines 分別進入既有首頁邏輯", (
   assert.equal(upcomingDeadlines([item], now)[0].deadline.label, "繳交截止");
 });
 
+test("Firestore 保留重要事項日期區間並正規化舊的非法對象組合", () => {
+  const item = announcementFromFirestore("range", firestoreRecord({ audiences: ["全校教師", "行政"], importantEvents: [{ date: "2026-09-19", endDate: "2026-09-21", title: "跨日活動" }] }))!;
+  assert.deepEqual(item.audiences, ["全校教師"]);
+  assert.equal(item.importantEvents[0].endDate, "2026-09-21");
+});
+
 test("正式 HTTPS attachment 可處理，非 HTTPS attachment 不進入首頁", () => {
   assert.match(announcementFromFirestore("one", firestoreRecord())!.attachments[0].url, /^https:\/\//);
   assert.deepEqual(announcementFromFirestore("two", firestoreRecord({ attachments: [{ id: "bad", type: "image", url: "blob:test", name: "本機圖片" }] }))!.attachments, []);

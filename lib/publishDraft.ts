@@ -1,4 +1,4 @@
-import type { Announcement, AnnouncementLink, Audience, Deadline, ImportantEvent } from "./announcements.ts";
+import { normalizeAudiences, type Announcement, type AnnouncementLink, type Audience, type Deadline, type ImportantEvent } from "./announcements.ts";
 import { isDepartment, type Department } from "./departments.ts";
 
 export interface BasicAnnouncementDraft {
@@ -56,7 +56,7 @@ export function publishDraftToAnnouncement(draft: BasicAnnouncementDraft, id: st
   if (!isDepartment(draft.department)) throw new Error("Invalid department");
   return {
     id, publishedAt, academicYear, department: draft.department, title: draft.title,
-    audiences: draft.audiences, content: draft.content,
+    audiences: normalizeAudiences(draft.audiences), content: draft.content,
     importantEvents: draft.importantEvents.filter(event => event.date || event.time || event.title),
     deadlines: draft.deadlines.filter(deadline => deadline.date || deadline.time || deadline.label),
     links: draft.links,
@@ -72,8 +72,10 @@ export function validateBasicDraft(draft: BasicAnnouncementDraft): DraftErrors {
   if (!isDepartment(draft.department)) errors.department = "請選擇正式發布單位";
   if (!draft.title.trim()) errors.title = "請輸入公告標題";
   if (draft.audiences.length === 0) errors.audiences = "請至少選擇一個適用對象";
+  if (draft.audiences.includes("全校教師") && draft.audiences.length > 1) errors.audiences = "全校教師不可與其他適用對象同時選擇";
   if (!draft.content.trim()) errors.content = "請輸入完整公告內容";
   if (draft.importantEvents.some(item => (item.date || item.time || item.title) && (!item.date || !item.title.trim()))) errors.importantEvents = "已填寫的重要事項需要完整的日期與事項名稱";
+  if (draft.importantEvents.some(item => item.endDate && (!item.date || item.endDate < item.date))) errors.importantEvents = "重要事項的結束日期不得早於開始日期";
   if (draft.deadlines.some(item => (item.date || item.time || item.label) && (!item.date || !item.label.trim()))) errors.deadlines = "已填寫的繳交期限需要完整的截止日期與事項名稱";
   if (draft.links.some(item => !item.label.trim() || !isHttpUrl(item.url))) errors.links = "相關網址需要完整名稱與有效的 http/https 網址";
   if (draft.links.filter(item => item.isPrimary).length > 1) errors.links = "相關網址最多只能設定一個主要連結";

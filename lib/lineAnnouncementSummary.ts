@@ -7,7 +7,7 @@ export function createLineAnnouncementSummary(announcement: Announcement, siteUr
   ];
 
   if (announcement.importantEvents.length > 0) {
-    sections.push(`📅 重要日期：\n${announcement.importantEvents.map(item => `・${formatLineDate(item.date, item.time, currentYear)} ${item.title}`).join("\n")}`);
+    sections.push(`📅 重要日期：\n${announcement.importantEvents.map(item => `・${formatLineDate(item.date, item.time, currentYear)}${item.endDate ? ` ～ ${formatLineDate(item.endDate, undefined, currentYear)}` : ""} ${item.title}`).join("\n")}`);
   }
   if (announcement.deadlines.length > 0) {
     sections.push(`⏰ 截止：\n${announcement.deadlines.map(item => `・${formatLineDate(item.date, item.time, currentYear)} ${item.label}`).join("\n")}`);

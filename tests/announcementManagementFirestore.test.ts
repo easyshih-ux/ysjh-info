@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { mockAnnouncements } from "../data/mockAnnouncements.ts";
 import { applyAnnouncementUpdate, createAnnouncementUpdate, createFollowUp, filterManagedAnnouncements, validateAnnouncementCore } from "../lib/announcementManagement.ts";
+import type { Announcement } from "../lib/announcements.ts";
 
 const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
@@ -84,4 +85,10 @@ test("links 最多一個 primary，importantEvents 與 deadlines 仍各自驗證
   const errors = validateAnnouncementCore(item);
   assert.ok(errors.importantEvents);
   assert.ok(errors.deadlines);
+});
+
+test("舊公告的全校教師混合對象重新儲存時會正規化", () => {
+  const item = { ...structuredClone(mockAnnouncements[0]), audiences: ["全校教師", "行政"] as Announcement["audiences"] };
+  assert.deepEqual(validateAnnouncementCore(item), {});
+  assert.deepEqual(createAnnouncementUpdate(item, "2026-09-20T00:00:00.000Z").audiences, ["全校教師"]);
 });

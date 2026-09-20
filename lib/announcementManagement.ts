@@ -1,4 +1,4 @@
-import type { Announcement, Audience, FollowUp } from "./announcements.ts";
+import { normalizeAudiences, type Announcement, type Audience, type FollowUp } from "./announcements.ts";
 import { validateBasicDraft } from "./publishDraft.ts";
 
 export const MANAGE_DEPARTMENT_KEY = "manageDepartment";
@@ -13,7 +13,7 @@ export function filterManagedAnnouncements(items: Announcement[], department: st
 }
 
 export function validateAnnouncementCore(item: Announcement) {
-  return validateBasicDraft({ department: item.department, title: item.title, audiences: item.audiences, content: item.content, attachments: item.attachments.map(a => ({ ...a, caption: a.caption ?? "", previewUrl: a.url })), importantEvents: item.importantEvents, deadlines: item.deadlines, links: item.links });
+  return validateBasicDraft({ department: item.department, title: item.title, audiences: normalizeAudiences(item.audiences), content: item.content, attachments: item.attachments.map(a => ({ ...a, caption: a.caption ?? "", previewUrl: a.url })), importantEvents: item.importantEvents, deadlines: item.deadlines, links: item.links });
 }
 
 export function updateAnnouncement(items: Announcement[], edited: Announcement, updatedAt: string) {
@@ -29,7 +29,7 @@ export function createAnnouncementUpdate(edited: Announcement, updatedAt: string
     academicYear: edited.academicYear,
     department: edited.department,
     title: edited.title.trim(),
-    audiences: edited.audiences,
+    audiences: normalizeAudiences(edited.audiences),
     content: edited.content.trim(),
     importantEvents: edited.importantEvents.filter(item => item.date || item.time || item.title),
     deadlines: edited.deadlines.filter(item => item.date || item.time || item.label),

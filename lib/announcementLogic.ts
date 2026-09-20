@@ -2,7 +2,7 @@ import { USER_IDENTITIES, type Announcement, type Audience, type UserIdentity } 
 
 export const ROLE_STORAGE_KEY = "selectedRole";
 export const ACADEMIC_YEAR_STORAGE_KEY = "selectedAcademicYear";
-export const SCHOOLWIDE_INCLUDES_ADMIN = false;
+export const SCHOOLWIDE_INCLUDES_ADMIN = true;
 export type SavedIdentity = UserIdentity | "全部";
 
 export function isSavedIdentity(value: string | null): value is SavedIdentity {
@@ -102,6 +102,13 @@ export function deadlineRelativeLabel(date: string, now: Date) {
 export function deadlineDateLabel(date: string) {
   const value = localDate(date);
   return `${String(value.getMonth() + 1).padStart(2, "0")}/${String(value.getDate()).padStart(2, "0")} 截止`;
+}
+
+export function deadlineUrgency(date: string, now: Date): "red" | "orange" | "normal" {
+  const days = daysUntil(date, now);
+  if (days >= 1 && days <= 2) return "red";
+  if (days >= 3 && days <= 5) return "orange";
+  return "normal";
 }
 
 function itemDateKey(date: string, time?: string) {
