@@ -3,15 +3,30 @@
 import { missingFirebaseConfigKeys } from "@/lib/firebaseClient";
 import { getEmailDomain, isExpectedSchoolEmail } from "@/lib/schoolAuth";
 import { useFirebaseAuth } from "@/hooks/use-firebase-auth";
+import { FirebaseAuthLoginWarning } from "@/components/firebase-auth-login-warning";
 import styles from "./auth-test.module.css";
 
 export default function AuthTestPage() {
-  const { status, user, errorCode, busy, login, logout } = useFirebaseAuth();
+  const {
+    status,
+    user,
+    errorCode,
+    busy,
+    lineLoginWarningOpen,
+    login,
+    closeLineLoginWarning,
+    logout,
+  } = useFirebaseAuth();
 
   return <main className={styles.page}><section className={styles.card}>
     <p className={styles.kicker}>Firebase Authentication Prototype</p>
     <h1>學校 Google 帳號登入測試</h1>
     <p className={styles.intro}>僅驗證 Google 登入與登入狀態恢復，不會取得公務資訊發布權限。</p>
+
+    <FirebaseAuthLoginWarning
+      open={lineLoginWarningOpen}
+      onClose={closeLineLoginWarning}
+    />
 
     {status === "checking" && <div className={styles.status} role="status"><span className={styles.spinner} />正在確認登入狀態…</div>}
 

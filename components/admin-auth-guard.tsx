@@ -9,12 +9,22 @@ import {
 import { useFirebaseAuth } from "@/hooks/use-firebase-auth";
 import { usePublisherProfile } from "@/hooks/use-publisher-profile";
 import { usePublisherRequest } from "@/hooks/use-publisher-request";
+import { FirebaseAuthLoginWarning } from "@/components/firebase-auth-login-warning";
 import styles from "./admin-auth-guard.module.css";
 
 const AuthorizedPublisherContext = createContext<AuthorizedPublisherContextValue | null>(null);
 
 export function AdminAuthGuard({ children }: { children: ReactNode }) {
-  const { status, user, errorCode, busy, login, logout } = useFirebaseAuth();
+  const {
+    status,
+    user,
+    errorCode,
+    busy,
+    lineLoginWarningOpen,
+    login,
+    closeLineLoginWarning,
+    logout,
+  } = useFirebaseAuth();
   const profileState = usePublisherProfile(user?.uid);
   const profileAuthorization = profileState.status === "not-found" || profileState.status === "legacy"
     ? resolvePublisherAccess(profileState, user?.email)
@@ -34,6 +44,13 @@ export function AdminAuthGuard({ children }: { children: ReactNode }) {
 
   if (status === "configuration-missing") {
     return <AuthShell><div className={styles.warning} role="alert"><h2>Firebase Auth 尚未設定</h2><p>缺少設定：{missingFirebaseConfigKeys.join("、")}</p></div></AuthShell>;
+  }
+
+  if (lineLoginWarningOpen) {
+    return <AuthShell><FirebaseAuthLoginWarning
+      open
+      onClose={closeLineLoginWarning}
+    /></AuthShell>;
   }
 
   if (status === "signed-out" || !user) {

@@ -13,6 +13,7 @@ import {
   getFirebaseAuthClient,
   isFirebaseConfigured,
 } from "@/lib/firebaseClient";
+import { shouldWarnBeforeGoogleLogin } from "@/lib/browserEnvironment";
 
 export type FirebaseAuthStatus =
   | "checking"
@@ -25,6 +26,7 @@ export function useFirebaseAuth() {
   const [user, setUser] = useState<User | null>(null);
   const [errorCode, setErrorCode] = useState("");
   const [busy, setBusy] = useState(false);
+  const [lineLoginWarningOpen, setLineLoginWarningOpen] = useState(false);
 
   useEffect(() => {
     if (!isFirebaseConfigured) {
@@ -62,6 +64,11 @@ export function useFirebaseAuth() {
   }, []);
 
   const login = useCallback(async () => {
+    if (shouldWarnBeforeGoogleLogin()) {
+      setLineLoginWarningOpen(true);
+      return;
+    }
+
     setBusy(true);
     setErrorCode("");
     try {
@@ -76,6 +83,10 @@ export function useFirebaseAuth() {
     }
   }, []);
 
+  const closeLineLoginWarning = useCallback(() => {
+    setLineLoginWarningOpen(false);
+  }, []);
+
   const logout = useCallback(async () => {
     setBusy(true);
     setErrorCode("");
@@ -88,7 +99,16 @@ export function useFirebaseAuth() {
     }
   }, []);
 
-  return { status, user, errorCode, busy, login, logout };
+  return {
+    status,
+    user,
+    errorCode,
+    busy,
+    lineLoginWarningOpen,
+    login,
+    closeLineLoginWarning,
+    logout,
+  };
 }
 
 export function getFirebaseAuthErrorCode(error: unknown) {
