@@ -8,6 +8,7 @@ test("老師端提供低調的發布工作台入口", () => {
   const page = source("app/page.tsx");
   assert.match(page, /className="admin-entry" href="\/admin"/);
   assert.match(page, /<Settings[^>]*\/>行政管理/);
+  assert.match(page, /<small>Made by WenYi<\/small>/);
 });
 
 test("發布工作台由共用 Auth Guard 保護並保留三個入口", () => {

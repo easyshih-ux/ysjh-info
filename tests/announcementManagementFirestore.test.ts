@@ -107,3 +107,12 @@ test("編輯清空開始與結束時間後 Firestore update 不殘留舊值", ()
   assert.equal("endDate" in update.importantEvents[0], false);
   assert.equal("endTime" in update.importantEvents[0], false);
 });
+
+test("發布與管理的重要事項時間欄位只在有值時提供清除操作", () => {
+  const publishPage = source("app/publish/page.tsx");
+  const managePage = source("app/manage/page.tsx");
+  assert.match(publishPage, /item\.time &&[\s\S]*updateImportantEvent\(index, "time", ""\)[\s\S]*清除時間/);
+  assert.match(publishPage, /item\.endTime &&[\s\S]*updateImportantEvent\(index, "endTime", ""\)[\s\S]*清除時間/);
+  assert.match(managePage, /entry\.time &&[\s\S]*updateEvent\(index, "time", ""\)[\s\S]*清除時間/);
+  assert.match(managePage, /entry\.endTime &&[\s\S]*updateEvent\(index, "endTime", ""\)[\s\S]*清除時間/);
+});

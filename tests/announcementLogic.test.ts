@@ -34,8 +34,8 @@ test("查看全部公告時不套用身分篩選",()=>{assert.equal([...mockAnno
 test("返回與我相關可再次套用原身分",()=>{const storage=memoryStorage();saveIdentity(storage,"七年級導師",115);const restored=readSavedIdentity(storage,115)!;assert.deepEqual(announcementsForIdentity(mockAnnouncements,restored as "七年級導師").map(a=>a.id),announcementsForIdentity(mockAnnouncements,"七年級導師").map(a=>a.id))});
 
 test("115學年度預設只顯示115公告",()=>{const items=announcementsForAcademicYear(mockAnnouncements,CURRENT_ACADEMIC_YEAR);assert.ok(items.length>0);assert.ok(items.every(a=>a.academicYear===115))});
-test("可主動切換查看114公告",()=>{const items=announcementsForAcademicYear(mockAnnouncements,FRONTEND_ACADEMIC_YEARS[1]);assert.ok(items.length>0);assert.ok(items.every(a=>a.academicYear===114))});
-test("113及更早公告不在一般前台學年度清單",()=>{assert.equal(isFrontendAcademicYear(113),false);assert.deepEqual([...FRONTEND_ACADEMIC_YEARS],[115,114])});
+test("目前可選學年度只提供115與116",()=>{assert.deepEqual([...FRONTEND_ACADEMIC_YEARS],[115,116]);assert.equal(isFrontendAcademicYear(115),true);assert.equal(isFrontendAcademicYear(116),true);assert.equal(isFrontendAcademicYear(114),false)});
+test("114舊公告仍可由歷史資料篩選正常讀取",()=>{const items=announcementsForAcademicYear(mockAnnouncements,114);assert.ok(items.length>0);assert.ok(items.every(a=>a.academicYear===114))});
 test("上一學年度 deadline 不進入目前即將截止",()=>{const current=announcementsForAcademicYear(mockAnnouncements,115);assert.ok(!upcomingDeadlines(current,DEMO_NOW).some(i=>i.announcement.academicYear===114))});
 test("上一學年度 importantEvents 不進入目前本週事項",()=>{const current=announcementsForAcademicYear(mockAnnouncements,115);assert.ok(!weeklyEvents(current,DEMO_NOW).some(i=>i.announcement.academicYear===114))});
 test("selectedAcademicYear 與目前同為115時沿用身分",()=>{const storage=memoryStorage();saveIdentity(storage,"七年級導師",115);assert.equal(readSavedIdentity(storage,115),"七年級導師");assert.equal(needsAcademicYearConfirmation(storage,115),false)});

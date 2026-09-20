@@ -2,3 +2,4 @@
 @media(max-width:760px){.controls{grid-template-columns:1fr 1fr}.cardActions{display:grid;grid-template-columns:1fr}.editor,.details{max-width:100%;height:100dvh;max-height:100dvh;border-radius:0;padding:18px}.row,.linkRow,.twoFields{grid-template-columns:1fr}.readOnlyImages>div{grid-template-columns:1fr}.page>header h1{font-size:24px}}
 .eventRow{display:grid;grid-template-columns:1fr 1fr 1fr 1.5fr auto;gap:6px;align-items:end}.eventRow label{display:grid;gap:3px;font-size:12px;font-weight:700;color:#52677b}@media(max-width:760px){.eventRow{grid-template-columns:1fr}}
 .eventRow{grid-template-columns:repeat(4,minmax(0,1fr)) 1.5fr auto}@media(max-width:760px){.eventRow{grid-template-columns:1fr}}
+.clearTime{justify-self:start;border:0;background:transparent;color:#315f86;padding:1px 0;font-size:12px;font-weight:700;text-decoration:underline;cursor:pointer}.clearTime:focus-visible{outline:2px solid #315f86;outline-offset:2px}
