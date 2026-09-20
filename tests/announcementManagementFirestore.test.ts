@@ -9,7 +9,8 @@ const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.
 
 test("管理頁正式讀取 Firestore 且不使用 mockAnnouncements", () => {
   const page = source("app/manage/page.tsx");
-  assert.match(page, /readPublicAnnouncements\(\)/);
+  assert.match(page, /readManagedAnnouncements\(\)/);
+  assert.doesNotMatch(page, /readPublicAnnouncements\(\)/);
   assert.doesNotMatch(page, /mockAnnouncements/);
 });
 
