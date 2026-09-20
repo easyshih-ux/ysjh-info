@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
-import { useState } from "react";
+import { ArrowLeft, ChevronDown, Search } from "lucide-react";
+import { useMemo, useState } from "react";
 import { AdminAuthGuard, useAuthorizedPublisher } from "@/components/admin-auth-guard";
 import { usePublisherRequests } from "@/hooks/use-publisher-requests";
 import { departmentGroups, isDepartment, standaloneDepartments, type Department } from "@/lib/departments";
@@ -21,6 +21,16 @@ function PublisherRequestList() {
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState("");
   const [approvalError, setApprovalError] = useState("");
+  const [publisherQuery, setPublisherQuery] = useState("");
+  const [publisherStatus, setPublisherStatus] = useState<"all" | "enabled" | "disabled">("all");
+  const filteredPublishers = useMemo(() => {
+    const query = publisherQuery.trim().toLocaleLowerCase("zh-Hant");
+    return state.publishers.filter(item => {
+      const matchesQuery = !query || `${item.displayName ?? ""}\n${item.email}\n${item.defaultDepartment ?? ""}`.toLocaleLowerCase("zh-Hant").includes(query);
+      const matchesStatus = publisherStatus === "all" || (publisherStatus === "enabled" ? item.enabled : !item.enabled);
+      return matchesQuery && matchesStatus;
+    });
+  }, [publisherQuery, publisherStatus, state.publishers]);
 
   async function handleApprove(targetUid: string) {
     const defaultDepartment = departments[targetUid];
@@ -77,7 +87,7 @@ function PublisherRequestList() {
     <p className={styles.kicker}>PUBLISHER MANAGEMENT</p>
     <h1>發布者管理</h1>
     <div className={styles.heading}>
-      <h2>待核准發布者</h2>
+      <h2>待審申請（{state.requests.length}）</h2>
       <span aria-label={`待核准 ${state.requests.length} 筆`}>{state.requests.length}</span>
     </div>
 
@@ -127,12 +137,17 @@ function PublisherRequestList() {
       </article>)}
     </div>}
 
-    <div className={styles.heading}><h2>現有發布者</h2><span>{state.publishers.length}</span></div>
+    <div className={styles.heading}><h2>現有發布者（{state.publishers.length}）</h2><span>{state.publishers.length}</span></div>
+    <div className={styles.publisherFilters}>
+      <label className={styles.search}><span>搜尋發布者</span><div><Search aria-hidden="true" /><input value={publisherQuery} onChange={event => setPublisherQuery(event.target.value)} placeholder="搜尋姓名、Email 或發布單位" /></div></label>
+      <label><span>狀態</span><select value={publisherStatus} onChange={event => setPublisherStatus(event.target.value as "all" | "enabled" | "disabled")}><option value="all">全部</option><option value="enabled">啟用中</option><option value="disabled">已停用</option></select></label>
+    </div>
     {state.status === "ready" && state.publishers.length === 0 && <p className={styles.notice}>目前沒有發布者資料。</p>}
-    {state.status === "ready" && state.publishers.length > 0 && <div className={styles.list}>
-      {state.publishers.map(item => <article key={item.uid}>
-        <div className={styles.identity}><h3>{item.displayName?.trim() || "未提供名稱"}</h3><p>{item.email || "帳號 email 尚未同步"}</p><small>UID：{item.uid}</small></div>
-        <div className={styles.approval}>
+    {state.status === "ready" && state.publishers.length > 0 && filteredPublishers.length === 0 && <p className={styles.notice}>沒有符合搜尋或篩選條件的發布者。</p>}
+    {state.status === "ready" && filteredPublishers.length > 0 && <div className={`${styles.list} ${styles.publisherList}`}>
+      {filteredPublishers.map(item => <details key={item.uid}>
+        <summary><div className={styles.identity}><h3>{item.displayName?.trim() || "未提供名稱"}</h3><p>{item.defaultDepartment || "尚未設定單位"} · {item.role === "systemAdmin" ? "系統管理員" : item.enabled ? "啟用中" : "已停用"}</p><small>{item.email || "帳號 email 尚未同步"}</small></div><ChevronDown aria-hidden="true" /></summary>
+        <div className={styles.publisherActions}><small>UID：{item.uid}</small><div className={styles.approval}>
           <span>{item.role === "systemAdmin" ? "系統管理員" : item.enabled ? "已啟用" : "已停用"}</span>
           <label>發布單位<select value={departments[item.uid] ?? item.defaultDepartment ?? ""} onChange={event => setDepartments(current => ({ ...current, [item.uid]: event.target.value as Department }))} disabled={busyAction !== null || item.role === "systemAdmin"}>
             <option value="" disabled>請選擇發布單位</option>
@@ -140,8 +155,8 @@ function PublisherRequestList() {
             {departmentGroups.flatMap(group => [<option key={group.office} value={group.office}>【{group.office}】</option>, ...group.departments.slice(1).map(department => <option key={department} value={department}>　{department}</option>)])}
           </select></label>
           {item.role === "publisher" && <><button type="button" onClick={() => void runManagementAction(item.uid, "department")} disabled={busyAction !== null || !isDepartment(departments[item.uid] ?? item.defaultDepartment)}>儲存單位</button><button type="button" className={styles.secondaryButton} onClick={() => void runManagementAction(item.uid, item.enabled ? "disable" : "enable")} disabled={busyAction !== null}>{item.enabled ? "停用發布權限" : "重新啟用"}</button></>}
-        </div>
-      </article>)}
+        </div></div>
+      </details>)}
     </div>}
   </section></main>;
 }

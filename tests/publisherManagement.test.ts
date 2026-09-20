@@ -20,7 +20,7 @@ test("發布者管理頁共用 AdminAuthGuard 並再次限制 systemAdmin", () =
 
 test("只讀頁顯示 pending 數量、空狀態與友善錯誤", () => {
   const page = source("app/admin/publishers/page.tsx");
-  assert.match(page, /待核准發布者/);
+  assert.match(page, /待審申請/);
   assert.match(page, /state\.requests\.length/);
   assert.match(page, /目前沒有待核准的發布權限申請。/);
   assert.match(page, /目前無法讀取發布權限申請，請稍後再試。/);
@@ -109,4 +109,36 @@ test("systemAdmin 帳號只顯示不可變更，管理操作失敗不會默默�
   assert.match(page, /disabled=\{busyAction !== null \|\| item\.role === "systemAdmin"\}/);
   assert.match(page, /操作失敗，資料未變更，請稍後再試。/);
   assert.match(page, /console\.error\("publisher management action failed", error\)/);
+});
+
+test("現有發布者可即時搜尋姓名 Email 與發布單位並依狀態篩選", () => {
+  const page = source("app/admin/publishers/page.tsx");
+  assert.match(page, /publisherQuery/);
+  assert.match(page, /item\.displayName/);
+  assert.match(page, /item\.email/);
+  assert.match(page, /item\.defaultDepartment/);
+  assert.match(page, /publisherStatus === "enabled" \? item\.enabled : !item\.enabled/);
+  assert.match(page, /<option value="all">全部<\/option>/);
+  assert.match(page, /<option value="enabled">啟用中<\/option>/);
+  assert.match(page, /<option value="disabled">已停用<\/option>/);
+});
+
+test("現有發布者預設收合並在摘要顯示姓名單位狀態與 Email", () => {
+  const page = source("app/admin/publishers/page.tsx");
+  assert.match(page, /filteredPublishers\.map\(item => <details/);
+  assert.doesNotMatch(page, /<details[^>]*open/);
+  assert.match(page, /<summary>/);
+  assert.match(page, /item\.defaultDepartment \|\| "尚未設定單位"/);
+  assert.match(page, /item\.email \|\| "帳號 email 尚未同步"/);
+  assert.match(page, /停用發布權限/);
+  assert.match(page, /重新啟用/);
+  assert.match(page, /儲存單位/);
+});
+
+test("待審維持上方並顯示兩區數量與篩選空狀態", () => {
+  const page = source("app/admin/publishers/page.tsx");
+  assert.ok(page.indexOf("待審申請（") < page.indexOf("現有發布者（"));
+  assert.match(page, /待審申請（\{state\.requests\.length\}）/);
+  assert.match(page, /現有發布者（\{state\.publishers\.length\}）/);
+  assert.match(page, /沒有符合搜尋或篩選條件的發布者。/);
 });
