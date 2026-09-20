@@ -14,6 +14,16 @@ export interface FollowUp { createdAt: string; type: "supplement" | "reminder"; 
 export interface AnnouncementLink { id: string; label: string; url: string; type: "website"; isPrimary: boolean }
 export interface Announcement {
   id: string;
+  publisherUid?: string;
+  publisherEmail?: string;
+  publisherDisplayName?: string;
+  publicationStatus?: "published" | "withdrawn";
+  withdrawnAt?: string;
+  withdrawnBy?: string;
+  collectionStatus?: "chasing";
+  collectionMessage?: string;
+  collectionStartedAt?: string;
+  collectionStartedBy?: string;
   updatedAt?: string;
   academicYear: number;
   publishedAt: string;

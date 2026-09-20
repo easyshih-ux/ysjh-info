@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mockAnnouncements } from "../data/mockAnnouncements.ts";
 import { addAnnouncementFollowUp, filterManagedAnnouncements, updateAnnouncement, validateAnnouncementCore } from "../lib/announcementManagement.ts";
+import { readFileSync } from "node:fs";
+const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
 test("設備組只篩出設備組 Mock 公告",()=>{const items=filterManagedAnnouncements(mockAnnouncements,"設備組");assert.ok(items.length>0);assert.ok(items.every(item=>item.department==="設備組"))});
 test("可搜尋設備組既有公告標題與內容",()=>{assert.equal(filterManagedAnnouncements(mockAnnouncements,"設備組","晨讀")[0].id,"ann-001");assert.equal(filterManagedAnnouncements(mockAnnouncements,"設備組","圖書館")[0].id,"ann-001")});
@@ -13,3 +15,6 @@ test("可補登並修正多筆 deadlines",()=>{const item=structuredClone(mockAn
 test("可新增 supplement 並保留歷史",()=>{const before=mockAnnouncements[0].followUps.length;const result=addAnnouncementFollowUp(mockAnnouncements,"ann-001",{createdAt:"2026-09-19T10:00:00+08:00",type:"supplement",message:"補充內容"});assert.equal(result[0].followUps.length,before+1);assert.equal(result[0].followUps.at(-1)?.type,"supplement")});
 test("可新增 reminder 並保留歷史",()=>{const before=mockAnnouncements[0].followUps.length;const result=addAnnouncementFollowUp(mockAnnouncements,"ann-001",{createdAt:"2026-09-19T11:00:00+08:00",type:"reminder",message:"稽催內容"});assert.equal(result[0].followUps.length,before+1);assert.equal(result[0].followUps.at(-1)?.type,"reminder")});
 test("新增與編輯共用核心資料驗證",()=>{assert.deepEqual(validateAnnouncementCore(mockAnnouncements[0]),{});const invalid={...mockAnnouncements[0],title:""};assert.equal(validateAnnouncementCore(invalid).title,"請輸入公告標題")});
+test("管理頁依 UID 區分自己的公告與 systemAdmin 全校管理",()=>{const page=source("app/manage/page.tsx");assert.match(page,/item\.publisherUid === publisher\.uid/);assert.match(page,/publisher\.role === "systemAdmin"/);assert.match(page,/全校公告管理/)});
+test("管理頁提供下架復原催繳與 systemAdmin 二次確認永久刪除",()=>{const page=source("app/manage/page.tsx");assert.match(page,/"withdraw"/);assert.match(page,/"restore"/);assert.match(page,/"startChase"/);assert.match(page,/"stopChase"/);assert.equal((page.match(/window\.confirm/g)||[]).length,2);assert.match(page,/永久刪除後無法復原/)});
+test("生命週期操作固定使用 asia-east1 Callable",()=>{const helper=source("lib/announcementLifecycle.ts");assert.match(helper,/getFunctions\(getFirebaseApp\(\), "asia-east1"\)/);assert.match(helper,/"manageAnnouncementLifecycle"/)});

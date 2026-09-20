@@ -8,6 +8,7 @@ import type { PublisherProfileReadResult } from "./publisherProfile.ts";
 export type AuthorizedPublisherAccess = "publisher" | "systemAdmin" | "legacy";
 
 export interface AuthorizedPublisherContextValue {
+  uid: string;
   access: AuthorizedPublisherAccess;
   role: "publisher" | "systemAdmin" | null;
   email: string;
@@ -29,6 +30,7 @@ export type AdminAuthorizationState =
 export function resolvePublisherAccess(
   result: PublisherProfileReadResult,
   authenticatedEmail: string | null | undefined,
+  authenticatedUid = "",
 ): AdminAuthorizationState {
   if (result.status === "disabled") return { status: "disabled" };
   if (result.status === "not-found") {
@@ -45,6 +47,7 @@ export function resolvePublisherAccess(
     return {
       status: result.profile.role,
       publisher: {
+        uid: authenticatedUid,
         access: result.profile.role,
         role: result.profile.role,
         email: result.profile.email,
@@ -66,6 +69,7 @@ export function resolvePublisherAccess(
     return {
       status: "legacy",
       publisher: {
+        uid: authenticatedUid,
         access: "legacy",
         role: null,
         email: result.profile.email,

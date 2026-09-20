@@ -8,7 +8,9 @@ import { CURRENT_ACADEMIC_YEAR, FRONTEND_ACADEMIC_YEARS } from "@/lib/academicYe
 import { DEPARTMENTS, departmentGroups, type Department } from "@/lib/departments";
 import { applyAnnouncementUpdate, filterManagedAnnouncements, MANAGE_DEPARTMENT_KEY, validateAnnouncementCore } from "@/lib/announcementManagement";
 import { AnnouncementManagementError, appendManagedFollowUp, updateManagedAnnouncement } from "@/lib/announcementManagementFirestore";
-import { readPublicAnnouncements } from "@/lib/announcementFirestore";
+import { readManagedAnnouncements } from "@/lib/announcementFirestore";
+import { manageAnnouncementLifecycle, type AnnouncementLifecycleAction } from "@/lib/announcementLifecycle";
+import { useAuthorizedPublisher } from "@/components/admin-auth-guard";
 import { setPrimaryLink } from "@/lib/publishDraft";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -16,12 +18,14 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { LineSummaryCard } from "@/components/line-summary-card";
+import { announcementTimeStates } from "@/lib/announcementLogic";
 import styles from "./manage.module.css";
 
 const clone = (item: Announcement): Announcement => structuredClone(item);
 const formatDateTime = (value: string) => new Date(value).toLocaleString("zh-TW");
 
 export default function ManagePage() {
+  const publisher = useAuthorizedPublisher();
   const [items, setItems] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -38,12 +42,13 @@ export default function ManagePage() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
+  const [managementScope, setManagementScope] = useState<"mine" | "all">(publisher.role === "systemAdmin" ? "all" : "mine");
 
   useEffect(() => {
     const saved = localStorage.getItem(MANAGE_DEPARTMENT_KEY);
     if (DEPARTMENTS.includes(saved as Department)) setDepartment(saved as Department);
     let active = true;
-    readPublicAnnouncements().then(value => { if (active) setItems(value); }).catch(() => { if (active) setLoadError(true); }).finally(() => { if (active) setLoading(false); });
+    readManagedAnnouncements().then(value => { if (active) setItems(value); }).catch(() => { if (active) setLoadError(true); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, []);
 
@@ -52,7 +57,27 @@ export default function ManagePage() {
     if (value === "全部") localStorage.removeItem(MANAGE_DEPARTMENT_KEY);
     else localStorage.setItem(MANAGE_DEPARTMENT_KEY, value);
   };
-  const visible = useMemo(() => filterManagedAnnouncements(items, department, query, audience, academicYear), [items, department, query, audience, academicYear]);
+  const manageable = useMemo(() => managementScope === "all" && publisher.role === "systemAdmin" ? items : items.filter(item => item.publisherUid === publisher.uid), [items, managementScope, publisher.role, publisher.uid]);
+  const visible = useMemo(() => filterManagedAnnouncements(manageable, department, query, audience, academicYear), [manageable, department, query, audience, academicYear]);
+
+  const runLifecycleAction = async (item: Announcement, action: AnnouncementLifecycleAction) => {
+    if (savingRef.current) return;
+    if (action === "delete") {
+      if (!window.confirm("永久刪除後無法復原。是否繼續？")) return;
+      if (!window.confirm(`再次確認永久刪除「${item.title}」？`)) return;
+    }
+    const message = action === "startChase" ? (window.prompt("催繳提醒文字（選填）", item.collectionMessage || "") ?? null) : "";
+    if (message === null) return;
+    savingRef.current = true; setSaving(true); setError(""); setNotice("");
+    try {
+      await manageAnnouncementLifecycle(item.id, action, message);
+      setItems(current => action === "delete" ? current.filter(value => value.id !== item.id) : current.map(value => value.id !== item.id ? value : action === "withdraw" ? { ...value, publicationStatus: "withdrawn" } : action === "restore" ? { ...value, publicationStatus: "published", withdrawnAt: undefined, withdrawnBy: undefined } : action === "startChase" ? { ...value, collectionStatus: "chasing", collectionMessage: message } : { ...value, collectionStatus: undefined, collectionMessage: undefined, collectionStartedAt: undefined, collectionStartedBy: undefined }));
+      setNotice(action === "withdraw" ? "公告已下架" : action === "restore" ? "公告已復原" : action === "startChase" ? "催繳已啟動" : action === "stopChase" ? "催繳已結束" : "公告已永久刪除");
+    } catch (caught) {
+      console.error("announcement lifecycle action failed", caught);
+      setError("公告操作失敗，請確認權限與網路連線後再試。資料尚未變更。");
+    } finally { savingRef.current = false; setSaving(false); }
+  };
 
   const saveEdit = async () => {
     if (!editing || savingRef.current) return;
@@ -84,17 +109,18 @@ export default function ManagePage() {
     <header><div><Link href="/publish"><ArrowLeft />返回發布頁</Link><p>{CURRENT_ACADEMIC_YEAR} 學年度 · Firestore 正式資料</p><h1>已發布公告管理</h1><span>查看既有公告、修正內容，或新增補充／提醒。</span></div></header>
     <div className={styles.shell}>
       <section className={styles.controls}>
+        {publisher.role === "systemAdmin" && <label>管理範圍<select value={managementScope} onChange={event => setManagementScope(event.target.value as "mine" | "all")}><option value="all">全校公告管理</option><option value="mine">我的公告</option></select></label>}
         <label>發布單位<select value={department} onChange={event => changeDepartment(event.target.value as Department | "全部")}><option value="全部">全部發布單位</option>{departmentGroups.map(group => <optgroup key={group.office} label={group.office}>{group.departments.map(value => <option key={value}>{value}</option>)}</optgroup>)}</select></label>
         <label>適用對象<select value={audience} onChange={event => setAudience(event.target.value as Audience | "全部")}><option value="全部">全部對象</option>{AUDIENCES.map(value => <option key={value}>{value}</option>)}</select></label>
         <label>學年度<select value={academicYear} onChange={event => setAcademicYear(Number(event.target.value))}>{FRONTEND_ACADEMIC_YEARS.map(value => <option key={value} value={value}>{value} 學年度</option>)}</select></label>
         <label className={styles.search}><Search /><Input value={query} onChange={event => setQuery(event.target.value)} placeholder="搜尋公告標題、內容或發布單位" /></label>
       </section>
-      {notice && <p className={styles.notice} role="status">{notice}</p>}
+      {notice && <p className={styles.notice} role="status">{notice}</p>}{error && !editing && !followTarget && <p className={styles.errorNotice} role="alert">{error}</p>}
       {loading ? <p className={styles.empty} aria-live="polite">公告載入中…</p> : loadError ? <p className={`${styles.empty} ${styles.errorNotice}`} role="alert">目前無法載入公告，請稍後再試。</p> : items.length === 0 ? <p className={styles.empty}>目前沒有已發布公告。</p> : <section className={styles.list} aria-label="公告列表">{visible.length === 0 ? <p className={styles.empty}>目前沒有符合的公告。</p> : visible.map(item => <article key={item.id}>
-        <div className={styles.meta}><span>{item.academicYear} 學年度</span><span>{item.department}</span><span>發布 {formatDateTime(item.publishedAt)}</span>{item.updatedAt && <span>更新 {formatDateTime(item.updatedAt)}</span>}</div>
+        <div className={styles.meta}><span>{item.academicYear} 學年度</span><span>{item.department}</span><span>{item.publicationStatus === "withdrawn" ? "已下架" : "正常發布"}</span><span>{announcementTimeStates(item, new Date()).deadline}</span>{announcementTimeStates(item, new Date()).activity !== "正常" && <span>{announcementTimeStates(item, new Date()).activity}</span>}{item.collectionStatus === "chasing" && <span>催繳中</span>}<span>發布者：{item.publisherDisplayName || item.publisherEmail || item.publisherUid || "舊公告（無 UID）"}</span><span>發布 {formatDateTime(item.publishedAt)}</span>{item.updatedAt && <span>更新 {formatDateTime(item.updatedAt)}</span>}</div>
         <h2>{item.title}</h2><p>{item.audiences.join("、") || "未設定適用對象"}</p>
         <div className={styles.flags}><span>{item.importantEvents.length ? `${item.importantEvents.length} 筆重要事項` : "無重要事項"}</span><span>{item.deadlines.length ? `${item.deadlines.length} 筆截止期限` : "無截止期限"}</span><span>{item.attachments.length ? `${item.attachments.length} 張圖片` : "無圖片"}</span><span>{item.followUps.length ? `${item.followUps.length} 筆補充／提醒` : "無補充／提醒"}</span></div>
-        <div className={styles.cardActions}><Button variant="outline" onClick={() => setViewing(item)}><Eye />查看</Button><Button variant="outline" onClick={() => { setError(""); setEditing(clone(item)); }}><Edit3 />修正公告</Button><Button variant="outline" onClick={() => { setError(""); setMessage(""); setFollowTarget(item); }}><MessageSquarePlus />新增補充／提醒</Button></div>
+        <div className={styles.cardActions}><Button variant="outline" onClick={() => setViewing(item)}><Eye />查看</Button><Button variant="outline" onClick={() => { setError(""); setEditing(clone(item)); }}><Edit3 />修正公告</Button><Button variant="outline" onClick={() => { setError(""); setMessage(""); setFollowTarget(item); }}><MessageSquarePlus />新增補充／提醒</Button>{item.publicationStatus === "withdrawn" ? <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "restore")}>復原公告</Button> : <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "withdraw")}>下架公告</Button>}{item.deadlines.length > 0 && (item.collectionStatus === "chasing" ? <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "stopChase")}>結束催繳</Button> : <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "startChase")}>啟動催繳</Button>)}{publisher.role === "systemAdmin" && <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "delete")}><Trash2 />永久刪除</Button>}</div>
       </article>)}</section>}
     </div>
 

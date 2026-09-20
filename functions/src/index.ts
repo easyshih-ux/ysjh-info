@@ -22,6 +22,66 @@ export const managePublisherAccess = onCall(
   request => managePublisherAccessHandler(request),
 );
 
+export const manageAnnouncementLifecycle = onCall(
+  { region: "asia-east1" },
+  request => manageAnnouncementLifecycleHandler(request),
+);
+
+export async function manageAnnouncementLifecycleHandler(
+  request: { auth?: { uid: string } | null; data: unknown },
+  firestore: Firestore = db,
+) {
+  const callerUid = requireCallerUid(request.auth?.uid);
+  const input = parseAnnouncementLifecycleInput(request.data);
+  const callerRef = firestore.collection("authorizedPublishers").doc(callerUid);
+  const announcementRef = firestore.collection("announcements").doc(input.announcementId);
+
+  await firestore.runTransaction(async transaction => {
+    const [callerSnapshot, announcementSnapshot] = await Promise.all([
+      transaction.get(callerRef), transaction.get(announcementRef),
+    ]);
+    const caller = callerSnapshot.data();
+    if (!callerSnapshot.exists || caller?.enabled !== true || !["publisher", "systemAdmin"].includes(String(caller.role))) {
+      throw new HttpsError("permission-denied", "目前帳號沒有公告管理權限。");
+    }
+    if (!announcementSnapshot.exists) throw new HttpsError("not-found", "找不到公告。");
+    const announcement = announcementSnapshot.data();
+    const isSystemAdmin = caller?.role === "systemAdmin";
+    if (!isSystemAdmin && announcement?.publisherUid !== callerUid) {
+      throw new HttpsError("permission-denied", "只能管理自己發布的公告。");
+    }
+    if (input.action === "delete") {
+      if (!isSystemAdmin) throw new HttpsError("permission-denied", "只有系統管理員可以永久刪除公告。");
+      transaction.delete(announcementRef);
+      return;
+    }
+    const now = FieldValue.serverTimestamp();
+    if (input.action === "withdraw") {
+      transaction.update(announcementRef, { publicationStatus: "withdrawn", withdrawnAt: now, withdrawnBy: callerUid });
+    } else if (input.action === "restore") {
+      transaction.update(announcementRef, { publicationStatus: "published", withdrawnAt: FieldValue.delete(), withdrawnBy: FieldValue.delete() });
+    } else if (input.action === "startChase") {
+      if (!Array.isArray(announcement?.deadlines) || announcement.deadlines.length === 0) {
+        throw new HttpsError("failed-precondition", "只有設定截止期限的公告可以啟動催繳。");
+      }
+      transaction.update(announcementRef, {
+        collectionStatus: "chasing",
+        collectionMessage: input.message,
+        collectionStartedAt: now,
+        collectionStartedBy: callerUid,
+      });
+    } else {
+      transaction.update(announcementRef, {
+        collectionStatus: FieldValue.delete(),
+        collectionMessage: FieldValue.delete(),
+        collectionStartedAt: FieldValue.delete(),
+        collectionStartedBy: FieldValue.delete(),
+      });
+    }
+  });
+  return { success: true, announcementId: input.announcementId, action: input.action };
+}
+
 export async function listPublisherManagementHandler(
   request: { auth?: { uid: string } | null },
   firestore: Firestore = db,
@@ -211,6 +271,25 @@ function parseManagementInput(data: unknown) {
     targetUid: data.targetUid,
     action: action as "reject" | "disable" | "enable" | "changeDepartment",
     defaultDepartment: data.defaultDepartment,
+  };
+}
+
+function parseAnnouncementLifecycleInput(data: unknown) {
+  if (!isRecord(data) || typeof data.announcementId !== "string" || !data.announcementId || data.announcementId.trim() !== data.announcementId) {
+    throw new HttpsError("invalid-argument", "公告管理資料格式不正確。");
+  }
+  const action = data.action;
+  if (!["withdraw", "restore", "startChase", "stopChase", "delete"].includes(String(action))) {
+    throw new HttpsError("invalid-argument", "不支援此公告管理動作。");
+  }
+  const expectedKeys = action === "startChase" ? 3 : 2;
+  if (Object.keys(data).length !== expectedKeys || (action === "startChase" && typeof data.message !== "string")) {
+    throw new HttpsError("invalid-argument", "公告管理欄位不正確。");
+  }
+  return {
+    announcementId: data.announcementId,
+    action: action as "withdraw" | "restore" | "startChase" | "stopChase" | "delete",
+    message: typeof data.message === "string" ? data.message.trim().slice(0, 300) : "",
   };
 }
 

@@ -35,6 +35,21 @@ test("Firestore document 轉成既有 Announcement 並使用 document ID", () =>
   assert.equal(item?.attachments[0].caption, "圖片說明");
 });
 
+test("舊公告缺少生命週期欄位仍視為正常，下架公告由公開讀取層排除", () => {
+  const legacy = announcementFromFirestore("legacy", firestoreRecord())!;
+  const withdrawn = announcementFromFirestore("withdrawn", firestoreRecord({ publicationStatus: "withdrawn" }))!;
+  assert.equal(legacy.publicationStatus, undefined);
+  assert.equal(withdrawn.publicationStatus, "withdrawn");
+  assert.match(source("lib/announcementFirestore.ts"), /announcement\.publicationStatus !== "withdrawn"/);
+});
+
+test("催繳欄位與發布狀態分開解析", () => {
+  const item = announcementFromFirestore("chasing", firestoreRecord({ publicationStatus: "published", collectionStatus: "chasing", collectionMessage: "請儘速完成" }))!;
+  assert.equal(item.publicationStatus, "published");
+  assert.equal(item.collectionStatus, "chasing");
+  assert.equal(item.collectionMessage, "請儘速完成");
+});
+
 test("publishedAt 依新到舊排序", () => {
   const older = announcementFromFirestore("older", firestoreRecord({ publishedAt: "2026-09-18T08:00:00.000Z" }))!;
   const newer = announcementFromFirestore("newer", firestoreRecord({ publishedAt: "2026-09-19T08:00:00.000Z" }))!;

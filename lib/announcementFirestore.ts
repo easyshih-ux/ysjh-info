@@ -51,6 +51,16 @@ export function announcementFromFirestore(id: string, value: unknown): Announcem
 
   return {
     id,
+    ...(isNonEmptyString(value.publisherUid) ? { publisherUid: value.publisherUid } : {}),
+    ...(isNonEmptyString(value.publisherEmail) ? { publisherEmail: value.publisherEmail } : {}),
+    ...(isNonEmptyString(value.publisherDisplayName) ? { publisherDisplayName: value.publisherDisplayName } : {}),
+    ...(value.publicationStatus === "withdrawn" ? { publicationStatus: "withdrawn" as const } : value.publicationStatus === "published" ? { publicationStatus: "published" as const } : {}),
+    ...(isDateTime(value.withdrawnAt) ? { withdrawnAt: value.withdrawnAt } : {}),
+    ...(isNonEmptyString(value.withdrawnBy) ? { withdrawnBy: value.withdrawnBy } : {}),
+    ...(value.collectionStatus === "chasing" ? { collectionStatus: "chasing" as const } : {}),
+    ...(isString(value.collectionMessage) ? { collectionMessage: value.collectionMessage } : {}),
+    ...(isDateTime(value.collectionStartedAt) ? { collectionStartedAt: value.collectionStartedAt } : {}),
+    ...(isNonEmptyString(value.collectionStartedBy) ? { collectionStartedBy: value.collectionStartedBy } : {}),
     academicYear: value.academicYear as number,
     publishedAt: value.publishedAt,
     ...(isNonEmptyString(value.updatedAt) ? { updatedAt: value.updatedAt } : {}),
@@ -74,7 +84,15 @@ export async function readPublicAnnouncements(): Promise<Announcement[]> {
   const snapshot = await getDocs(collection(getFirestoreClient(), ANNOUNCEMENTS_COLLECTION));
   const announcements = snapshot.docs.flatMap(document => {
     const announcement = announcementFromFirestore(document.id, document.data());
-    return announcement ? [announcement] : [];
+    return announcement && announcement.publicationStatus !== "withdrawn" ? [announcement] : [];
   });
   return sortAnnouncementsNewestFirst(announcements);
+}
+
+export async function readManagedAnnouncements(): Promise<Announcement[]> {
+  const snapshot = await getDocs(collection(getFirestoreClient(), ANNOUNCEMENTS_COLLECTION));
+  return sortAnnouncementsNewestFirst(snapshot.docs.flatMap(document => {
+    const announcement = announcementFromFirestore(document.id, document.data());
+    return announcement ? [announcement] : [];
+  }));
 }

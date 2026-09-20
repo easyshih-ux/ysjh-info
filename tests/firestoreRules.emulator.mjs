@@ -79,8 +79,8 @@ function requestData(email = VERIFIED_EMAIL, overrides = {}) {
   };
 }
 
-function announcementData(title = "Emulator announcement") {
-  return { title, content: "Rules integration test only" };
+function announcementData(title = "Emulator announcement", publisherUid = "userA") {
+  return { title, content: "Rules integration test only", publisherUid, publicationStatus: "published" };
 }
 
 test("01 未登入者不能 get publisher profile", async () => {
@@ -236,7 +236,7 @@ test("29 enabled publisher 可以 update announcement", async () => {
 
 test("30 enabled systemAdmin 可以 create announcement", async () => {
   await seed("authorizedPublishers/adminA", profile("systemAdmin", true));
-  await assertSucceeds(setDoc(doc(userDb("adminA"), "announcements/newA"), announcementData()));
+  await assertSucceeds(setDoc(doc(userDb("adminA"), "announcements/newA"), announcementData("Emulator announcement", "adminA")));
 });
 
 test("31 enabled systemAdmin 可以 update announcement", async () => {
@@ -287,6 +287,29 @@ test("37 未定義 collection 維持 default deny", async () => {
   const database = userDb("adminA");
   await assertFails(getDoc(doc(database, "privateData/secretA")));
   await assertFails(setDoc(doc(database, "privateData/secretB"), { secret: true }));
+});
+
+test("publisher 只能更新自己 UID 的公告，同單位不同 UID 也不可", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await seed("announcements/own", announcementData("Own", "userA"));
+  await seed("announcements/other", announcementData("Other", "userB"));
+  await assertSucceeds(updateDoc(doc(userDb("userA"), "announcements/own"), { title: "Updated" }));
+  await assertFails(updateDoc(doc(userDb("userA"), "announcements/other"), { title: "Blocked" }));
+});
+
+test("systemAdmin 可以更新任一發布者公告", async () => {
+  await seed("authorizedPublishers/adminA", profile("systemAdmin", true));
+  await seed("announcements/other", announcementData("Other", "userB"));
+  await assertSucceeds(updateDoc(doc(userDb("adminA"), "announcements/other"), { title: "Admin updated" }));
+});
+
+test("browser client 不得竄改作者或生命週期欄位", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await seed("announcements/own", announcementData("Own", "userA"));
+  const reference = doc(userDb("userA"), "announcements/own");
+  await assertFails(updateDoc(reference, { publisherUid: "userB" }));
+  await assertFails(updateDoc(reference, { publicationStatus: "withdrawn" }));
+  await assertFails(updateDoc(reference, { collectionStatus: "chasing" }));
 });
 
 test("38 enabled systemAdmin 可以 list publisherRequests", async () => {

@@ -95,7 +95,11 @@ function PublishForm() {
     setPublishStage(draft.attachments.length > 0 ? "processing-images" : "publishing");
     setPublishError("");
     try {
-      const announcement = await publishAnnouncement(draft, CURRENT_ACADEMIC_YEAR, setPublishStage);
+      const announcement = await publishAnnouncement(draft, CURRENT_ACADEMIC_YEAR, setPublishStage, {
+        uid: publisher.uid,
+        email: publisher.email,
+        displayName: publisher.displayName,
+      });
       setPreviewOpen(false);
       setPublishedAnnouncement(announcement);
     } catch (error) {

@@ -47,8 +47,15 @@ function calendarDate(value: string) {
 }
 
 export function weekBounds(now: Date) {
-  const day = now.getDay() || 7;
-  const start = localDate(now); start.setDate(start.getDate() - day + 1);
+  const day = now.getDay();
+  const start = localDate(now); start.setDate(start.getDate() - day);
+  const end = new Date(start); end.setDate(end.getDate() + 6); end.setHours(23, 59, 59, 999);
+  return { start, end };
+}
+
+export function nextWeekBounds(now: Date) {
+  const current = weekBounds(now);
+  const start = new Date(current.start); start.setDate(start.getDate() + 7);
   const end = new Date(start); end.setDate(end.getDate() + 6); end.setHours(23, 59, 59, 999);
   return { start, end };
 }
@@ -57,8 +64,23 @@ export function weeklyEvents(announcements: Announcement[], now: Date) {
   const { start, end } = weekBounds(now);
   const today = localDate(now);
   return announcements.flatMap(a => a.importantEvents.map(event => ({ ...event, announcement: a })))
-    .filter(item => { const d = localDate(item.date); return d >= today && d >= start && d <= end; })
+    .filter(item => {
+      const eventStart = localDate(item.date);
+      const eventEnd = localDate(item.endDate || item.date);
+      return eventStart <= end && eventEnd >= start && eventEnd >= today;
+    })
     .sort((a, b) => a.date.localeCompare(b.date) || (a.time || "99:99").localeCompare(b.time || "99:99"));
+}
+
+export function nextWeekEvents(announcements: Announcement[], now: Date) {
+  const { start, end } = nextWeekBounds(now);
+  return announcements.flatMap(a => a.importantEvents.map(event => ({ ...event, announcement: a })))
+    .filter(item => { const eventStart = localDate(item.date); return eventStart >= start && eventStart <= end; })
+    .sort((a, b) => a.date.localeCompare(b.date) || (a.time || "99:99").localeCompare(b.time || "99:99"));
+}
+
+export function chasingAnnouncements(announcements: Announcement[]) {
+  return announcements.filter(item => item.collectionStatus === "chasing" && item.publicationStatus !== "withdrawn");
 }
 
 export function upcomingDeadlines(announcements: Announcement[], now: Date) {
@@ -109,6 +131,17 @@ export function deadlineUrgency(date: string, now: Date): "red" | "orange" | "no
   if (days >= 1 && days <= 2) return "red";
   if (days >= 3 && days <= 5) return "orange";
   return "normal";
+}
+
+export function announcementTimeStates(announcement: Announcement, now: Date) {
+  const today = localDate(now);
+  const deadlineDays = announcement.deadlines.map(item => daysUntil(item.date, now));
+  const deadline = deadlineDays.length === 0 ? "正常" : deadlineDays.some(days => days >= 0 && days <= 5)
+    ? "即將截止"
+    : deadlineDays.every(days => days < 0) ? "已截止" : "正常";
+  const ongoing = announcement.importantEvents.some(event => localDate(event.date) <= today && localDate(event.endDate || event.date) >= today);
+  const ended = announcement.importantEvents.length > 0 && announcement.importantEvents.every(event => localDate(event.endDate || event.date) < today);
+  return { deadline, activity: ongoing ? "活動進行中" : ended ? "活動已結束" : "正常" } as const;
 }
 
 function itemDateKey(date: string, time?: string) {

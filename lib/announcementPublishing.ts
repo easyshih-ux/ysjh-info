@@ -20,6 +20,7 @@ export function createFirestoreAnnouncement(
   academicYear: number,
   publishedAt: string,
   attachments: Attachment[] = [],
+  publisher?: { uid: string; email: string; displayName: string | null },
 ): FirestoreAnnouncement {
   const announcement: Announcement = publishDraftToAnnouncement(
     draft,
@@ -33,6 +34,12 @@ export function createFirestoreAnnouncement(
     ...document,
     updatedAt: publishedAt,
     attachments,
+    ...(publisher ? {
+      publisherUid: publisher.uid,
+      publisherEmail: publisher.email,
+      ...(publisher.displayName ? { publisherDisplayName: publisher.displayName } : {}),
+      publicationStatus: "published" as const,
+    } : {}),
   };
 }
 
@@ -44,6 +51,7 @@ export async function publishAnnouncement(
   draft: BasicAnnouncementDraft,
   academicYear: number,
   onStage?: (stage: PublishStage) => void,
+  publisher?: { uid: string; email: string; displayName: string | null },
 ) {
   const database = getFirestoreClient();
   const announcementReference = doc(collection(database, ANNOUNCEMENTS_COLLECTION));
@@ -64,7 +72,7 @@ export async function publishAnnouncement(
     }
 
     onStage?.("publishing");
-    const document = createFirestoreAnnouncement(draft, academicYear, publishedAt, attachments);
+    const document = createFirestoreAnnouncement(draft, academicYear, publishedAt, attachments, publisher);
     await setDoc(announcementReference, document);
     return { id: announcementReference.id, ...document } satisfies Announcement;
   } catch (error) {

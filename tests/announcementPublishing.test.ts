@@ -19,6 +19,14 @@ test("Firestore 文件使用既有 schema 且初次發布時間一致", () => {
   for (const field of ["id", "deadline", "submissionLink", "relatedLink"]) assert.equal(field in document, false);
 });
 
+test("正式發布寫入 Firebase UID 作者與獨立發布狀態", () => {
+  const document = createFirestoreAnnouncement(draft(), 115, "2026-09-19T10:00:00.000Z", [], { uid: "publisher-uid", email: "publisher@example.test", displayName: "Publisher" });
+  assert.equal(document.publisherUid, "publisher-uid");
+  assert.equal(document.publisherEmail, "publisher@example.test");
+  assert.equal(document.publicationStatus, "published");
+  assert.equal(document.collectionStatus, undefined);
+});
+
 test("Storage path 與預先產生的 Firestore document ID 一致", () => {
   assert.equal(announcementImagePath("announcement-123", "image-456"), "announcements/announcement-123/image-456.webp");
 });
