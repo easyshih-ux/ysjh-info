@@ -87,7 +87,10 @@ test("預覽 Modal 有固定操作、防重複送出與分階段狀態", () => {
 test("預覽與確認發布按鈕具備獨立的 enabled 與 disabled 對比樣式", () => {
   const page = source("app/publish/page.tsx");
   const styles = source("app/publish/publish.module.css");
-  const buttonStyles = styles.slice(styles.indexOf(".previewButton"));
+  const buttonStyles = [...styles.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .filter(([, selectors]) => selectors.split(",").some(selector => /^\.(previewButton|publishButton)(?::|$)/.test(selector.trim())))
+    .map(match => match[0])
+    .join("\n");
   assert.match(page, /className=\{styles\.previewButton\}[^>]*type="submit"/);
   assert.match(page, /className=\{styles\.publishButton\}[^>]*disabled=\{publishing\}/);
   assert.match(styles, /\.previewButton\{[^}]*#dceeff[^}]*#17324d/);
