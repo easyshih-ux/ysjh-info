@@ -1,4 +1,7 @@
 import { collection, getDocs, type Timestamp } from "firebase/firestore";
+import { getFunctions, httpsCallable } from "firebase/functions";
+import type { Department } from "./departments.ts";
+import { getFirebaseApp } from "./firebaseClient.ts";
 import {
   getFirestoreClient,
   PUBLISHER_REQUESTS_COLLECTION,
@@ -10,6 +13,18 @@ export interface PendingPublisherRequest {
   displayName: string | null;
   requestedAt: Timestamp;
   status: "pending";
+}
+
+export async function approvePublisherRequest(
+  targetUid: string,
+  defaultDepartment: Department,
+) {
+  const functions = getFunctions(getFirebaseApp(), "asia-east1");
+  const approve = httpsCallable<
+    { targetUid: string; defaultDepartment: Department },
+    { approved: true; targetUid: string }
+  >(functions, "approvePublisherRequest");
+  await approve({ targetUid, defaultDepartment });
 }
 
 export async function listPendingPublisherRequests(): Promise<PendingPublisherRequest[]> {

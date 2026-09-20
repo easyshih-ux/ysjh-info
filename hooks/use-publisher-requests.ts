@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   listPendingPublisherRequests,
   type PendingPublisherRequest,
@@ -11,24 +11,22 @@ export type PublisherRequestsState =
   | { status: "ready"; requests: PendingPublisherRequest[] }
   | { status: "error"; requests: [] };
 
-export function usePublisherRequests(enabled: boolean): PublisherRequestsState {
+export function usePublisherRequests(enabled: boolean) {
   const [state, setState] = useState<PublisherRequestsState>({ status: "loading", requests: [] });
 
-  useEffect(() => {
+  const refresh = useCallback(async () => {
     if (!enabled) return;
-
-    let active = true;
     setState({ status: "loading", requests: [] });
-    listPendingPublisherRequests()
-      .then(requests => {
-        if (active) setState({ status: "ready", requests });
-      })
-      .catch(() => {
-        if (active) setState({ status: "error", requests: [] });
-      });
-
-    return () => { active = false; };
+    try {
+      setState({ status: "ready", requests: await listPendingPublisherRequests() });
+    } catch {
+      setState({ status: "error", requests: [] });
+    }
   }, [enabled]);
 
-  return state;
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  return { ...state, refresh };
 }
