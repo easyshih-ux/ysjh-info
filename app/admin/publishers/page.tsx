@@ -5,7 +5,7 @@ import { ArrowLeft, ChevronDown, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { AdminAuthGuard, useAuthorizedPublisher } from "@/components/admin-auth-guard";
 import { usePublisherRequests } from "@/hooks/use-publisher-requests";
-import { departmentGroups, isDepartment, standaloneDepartments, type Department } from "@/lib/departments";
+import { OTHER_DEPARTMENT_OPTION, departmentGroups, isFixedDepartment, resolveDepartmentSelection, standaloneDepartments, type Department } from "@/lib/departments";
 import { approvePublisherRequest, changePublisherDepartment, rejectPublisherRequest, setPublisherEnabled } from "@/lib/publisherRequestManagement";
 import styles from "./publishers.module.css";
 
@@ -18,6 +18,7 @@ function PublisherRequestList() {
   const isSystemAdmin = publisher.role === "systemAdmin";
   const state = usePublisherRequests(isSystemAdmin);
   const [departments, setDepartments] = useState<Record<string, Department | "">>({});
+  const [customDepartments, setCustomDepartments] = useState<Record<string, string>>({});
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState("");
   const [approvalError, setApprovalError] = useState("");
@@ -33,9 +34,11 @@ function PublisherRequestList() {
   }, [publisherQuery, publisherStatus, state.publishers]);
 
   async function handleApprove(targetUid: string) {
-    const defaultDepartment = departments[targetUid];
-    if (busyAction || !isDepartment(defaultDepartment)) {
-      setApprovalError("請先選擇有效的正式發布單位。");
+    const request = state.requests.find(item => item.uid === targetUid);
+    const selection = departments[targetUid] ?? request?.requestedDepartment ?? "";
+    const defaultDepartment = resolveDepartmentSelection(selection, customDepartments[targetUid]);
+    if (busyAction || !defaultDepartment) {
+      setApprovalError(selection === OTHER_DEPARTMENT_OPTION ? "請填寫有效的實際發布單位名稱。" : "請先選擇有效的發布單位。");
       return;
     }
     setBusyAction(`approve:${targetUid}`);
@@ -55,9 +58,12 @@ function PublisherRequestList() {
 
   async function runManagementAction(targetUid: string, action: "reject" | "enable" | "disable" | "department") {
     if (busyAction) return;
-    const department = departments[targetUid];
-    if (action === "department" && !isDepartment(department)) {
-      setApprovalError("請選擇有效的正式發布單位。");
+    const publisher = state.publishers.find(item => item.uid === targetUid);
+    const current = publisher?.defaultDepartment ?? "";
+    const selection = departments[targetUid] ?? (isFixedDepartment(current) ? current : current ? OTHER_DEPARTMENT_OPTION : "");
+    const department = resolveDepartmentSelection(selection, customDepartments[targetUid] ?? (isFixedDepartment(current) ? "" : current));
+    if (action === "department" && !department) {
+      setApprovalError(selection === OTHER_DEPARTMENT_OPTION ? "請填寫有效的實際發布單位名稱。" : "請選擇有效的發布單位。");
       return;
     }
     setBusyAction(`${action}:${targetUid}`);
@@ -110,7 +116,7 @@ function PublisherRequestList() {
           <label>
             發布單位
             <select
-              value={departments[request.uid] ?? ""}
+              value={departments[request.uid] ?? request.requestedDepartment ?? ""}
               onChange={event => setDepartments(current => ({
                 ...current,
                 [request.uid]: event.target.value as Department,
@@ -125,12 +131,14 @@ function PublisherRequestList() {
                   <option key={department} value={department}>　{department}</option>
                 )),
               ])}
+              <option value={OTHER_DEPARTMENT_OPTION}>{OTHER_DEPARTMENT_OPTION}</option>
             </select>
           </label>
+          {(departments[request.uid] ?? request.requestedDepartment) === OTHER_DEPARTMENT_OPTION && <label>實際發布單位名稱<input value={customDepartments[request.uid] ?? ""} maxLength={30} onChange={event => setCustomDepartments(current => ({ ...current, [request.uid]: event.target.value }))} disabled={busyAction !== null} placeholder="例如：家長會" /></label>}
           <button
             type="button"
             onClick={() => void handleApprove(request.uid)}
-            disabled={busyAction !== null || !departments[request.uid]}
+            disabled={busyAction !== null || !resolveDepartmentSelection(departments[request.uid] ?? request.requestedDepartment, customDepartments[request.uid])}
           >{busyAction === `approve:${request.uid}` ? "核准處理中…" : "核准發布權限"}</button>
           <button type="button" className={styles.secondaryButton} onClick={() => void runManagementAction(request.uid, "reject")} disabled={busyAction !== null}>拒絕申請</button>
         </div>
@@ -149,12 +157,14 @@ function PublisherRequestList() {
         <summary><div className={styles.identity}><h3>{item.displayName?.trim() || "未提供名稱"}</h3><p>{item.defaultDepartment || "尚未設定單位"} · {item.role === "systemAdmin" ? "系統管理員" : item.enabled ? "啟用中" : "已停用"}</p><small>{item.email || "帳號 email 尚未同步"}</small></div><ChevronDown aria-hidden="true" /></summary>
         <div className={styles.publisherActions}><small>UID：{item.uid}</small><div className={styles.approval}>
           <span>{item.role === "systemAdmin" ? "系統管理員" : item.enabled ? "已啟用" : "已停用"}</span>
-          <label>發布單位<select value={departments[item.uid] ?? item.defaultDepartment ?? ""} onChange={event => setDepartments(current => ({ ...current, [item.uid]: event.target.value as Department }))} disabled={busyAction !== null || item.role === "systemAdmin"}>
+          <label>發布單位<select value={departments[item.uid] ?? (isFixedDepartment(item.defaultDepartment) ? item.defaultDepartment : item.defaultDepartment ? OTHER_DEPARTMENT_OPTION : "")} onChange={event => setDepartments(current => ({ ...current, [item.uid]: event.target.value as Department }))} disabled={busyAction !== null || item.role === "systemAdmin"}>
             <option value="" disabled>請選擇發布單位</option>
             {standaloneDepartments.map(department => <option key={department} value={department}>{department}</option>)}
             {departmentGroups.flatMap(group => [<option key={group.office} value={group.office}>【{group.office}】</option>, ...group.departments.slice(1).map(department => <option key={department} value={department}>　{department}</option>)])}
+            <option value={OTHER_DEPARTMENT_OPTION}>{OTHER_DEPARTMENT_OPTION}</option>
           </select></label>
-          {item.role === "publisher" && <><button type="button" onClick={() => void runManagementAction(item.uid, "department")} disabled={busyAction !== null || !isDepartment(departments[item.uid] ?? item.defaultDepartment)}>儲存單位</button><button type="button" className={styles.secondaryButton} onClick={() => void runManagementAction(item.uid, item.enabled ? "disable" : "enable")} disabled={busyAction !== null}>{item.enabled ? "停用發布權限" : "重新啟用"}</button></>}
+          {(departments[item.uid] ?? (isFixedDepartment(item.defaultDepartment) ? item.defaultDepartment : OTHER_DEPARTMENT_OPTION)) === OTHER_DEPARTMENT_OPTION && item.role === "publisher" && <label>實際發布單位名稱<input value={customDepartments[item.uid] ?? (isFixedDepartment(item.defaultDepartment) ? "" : item.defaultDepartment ?? "")} maxLength={30} onChange={event => setCustomDepartments(current => ({ ...current, [item.uid]: event.target.value }))} disabled={busyAction !== null} /></label>}
+          {item.role === "publisher" && <><button type="button" onClick={() => void runManagementAction(item.uid, "department")} disabled={busyAction !== null || !resolveDepartmentSelection(departments[item.uid] ?? (isFixedDepartment(item.defaultDepartment) ? item.defaultDepartment : OTHER_DEPARTMENT_OPTION), customDepartments[item.uid] ?? (isFixedDepartment(item.defaultDepartment) ? "" : item.defaultDepartment))}>儲存單位</button><button type="button" className={styles.secondaryButton} onClick={() => void runManagementAction(item.uid, item.enabled ? "disable" : "enable")} disabled={busyAction !== null}>{item.enabled ? "停用發布權限" : "重新啟用"}</button></>}
         </div></div>
       </details>)}
     </div>}

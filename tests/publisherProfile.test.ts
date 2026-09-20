@@ -154,10 +154,10 @@ test("未獲 legacy allowlist 授權的舊格式文件仍可進入申請流程�
   assert.doesNotMatch(guard, /invalid-profile" \|\| authorization\.reason === "legacy-not-allowed/);
 });
 
-test("申請只寫入 Rules 允許的五個欄位並使用 serverTimestamp", () => {
+test("申請只寫入 Rules 允許欄位、申請單位並使用 serverTimestamp", () => {
   const repository = source("lib/publisherRequest.ts");
   assert.match(repository, /PUBLISHER_REQUESTS_COLLECTION, uid/);
-  assert.match(repository, /email,\s*displayName,\s*requestedAt: serverTimestamp\(\),\s*lastSeenAt: serverTimestamp\(\),\s*status: "pending"/s);
+  assert.match(repository, /email,\s*displayName,\s*requestedAt: serverTimestamp\(\),\s*lastSeenAt: serverTimestamp\(\),\s*status: "pending",\s*requestedDepartment/s);
   assert.doesNotMatch(repository, /\b(role|enabled|approvedBy|defaultDepartment)\s*:/);
 });
 

@@ -35,11 +35,11 @@ test("發布者管理資料層透過 asia-east1 callable，不由 browser 直寫
   assert.doesNotMatch(repository, /setDoc|updateDoc|deleteDoc/);
 });
 
-test("pending 申請使用既有發布單位並提供防重複核准狀態", () => {
+test("pending 申請使用22個固定單位與其他並提供防重複核准狀態", () => {
   const page = source("app/admin/publishers/page.tsx");
-  assert.match(page, /import \{ departmentGroups, isDepartment, standaloneDepartments, type Department \} from "@\/lib\/departments"/);
   assert.match(page, /standaloneDepartments\.map/);
   assert.match(page, /departmentGroups\.flatMap/);
+  assert.match(page, /OTHER_DEPARTMENT_OPTION/);
   assert.match(page, /核准發布權限/);
   assert.match(page, /核准處理中…/);
   assert.match(page, /disabled=\{busyAction !== null/);
@@ -51,12 +51,12 @@ test("下拉顯示層級文字但 option value 維持正式單位名稱", () => 
   assert.match(page, /value=\{department\}>　\{department\}/);
 });
 
-test("發布單位初始未選擇，未選時不得核准", () => {
+test("發布單位沿用申請選擇，其他未填實際名稱時不得核准", () => {
   const page = source("app/admin/publishers/page.tsx");
-  assert.match(page, /value=\{departments\[request\.uid\] \?\? ""\}/);
+  assert.match(page, /request\.requestedDepartment/);
   assert.match(page, /<option value="" disabled>請選擇發布單位<\/option>/);
-  assert.match(page, /!isDepartment\(defaultDepartment\)/);
-  assert.match(page, /disabled=\{busyAction !== null \|\| !departments\[request\.uid\]\}/);
+  assert.match(page, /實際發布單位名稱/);
+  assert.match(page, /resolveDepartmentSelection/);
   assert.doesNotMatch(page, /departments\[targetUid\] \?\? DEPARTMENTS\[0\]/);
 });
 
@@ -91,13 +91,13 @@ test("待審申請可拒絕且操作後刷新清單", () => {
   assert.match(page, /申請已拒絕。/);
 });
 
-test("現有 publisher 可停用、重新啟用與更換正式發布單位", () => {
+test("現有 publisher 可停用、重新啟用並更換固定或其他單位", () => {
   const page = source("app/admin/publishers/page.tsx");
   const repository = source("lib/publisherRequestManagement.ts");
   assert.match(page, /停用發布權限/);
   assert.match(page, /重新啟用/);
   assert.match(page, /儲存單位/);
-  assert.match(page, /isDepartment\(department\)/);
+  assert.match(page, /resolveDepartmentSelection/);
   assert.match(repository, /setPublisherEnabled/);
   assert.match(repository, /changePublisherDepartment/);
   assert.match(repository, /if \(!isDepartment\(defaultDepartment\)\)/);

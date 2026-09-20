@@ -35,6 +35,22 @@ service cloud.firestore {
       ]);
     }
 
+    function isFixedDepartment(value) {
+      return value in [
+        '校長', '人事室', '會計室',
+        '教務處', '教學組', '註冊組', '資訊組', '設備組',
+        '學務處', '生教組', '訓育組', '衛生組', '體育組', '健康中心',
+        '總務處', '出納組', '文書組', '事務組',
+        '輔導處', '輔導組', '特教組', '生涯組'
+      ];
+    }
+
+    function canUseAnnouncementDepartment() {
+      return isEnabledSystemAdmin()
+        || isFixedDepartment(request.resource.data.department)
+        || request.resource.data.department == get(/databases/$(database)/documents/authorizedPublishers/$(request.auth.uid)).data.defaultDepartment;
+    }
+
     function isOwnVerifiedPublisherRequest(publisherUid) {
       return request.auth != null
         && request.auth.uid == publisherUid
@@ -55,22 +71,29 @@ service cloud.firestore {
           'displayName',
           'requestedAt',
           'lastSeenAt',
-          'status'
+          'status',
+          'requestedDepartment'
         ])
         && request.resource.data.email == request.auth.token.email
         && (request.resource.data.displayName == null
           || request.resource.data.displayName is string)
         && request.resource.data.requestedAt == request.time
         && request.resource.data.lastSeenAt == request.time
-        && request.resource.data.status == 'pending';
+        && request.resource.data.status == 'pending'
+        && (!request.resource.data.keys().hasAny(['requestedDepartment'])
+          || isFixedDepartment(request.resource.data.requestedDepartment)
+          || request.resource.data.requestedDepartment == '其他');
     }
 
     match /announcements/{announcementId} {
       allow read: if true;
       allow create: if isAuthorizedPublisher()
         && request.resource.data.publisherUid == request.auth.uid
-        && request.resource.data.publicationStatus == 'published';
-      allow update: if canManageAnnouncement() && keepsLifecycleFields();
+        && request.resource.data.publicationStatus == 'published'
+        && canUseAnnouncementDepartment();
+      allow update: if canManageAnnouncement()
+        && keepsLifecycleFields()
+        && canUseAnnouncementDepartment();
       allow delete: if false;
     }
 

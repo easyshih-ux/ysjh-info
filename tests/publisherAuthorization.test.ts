@@ -24,7 +24,7 @@ test("待授權狀態固定為 pending、approved、rejected", () => {
   assert.equal(isPublisherRequestStatus("enabled"), false);
 });
 
-test("PublisherProfile 核心欄位驗證角色、啟用狀態與正式發布單位", () => {
+test("PublisherProfile 核心欄位接受固定或 systemAdmin 設定的有效自訂單位", () => {
   assert.equal(hasValidPublisherProfileCore({
     email: "publisher@ysjh.ntpc.edu.tw",
     role: "publisher",
@@ -35,8 +35,9 @@ test("PublisherProfile 核心欄位驗證角色、啟用狀態與正式發布單
     email: "admin@ysjh.ntpc.edu.tw",
     role: "systemAdmin",
     enabled: true,
-    defaultDepartment: "不存在的單位" as "設備組",
-  }), false);
+    defaultDepartment: "家長會",
+  }), true);
+  assert.equal(hasValidPublisherProfileCore({ email: "admin@ysjh.ntpc.edu.tw", role: "publisher", enabled: true, defaultDepartment: "其他" }), false);
 });
 
 test("announcements 只接受已登入、啟用且具有正式角色的 UID profile", () => {
@@ -51,7 +52,8 @@ test("announcements 只接受已登入、啟用且具有正式角色的 UID prof
   assert.match(announcementMatch, /allow create: if isAuthorizedPublisher\(\)/);
   assert.match(announcementMatch, /request\.resource\.data\.publisherUid == request\.auth\.uid/);
   assert.match(announcementMatch, /request\.resource\.data\.publicationStatus == 'published'/);
-  assert.match(announcementMatch, /allow update: if canManageAnnouncement\(\) && keepsLifecycleFields\(\)/);
+  assert.match(announcementMatch, /canUseAnnouncementDepartment\(\)/);
+  assert.match(announcementMatch, /allow update: if canManageAnnouncement\(\)[\s\S]*keepsLifecycleFields\(\)[\s\S]*canUseAnnouncementDepartment\(\)/);
   const managementFunction = rules.match(/function canManageAnnouncement\(\) \{([\s\S]*?)\n    \}/)?.[1] ?? "";
   const lifecycleFunction = rules.match(/function keepsLifecycleFields\(\) \{([\s\S]*?)\n    \}/)?.[1] ?? "";
   assert.match(managementFunction, /isEnabledSystemAdmin\(\)/);
@@ -60,6 +62,9 @@ test("announcements 只接受已登入、啟用且具有正式角色的 UID prof
   assert.match(lifecycleFunction, /'publisherUid'/);
   assert.match(lifecycleFunction, /'publicationStatus'/);
   assert.match(lifecycleFunction, /'collectionStatus'/);
+  const departmentFunction = rules.match(/function canUseAnnouncementDepartment\(\) \{([\s\S]*?)\n    \}/)?.[1] ?? "";
+  assert.match(departmentFunction, /isFixedDepartment\(request\.resource\.data\.department\)/);
+  assert.match(departmentFunction, /authorizedPublishers\/\$\(request\.auth\.uid\).*defaultDepartment/s);
   assert.doesNotMatch(announcementMatch, /publisherRequests/);
   assert.match(announcementMatch, /allow delete: if false/);
 });
@@ -98,6 +103,8 @@ test("publisherRequest 僅允許既定欄位與 pending 狀態", () => {
   assert.match(validationFunction, /'requestedAt'/);
   assert.match(validationFunction, /'lastSeenAt'/);
   assert.match(validationFunction, /'status'/);
+  assert.match(validationFunction, /'requestedDepartment'/);
+  assert.match(validationFunction, /requestedDepartment == '其他'/);
   assert.doesNotMatch(validationFunction, /'role'/);
   assert.doesNotMatch(validationFunction, /'enabled'/);
   assert.doesNotMatch(validationFunction, /'approvedBy'/);

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Firestore } from "firebase-admin/firestore";
 import { approvePublisherRequestHandler, listPublisherManagementHandler, managePublisherAccessHandler } from "../src/index.ts";
+import { DEPARTMENTS } from "../src/departments.ts";
 
 type DocumentData = Record<string, unknown>;
 
@@ -77,6 +78,7 @@ const pending = () => ({
   requestedAt: "original-requested-at",
   lastSeenAt: "original-last-seen-at",
   status: "pending",
+  requestedDepartment: "設備組",
 });
 
 async function rejectsWithCode(promise: Promise<unknown>, code: string) {
@@ -148,10 +150,17 @@ test("校長是合法 defaultDepartment", async () => {
   assert.equal(store.get("authorizedPublishers/target")?.defaultDepartment, "校長");
 });
 
-test("非法 defaultDepartment 被拒絕", async () => {
+test("Functions 固定發布單位同步為22個並包含人事室與會計室", () => {
+  assert.equal(DEPARTMENTS.length, 22);
+  assert.equal(new Set(DEPARTMENTS).size, 22);
+  assert.ok(DEPARTMENTS.includes("人事室"));
+  assert.ok(DEPARTMENTS.includes("會計室"));
+});
+
+test("保留字不能作為實際 defaultDepartment", async () => {
   const store = createStore();
   await rejectsWithCode(
-    approvePublisherRequestHandler(request("admin", { defaultDepartment: "不存在單位" }), store.firestore),
+    approvePublisherRequestHandler(request("admin", { defaultDepartment: "其他" }), store.firestore),
     "invalid-argument",
   );
 });
@@ -247,11 +256,24 @@ test("停用與重新啟用維持既有角色及帳號資料", async () => {
   assert.equal(updated?.displayName, "Changed");
 });
 
-test("更換發布單位只接受正式 20 單位", async () => {
+test("更換發布單位接受22個固定單位與有效自訂名稱", async () => {
   const store = createStore({ "authorizedPublishers/admin": admin(), "authorizedPublishers/target": { role: "publisher", enabled: true, defaultDepartment: "設備組" } });
   await managePublisherAccessHandler(managementRequest("changeDepartment", { defaultDepartment: "校長" }), store.firestore);
   assert.equal(store.get("authorizedPublishers/target")?.defaultDepartment, "校長");
-  await rejectsWithCode(managePublisherAccessHandler(managementRequest("changeDepartment", { defaultDepartment: "任意單位" }), store.firestore), "invalid-argument");
+  await managePublisherAccessHandler(managementRequest("changeDepartment", { defaultDepartment: " 家長會 " }), store.firestore).then(() => assert.fail("未 trim 的自訂名稱不應通過"), error => assert.equal(error.code, "invalid-argument"));
+  await managePublisherAccessHandler(managementRequest("changeDepartment", { defaultDepartment: "家長會" }), store.firestore);
+  assert.equal(store.get("authorizedPublishers/target")?.defaultDepartment, "家長會");
+});
+
+test("只有申請其他時可核准自訂單位，且空白、保留字與過長名稱被拒絕", async () => {
+  for (const value of [" ", "其他", "甲".repeat(31)]) {
+    await rejectsWithCode(approvePublisherRequestHandler(request("admin", { defaultDepartment: value }), createStore().firestore), "invalid-argument");
+  }
+  const fixedRequest = createStore({ "authorizedPublishers/admin": admin(), "publisherRequests/target": pending() });
+  await rejectsWithCode(approvePublisherRequestHandler(request("admin", { defaultDepartment: "家長會" }), fixedRequest.firestore), "failed-precondition");
+  const otherRequest = createStore({ "authorizedPublishers/admin": admin(), "publisherRequests/target": { ...pending(), requestedDepartment: "其他" } });
+  await approvePublisherRequestHandler(request("admin", { defaultDepartment: "家長會" }), otherRequest.firestore);
+  assert.equal(otherRequest.get("authorizedPublishers/target")?.defaultDepartment, "家長會");
 });
 
 test("發布者管理不能變更 systemAdmin", async () => {

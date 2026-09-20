@@ -39,12 +39,12 @@ export function usePublisherRequest({
     return () => { active = false; };
   }, [enabled, uid]);
 
-  const submit = useCallback(async () => {
+  const submit = useCallback(async (requestedDepartment: string) => {
     if (!uid || !email || !enabled || state.submitting || state.status !== "not-found") return;
 
     setState({ status: "not-found", uid, submitting: true });
     try {
-      await createPublisherRequest({ uid, email, displayName: displayName ?? null });
+      await createPublisherRequest({ uid, email, displayName: displayName ?? null, requestedDepartment });
       setState({ status: "pending", uid, submitting: false });
     } catch {
       setState({ status: "error", uid, submitting: false });

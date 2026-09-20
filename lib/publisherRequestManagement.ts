@@ -2,7 +2,7 @@ import { getFunctions, httpsCallable } from "firebase/functions";
 import { getFirebaseApp } from "./firebaseClient.ts";
 import { isDepartment, type Department } from "./departments.ts";
 
-export interface PendingPublisherRequest { uid: string; email: string; displayName: string | null; requestedAtMillis: number; status: "pending" }
+export interface PendingPublisherRequest { uid: string; email: string; displayName: string | null; requestedAtMillis: number; status: "pending"; requestedDepartment: string | null }
 export interface ManagedPublisher { uid: string; email: string; displayName: string | null; role: "publisher" | "systemAdmin"; enabled: boolean; defaultDepartment: Department | null }
 export interface PublisherManagementOverview { requests: PendingPublisherRequest[]; publishers: ManagedPublisher[] }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, type ReactNode } from "react";
+import { createContext, useContext, useState, type ReactNode } from "react";
 import { missingFirebaseConfigKeys } from "@/lib/firebaseClient";
 import {
   resolvePublisherAccess,
@@ -11,10 +11,12 @@ import { usePublisherProfile } from "@/hooks/use-publisher-profile";
 import { usePublisherRequest } from "@/hooks/use-publisher-request";
 import { FirebaseAuthLoginWarning } from "@/components/firebase-auth-login-warning";
 import styles from "./admin-auth-guard.module.css";
+import { PUBLISHER_REQUEST_DEPARTMENT_OPTIONS, isPublisherRequestDepartment } from "@/lib/departments";
 
 const AuthorizedPublisherContext = createContext<AuthorizedPublisherContextValue | null>(null);
 
 export function AdminAuthGuard({ children }: { children: ReactNode }) {
+  const [requestedDepartment, setRequestedDepartment] = useState("");
   const {
     status,
     user,
@@ -115,11 +117,17 @@ export function AdminAuthGuard({ children }: { children: ReactNode }) {
             : "你的帳號尚未取得義學公務資訊站的公告發布權限。"}</p>
           <p>目前帳號</p>
           <strong>{user.email || "Google 帳號未提供 Email"}</strong>
+          {!requestError && <label className={styles.requestDepartment}>申請發布單位
+            <select value={requestedDepartment} onChange={event => setRequestedDepartment(event.target.value)} disabled={requestState.submitting}>
+              <option value="" disabled>請選擇發布單位</option>
+              {PUBLISHER_REQUEST_DEPARTMENT_OPTIONS.map(department => <option key={department} value={department}>{department}</option>)}
+            </select>
+          </label>}
           <div className={styles.actions}>
             {!requestError && <button
               type="button"
-              onClick={requestState.submit}
-              disabled={requestState.submitting || !user.email}
+              onClick={() => void requestState.submit(requestedDepartment)}
+              disabled={requestState.submitting || !user.email || !isPublisherRequestDepartment(requestedDepartment)}
             >{requestState.submitting ? "申請送出中…" : "申請發布權限"}</button>}
             <button type="button" className={styles.secondary} onClick={logout} disabled={busy}>登出帳號</button>
           </div>

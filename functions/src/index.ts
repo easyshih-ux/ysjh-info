@@ -1,7 +1,7 @@
 import { initializeApp } from "firebase-admin/app";
 import { FieldValue, getFirestore, type Firestore } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
-import { isDepartment } from "./departments.js";
+import { isDepartment, isFixedDepartment, isPublisherRequestDepartment } from "./departments.js";
 
 initializeApp();
 
@@ -115,6 +115,7 @@ export async function listPublisherManagementHandler(
         displayName: typeof data.displayName === "string" ? data.displayName : null,
         requestedAtMillis: toMillis(data.requestedAt),
         status: "pending" as const,
+        requestedDepartment: isPublisherRequestDepartment(data.requestedDepartment) ? data.requestedDepartment : null,
       }];
     }),
   };
@@ -198,6 +199,9 @@ export async function approvePublisherRequestHandler(
         || !(publisherRequest.displayName === null || typeof publisherRequest.displayName === "string")
       ) {
         throw new HttpsError("failed-precondition", "發布權限申請資料不完整。");
+      }
+      if (!isFixedDepartment(input.defaultDepartment) && publisherRequest.requestedDepartment !== "其他") {
+        throw new HttpsError("failed-precondition", "只有申請其他單位時可以設定自訂發布單位。");
       }
 
       const existingProfile = profileSnapshot.data();

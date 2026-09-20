@@ -88,7 +88,7 @@ test("缺少遠端陣列欄位時一律正規化為空陣列", () => {
 
 test("不合法核心文件會被略過，不影響其他公告", () => {
   assert.equal(announcementFromFirestore("bad", firestoreRecord({ publishedAt: "not-a-date" })), null);
-  assert.equal(announcementFromFirestore("bad", firestoreRecord({ department: "不存在單位" })), null);
+  assert.equal(announcementFromFirestore("bad", firestoreRecord({ department: "其他" })), null);
   assert.deepEqual(announcementFromFirestore("one", firestoreRecord({ followUps: [{ createdAt: "not-a-date", type: "reminder", message: "無效日期" }] }))!.followUps, []);
 });
 

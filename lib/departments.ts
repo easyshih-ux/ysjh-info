@@ -5,13 +5,40 @@ export const departmentGroups = [
   { office: "輔導處", departments: ["輔導處", "輔導組", "特教組", "生涯組"] },
 ] as const;
 
-export const standaloneDepartments = ["校長"] as const;
+export const standaloneDepartments = ["校長", "人事室", "會計室"] as const;
 export const DEPARTMENTS = [
   ...standaloneDepartments,
   ...departmentGroups.flatMap(group => group.departments),
 ] as const;
-export type Department = (typeof DEPARTMENTS)[number];
+export const OTHER_DEPARTMENT_OPTION = "其他" as const;
+export const MAX_CUSTOM_DEPARTMENT_LENGTH = 30;
+export const PUBLISHER_REQUEST_DEPARTMENT_OPTIONS = [...DEPARTMENTS, OTHER_DEPARTMENT_OPTION] as const;
+export type FixedDepartment = (typeof DEPARTMENTS)[number];
+export type Department = string;
+
+export function isFixedDepartment(value: unknown): value is FixedDepartment {
+  return typeof value === "string" && DEPARTMENTS.includes(value as FixedDepartment);
+}
+
+export function normalizeCustomDepartment(value: unknown) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized
+    && normalized !== OTHER_DEPARTMENT_OPTION
+    && normalized.length <= MAX_CUSTOM_DEPARTMENT_LENGTH
+    ? normalized
+    : null;
+}
 
 export function isDepartment(value: unknown): value is Department {
-  return typeof value === "string" && DEPARTMENTS.includes(value as Department);
+  return isFixedDepartment(value) || normalizeCustomDepartment(value) === value;
+}
+
+export function isPublisherRequestDepartment(value: unknown) {
+  return isFixedDepartment(value) || value === OTHER_DEPARTMENT_OPTION;
+}
+
+export function resolveDepartmentSelection(selection: unknown, customName: unknown) {
+  if (isFixedDepartment(selection)) return selection;
+  return selection === OTHER_DEPARTMENT_OPTION ? normalizeCustomDepartment(customName) : null;
 }

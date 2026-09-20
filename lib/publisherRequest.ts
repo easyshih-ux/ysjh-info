@@ -3,6 +3,7 @@ import {
   getFirestoreClient,
   PUBLISHER_REQUESTS_COLLECTION,
 } from "./firestoreClient.ts";
+import { isPublisherRequestDepartment } from "./departments.ts";
 
 export type PublisherRequestReadResult =
   | { status: "not-found" }
@@ -30,11 +31,14 @@ export async function createPublisherRequest({
   uid,
   email,
   displayName,
+  requestedDepartment,
 }: {
   uid: string;
   email: string;
   displayName: string | null;
+  requestedDepartment: string;
 }) {
+  if (!isPublisherRequestDepartment(requestedDepartment)) throw new Error("invalid-department");
   await setDoc(
     doc(getFirestoreClient(), PUBLISHER_REQUESTS_COLLECTION, uid),
     {
@@ -43,6 +47,7 @@ export async function createPublisherRequest({
       requestedAt: serverTimestamp(),
       lastSeenAt: serverTimestamp(),
       status: "pending",
+      requestedDepartment,
     },
   );
 }

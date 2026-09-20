@@ -25,6 +25,7 @@ export interface PublisherRequest {
   requestedAt: Timestamp;
   lastSeenAt: Timestamp;
   status: PublisherRequestStatus;
+  requestedDepartment: string;
 }
 
 export function isPublisherRole(value: unknown): value is PublisherRole {

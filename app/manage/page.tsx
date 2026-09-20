@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Edit3, Eye, MessageSquarePlus, Search, Trash2 } from "lucide-react";
 import { AUDIENCES, formatImportantEventSchedule, toggleAudienceSelection, type Announcement, type Audience, type FollowUp } from "@/lib/announcements";
 import { CURRENT_ACADEMIC_YEAR, FRONTEND_ACADEMIC_YEARS } from "@/lib/academicYear";
-import { DEPARTMENTS, departmentGroups, type Department } from "@/lib/departments";
+import { DEPARTMENTS, departmentGroups, isDepartment, isFixedDepartment, standaloneDepartments, type Department } from "@/lib/departments";
 import { applyAnnouncementUpdate, filterManagedAnnouncements, MANAGE_DEPARTMENT_KEY, validateAnnouncementCore } from "@/lib/announcementManagement";
 import { AnnouncementManagementError, appendManagedFollowUp, updateManagedAnnouncement } from "@/lib/announcementManagementFirestore";
 import { readManagedAnnouncements } from "@/lib/announcementFirestore";
@@ -46,7 +46,7 @@ export default function ManagePage() {
 
   useEffect(() => {
     const saved = localStorage.getItem(MANAGE_DEPARTMENT_KEY);
-    if (DEPARTMENTS.includes(saved as Department)) setDepartment(saved as Department);
+    if (isDepartment(saved)) setDepartment(saved);
     let active = true;
     readManagedAnnouncements().then(value => { if (active) setItems(value); }).catch(() => { if (active) setLoadError(true); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
@@ -127,7 +127,7 @@ export default function ManagePage() {
     <AnnouncementDetails item={viewing} onClose={() => setViewing(null)} />
     <Dialog open={!!editing} onOpenChange={open => { if (!open && !saving) { setEditing(null); setError(""); } }}><DialogContent className={styles.editor} showCloseButton={!saving}>{editing && <>
       <DialogHeader><DialogDescription>修正既有公告 · 發布時間保持不變</DialogDescription><DialogTitle>{editing.title}</DialogTitle></DialogHeader>
-      <div className={styles.twoFields}><label>學年度<select value={editing.academicYear} onChange={event => setEditing({ ...editing, academicYear: Number(event.target.value) })}>{FRONTEND_ACADEMIC_YEARS.map(value => <option key={value} value={value}>{value} 學年度</option>)}</select></label><label>發布單位<select value={editing.department} onChange={event => setEditing({ ...editing, department: event.target.value as Department })}>{departmentGroups.map(group => <optgroup key={group.office} label={group.office}>{group.departments.map(value => <option key={value}>{value}</option>)}</optgroup>)}</select></label></div>
+      <div className={styles.twoFields}><label>學年度<select value={editing.academicYear} onChange={event => setEditing({ ...editing, academicYear: Number(event.target.value) })}>{FRONTEND_ACADEMIC_YEARS.map(value => <option key={value} value={value}>{value} 學年度</option>)}</select></label><label>發布單位<select value={editing.department} onChange={event => setEditing({ ...editing, department: event.target.value as Department })}>{standaloneDepartments.map(value => <option key={value}>{value}</option>)}{departmentGroups.map(group => <optgroup key={group.office} label={group.office}>{group.departments.map(value => <option key={value}>{value}</option>)}</optgroup>)}{!isFixedDepartment(editing.department) && <option value={editing.department}>{editing.department}</option>}</select></label></div>
       <label>公告標題<Input value={editing.title} onChange={event => setEditing({ ...editing, title: event.target.value })} /></label>
       <fieldset><legend>適用對象</legend><div className={styles.audiences}>{AUDIENCES.map(value => <label key={value}><Checkbox checked={editing.audiences.includes(value)} onCheckedChange={checked => setEditing({ ...editing, audiences: toggleAudienceSelection(editing.audiences, value, checked === true) })} />{value}</label>)}</div></fieldset>
       <label>完整公告內容<Textarea value={editing.content} onChange={event => setEditing({ ...editing, content: event.target.value })} /></label>

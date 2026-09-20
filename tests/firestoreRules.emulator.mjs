@@ -75,12 +75,13 @@ function requestData(email = VERIFIED_EMAIL, overrides = {}) {
     requestedAt: serverTimestamp(),
     lastSeenAt: serverTimestamp(),
     status: "pending",
+    requestedDepartment: "設備組",
     ...overrides,
   };
 }
 
 function announcementData(title = "Emulator announcement", publisherUid = "userA") {
-  return { title, content: "Rules integration test only", publisherUid, publicationStatus: "published" };
+  return { title, content: "Rules integration test only", publisherUid, publicationStatus: "published", department: "設備組" };
 }
 
 test("01 未登入者不能 get publisher profile", async () => {
@@ -133,6 +134,22 @@ test("09 未登入者不能建立 publisherRequest", async () => {
 test("10 verified user 可以建立自己的 publisherRequest", async () => {
   const database = userDb("userA", { email: VERIFIED_EMAIL });
   await assertSucceeds(setDoc(doc(database, "publisherRequests/userA"), requestData()));
+});
+
+test("10a 舊版申請文件缺少 requestedDepartment 仍相容", async () => {
+  const database = userDb("userA", { email: VERIFIED_EMAIL });
+  const legacy = requestData();
+  delete legacy.requestedDepartment;
+  await assertSucceeds(setDoc(doc(database, "publisherRequests/userA"), legacy));
+});
+
+test("10b publisherRequest 申請單位只接受22個固定單位或其他", async () => {
+  const database = userDb("userA", { email: VERIFIED_EMAIL });
+  await assertSucceeds(setDoc(doc(database, "publisherRequests/userA"), requestData(VERIFIED_EMAIL, { requestedDepartment: "人事室" })));
+  await testEnvironment.clearFirestore();
+  await assertSucceeds(setDoc(doc(database, "publisherRequests/userA"), requestData(VERIFIED_EMAIL, { requestedDepartment: "其他" })));
+  await testEnvironment.clearFirestore();
+  await assertFails(setDoc(doc(database, "publisherRequests/userA"), requestData(VERIFIED_EMAIL, { requestedDepartment: "家長會" })));
 });
 
 test("11 user 不能替別人的 UID 建立 publisherRequest", async () => {
@@ -226,6 +243,14 @@ test("27 只有 pending request 不能 create announcement", async () => {
 test("28 enabled publisher 可以 create announcement", async () => {
   await seed("authorizedPublishers/userA", profile("publisher", true));
   await assertSucceeds(setDoc(doc(userDb("userA"), "announcements/newA"), announcementData()));
+});
+
+test("28b publisher 只能使用固定單位或自己的自訂單位", async () => {
+  await seed("authorizedPublishers/userA", { ...profile("publisher", true), defaultDepartment: "家長會" });
+  const database = userDb("userA");
+  await assertSucceeds(setDoc(doc(database, "announcements/customA"), { ...announcementData(), department: "家長會" }));
+  await assertSucceeds(setDoc(doc(database, "announcements/fixedA"), { ...announcementData(), department: "人事室" }));
+  await assertFails(setDoc(doc(database, "announcements/foreignA"), { ...announcementData(), department: "校友會" }));
 });
 
 test("29 enabled publisher 可以 update announcement", async () => {
