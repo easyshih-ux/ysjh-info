@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Firestore } from "firebase-admin/firestore";
-import { approvePublisherRequestHandler, listPublisherManagementHandler, managePublisherAccessHandler } from "../src/index.ts";
+import { approvePublisherRequestHandler, listPublisherManagementHandler, managePublisherAccessHandler, transferSystemAdminHandler } from "../src/index.ts";
 import { DEPARTMENTS } from "../src/departments.ts";
 
 type DocumentData = Record<string, unknown>;
 
-function createStore(initial: Record<string, DocumentData> = {}) {
+function createStore(initial: Record<string, DocumentData> = {}, failUpdatePath = "") {
   const documents = new Map(
     Object.entries(initial).map(([path, data]) => [path, structuredClone(data)]),
   );
@@ -43,6 +43,7 @@ function createStore(initial: Record<string, DocumentData> = {}) {
           writes.push(() => documents.set(reference.path, structuredClone(data)));
         },
         update(reference: { path: string }, patch: DocumentData) {
+          if (reference.path === failUpdatePath) throw new Error("simulated transaction failure");
           writes.push(() => {
             const current = documents.get(reference.path);
             if (!current) throw new Error(`Missing document: ${reference.path}`);
@@ -293,4 +294,85 @@ test("只有 enabled systemAdmin 可以取得待審與既有發布者清單", as
   assert.equal(result.publishers.some(item => item.uid === "target" && item.email === "changed@example.test"), true);
   assert.equal(result.requests.some(item => item.uid === "pending-user"), true);
   await rejectsWithCode(listPublisherManagementHandler({ auth: { uid: "target" } }, store.firestore), "permission-denied");
+});
+
+const transferRequest = (uid = "admin", targetUid = "target") => ({ auth: uid ? { uid } : null, data: { targetUid } });
+const fullProfile = (role: "publisher" | "systemAdmin", enabled = true) => ({
+  role,
+  enabled,
+  email: `${role}@example.test`,
+  displayName: role === "systemAdmin" ? "Current Admin" : "Next Admin",
+  defaultDepartment: role === "systemAdmin" ? "設備組" : "家長會",
+  createdAt: "created-at",
+  createdBy: "bootstrap",
+});
+
+test("enabled systemAdmin 可原子移交給 enabled publisher 並保留雙方資料", async () => {
+  const current = fullProfile("systemAdmin");
+  const target = fullProfile("publisher");
+  const store = createStore({ "authorizedPublishers/admin": current, "authorizedPublishers/target": target });
+
+  assert.deepEqual(await transferSystemAdminHandler(transferRequest(), store.firestore), {
+    success: true,
+    previousSystemAdminUid: "admin",
+    systemAdminUid: "target",
+  });
+  const updatedCurrent = store.get("authorizedPublishers/admin");
+  const updatedTarget = store.get("authorizedPublishers/target");
+  assert.equal(updatedCurrent?.role, "publisher");
+  assert.equal(updatedCurrent?.enabled, true);
+  assert.equal(updatedTarget?.role, "systemAdmin");
+  assert.equal(updatedTarget?.enabled, true);
+  for (const key of ["email", "displayName", "defaultDepartment", "createdAt", "createdBy"]) {
+    assert.equal(updatedCurrent?.[key], current[key as keyof typeof current]);
+    assert.equal(updatedTarget?.[key], target[key as keyof typeof target]);
+  }
+});
+
+test("一般 publisher 與 disabled systemAdmin 都不能移交最高管理權", async () => {
+  for (const caller of [fullProfile("publisher"), fullProfile("systemAdmin", false)]) {
+    const store = createStore({ "authorizedPublishers/admin": caller, "authorizedPublishers/target": fullProfile("publisher") });
+    await rejectsWithCode(transferSystemAdminHandler(transferRequest(), store.firestore), "permission-denied");
+    assert.equal(store.get("authorizedPublishers/admin")?.role, caller.role);
+    assert.equal(store.get("authorizedPublishers/target")?.role, "publisher");
+  }
+});
+
+test("不存在、disabled 或非 publisher 的 target 無法接任", async () => {
+  const cases: Array<[DocumentData | undefined, string]> = [
+    [undefined, "not-found"],
+    [fullProfile("publisher", false), "failed-precondition"],
+    [fullProfile("systemAdmin"), "failed-precondition"],
+  ];
+  for (const [target, code] of cases) {
+    const initial: Record<string, DocumentData> = { "authorizedPublishers/admin": fullProfile("systemAdmin") };
+    if (target) initial["authorizedPublishers/target"] = target;
+    const store = createStore(initial);
+    await rejectsWithCode(transferSystemAdminHandler(transferRequest(), store.firestore), code);
+    assert.equal(store.get("authorizedPublishers/admin")?.role, "systemAdmin");
+  }
+});
+
+test("profile schema 不完整的無效帳號不得接任", async () => {
+  const invalidTarget = { ...fullProfile("publisher"), email: "", defaultDepartment: "" };
+  const store = createStore({ "authorizedPublishers/admin": fullProfile("systemAdmin"), "authorizedPublishers/target": invalidTarget });
+  await rejectsWithCode(transferSystemAdminHandler(transferRequest(), store.firestore), "failed-precondition");
+  assert.equal(store.get("authorizedPublishers/admin")?.role, "systemAdmin");
+  assert.equal(store.get("authorizedPublishers/target")?.role, "publisher");
+});
+
+test("systemAdmin 不可移交給自己", async () => {
+  const store = createStore({ "authorizedPublishers/admin": fullProfile("systemAdmin") });
+  await rejectsWithCode(transferSystemAdminHandler(transferRequest("admin", "admin"), store.firestore), "invalid-argument");
+  assert.equal(store.get("authorizedPublishers/admin")?.role, "systemAdmin");
+});
+
+test("transaction 任一步失敗時雙方角色均不變且不會產生零位 systemAdmin", async () => {
+  const store = createStore({
+    "authorizedPublishers/admin": fullProfile("systemAdmin"),
+    "authorizedPublishers/target": fullProfile("publisher"),
+  }, "authorizedPublishers/admin");
+  await assert.rejects(transferSystemAdminHandler(transferRequest(), store.firestore), /simulated transaction failure/);
+  assert.equal(store.get("authorizedPublishers/admin")?.role, "systemAdmin");
+  assert.equal(store.get("authorizedPublishers/target")?.role, "publisher");
 });

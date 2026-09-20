@@ -30,6 +30,11 @@ export async function changePublisherDepartment(targetUid: string, defaultDepart
   await managePublisherAccess(targetUid, "changeDepartment", defaultDepartment);
 }
 
+export async function transferSystemAdmin(targetUid: string) {
+  const callable = httpsCallable<{ targetUid: string }, { success: true }>(functions(), "transferSystemAdmin");
+  await callable({ targetUid });
+}
+
 async function managePublisherAccess(targetUid: string, action: "reject" | "enable" | "disable" | "changeDepartment", defaultDepartment?: Department) {
   const callable = httpsCallable(functions(), "managePublisherAccess");
   await callable(action === "changeDepartment" ? { targetUid, action, defaultDepartment } : { targetUid, action });

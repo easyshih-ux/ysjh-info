@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowLeft, ChevronDown, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { AdminAuthGuard, useAuthorizedPublisher } from "@/components/admin-auth-guard";
 import { usePublisherRequests } from "@/hooks/use-publisher-requests";
 import { OTHER_DEPARTMENT_OPTION, departmentGroups, isFixedDepartment, resolveDepartmentSelection, standaloneDepartments, type Department } from "@/lib/departments";
-import { approvePublisherRequest, changePublisherDepartment, rejectPublisherRequest, setPublisherEnabled } from "@/lib/publisherRequestManagement";
+import { approvePublisherRequest, changePublisherDepartment, rejectPublisherRequest, setPublisherEnabled, transferSystemAdmin } from "@/lib/publisherRequestManagement";
 import styles from "./publishers.module.css";
 
 export default function PublisherManagementPage() {
@@ -14,6 +15,7 @@ export default function PublisherManagementPage() {
 }
 
 function PublisherRequestList() {
+  const router = useRouter();
   const publisher = useAuthorizedPublisher();
   const isSystemAdmin = publisher.role === "systemAdmin";
   const state = usePublisherRequests(isSystemAdmin);
@@ -24,6 +26,8 @@ function PublisherRequestList() {
   const [approvalError, setApprovalError] = useState("");
   const [publisherQuery, setPublisherQuery] = useState("");
   const [publisherStatus, setPublisherStatus] = useState<"all" | "enabled" | "disabled">("all");
+  const [transferTargetUid, setTransferTargetUid] = useState("");
+  const [confirmingTransfer, setConfirmingTransfer] = useState(false);
   const filteredPublishers = useMemo(() => {
     const query = publisherQuery.trim().toLocaleLowerCase("zh-Hant");
     return state.publishers.filter(item => {
@@ -32,6 +36,8 @@ function PublisherRequestList() {
       return matchesQuery && matchesStatus;
     });
   }, [publisherQuery, publisherStatus, state.publishers]);
+  const transferCandidates = state.publishers.filter(item => item.uid !== publisher.uid && item.enabled && item.role === "publisher" && item.email.trim() && item.defaultDepartment);
+  const transferTarget = transferCandidates.find(item => item.uid === transferTargetUid) ?? null;
 
   async function handleApprove(targetUid: string) {
     const request = state.requests.find(item => item.uid === targetUid);
@@ -78,6 +84,24 @@ function PublisherRequestList() {
       console.error("publisher management action failed", error);
       setApprovalError("操作失敗，資料未變更，請稍後再試。");
     } finally { setBusyAction(null); }
+  }
+
+  async function handleTransferSystemAdmin() {
+    if (busyAction || !transferTarget) return;
+    setBusyAction(`transfer:${transferTarget.uid}`);
+    setSuccessMessage("");
+    setApprovalError("");
+    try {
+      await transferSystemAdmin(transferTarget.uid);
+      setSuccessMessage("最高管理權已完成移交。");
+      publisher.refreshAuthorization();
+      router.replace("/admin");
+    } catch (error) {
+      console.error("transferSystemAdmin failed", error);
+      setApprovalError("最高管理權移交失敗，雙方權限均未變更，請稍後再試。");
+    } finally {
+      setBusyAction(null);
+    }
   }
 
   if (!isSystemAdmin) {
@@ -168,6 +192,39 @@ function PublisherRequestList() {
         </div></div>
       </details>)}
     </div>}
+
+    <section className={styles.transferPanel} aria-labelledby="system-admin-transfer-title">
+      <p className={styles.kicker}>SYSTEM ADMIN TRANSFER</p>
+      <h2 id="system-admin-transfer-title">最高管理權移交</h2>
+      <div className={styles.currentAdmin}>
+        <strong>目前最高管理者</strong>
+        <span>{publisher.displayName?.trim() || "未提供名稱"}</span>
+        <small>{publisher.email} · {publisher.defaultDepartment}</small>
+      </div>
+      <label>
+        選擇接任者
+        <select value={transferTargetUid} onChange={event => { setTransferTargetUid(event.target.value); setConfirmingTransfer(false); }} disabled={busyAction !== null}>
+          <option value="">請選擇已啟用的發布者</option>
+          {transferCandidates.map(item => <option key={item.uid} value={item.uid}>{item.displayName?.trim() || "未提供名稱"}｜{item.email}｜{item.defaultDepartment || "尚未設定單位"}</option>)}
+        </select>
+      </label>
+      {transferCandidates.length === 0 && <p className={styles.notice}>目前沒有符合資格的接任者。</p>}
+      {transferTarget && <div className={styles.transferTarget}>
+        <strong>{transferTarget.displayName?.trim() || "未提供名稱"}</strong>
+        <span>{transferTarget.email}</span>
+        <span>{transferTarget.defaultDepartment || "尚未設定單位"}</span>
+      </div>}
+      {!confirmingTransfer
+        ? <button type="button" onClick={() => setConfirmingTransfer(true)} disabled={busyAction !== null || !transferTarget}>移交最高管理權</button>
+        : <div className={styles.transferConfirmation} role="alert">
+          <strong>請再次確認</strong>
+          <p>移交後，對方將取得最高管理權限；你目前的最高管理權限將被移除，但仍保留一般發布者資格。</p>
+          <div>
+            <button type="button" className={styles.dangerButton} onClick={() => void handleTransferSystemAdmin()} disabled={busyAction !== null}>{busyAction?.startsWith("transfer:") ? "移交處理中…" : "確認移交最高管理權"}</button>
+            <button type="button" className={styles.secondaryButton} onClick={() => setConfirmingTransfer(false)} disabled={busyAction !== null}>取消</button>
+          </div>
+        </div>}
+    </section>
   </section></main>;
 }
 

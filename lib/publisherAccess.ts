@@ -14,6 +14,7 @@ export interface AuthorizedPublisherContextValue {
   email: string;
   displayName: string | null;
   defaultDepartment: Department;
+  refreshAuthorization: () => void;
 }
 
 export type AdminAuthorizationState =
@@ -31,6 +32,7 @@ export function resolvePublisherAccess(
   result: PublisherProfileReadResult,
   authenticatedEmail: string | null | undefined,
   authenticatedUid = "",
+  refreshAuthorization: () => void = () => undefined,
 ): AdminAuthorizationState {
   if (result.status === "disabled") return { status: "disabled" };
   if (result.status === "not-found") {
@@ -53,6 +55,7 @@ export function resolvePublisherAccess(
         email: result.profile.email,
         displayName: result.profile.displayName,
         defaultDepartment: result.profile.defaultDepartment,
+        refreshAuthorization,
       },
     };
   }
@@ -75,6 +78,7 @@ export function resolvePublisherAccess(
         email: result.profile.email,
         displayName: result.profile.displayName,
         defaultDepartment: result.profile.defaultDepartment,
+        refreshAuthorization,
       },
     };
   }

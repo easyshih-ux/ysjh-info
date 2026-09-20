@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   readPublisherProfile,
   type PublisherProfileReadResult,
@@ -11,8 +11,12 @@ export type PublisherProfileState =
   | { status: "loading"; uid: string }
   | (PublisherProfileReadResult & { uid: string });
 
-export function usePublisherProfile(uid: string | null | undefined): PublisherProfileState {
+export type PublisherProfileHookState = PublisherProfileState & { refresh: () => void };
+
+export function usePublisherProfile(uid: string | null | undefined): PublisherProfileHookState {
   const [state, setState] = useState<PublisherProfileState>({ status: "idle" });
+  const [revision, setRevision] = useState(0);
+  const refresh = useCallback(() => setRevision(value => value + 1), []);
 
   useEffect(() => {
     if (!uid) {
@@ -29,9 +33,9 @@ export function usePublisherProfile(uid: string | null | undefined): PublisherPr
     return () => {
       active = false;
     };
-  }, [uid]);
+  }, [uid, revision]);
 
-  if (!uid) return { status: "idle" };
-  if (!("uid" in state) || state.uid !== uid) return { status: "loading", uid };
-  return state;
+  if (!uid) return { status: "idle", refresh };
+  if (!("uid" in state) || state.uid !== uid) return { status: "loading", uid, refresh };
+  return { ...state, refresh };
 }

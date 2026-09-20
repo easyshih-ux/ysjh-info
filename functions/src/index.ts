@@ -22,6 +22,11 @@ export const managePublisherAccess = onCall(
   request => managePublisherAccessHandler(request),
 );
 
+export const transferSystemAdmin = onCall(
+  { region: "asia-east1" },
+  request => transferSystemAdminHandler(request),
+);
+
 export const manageAnnouncementLifecycle = onCall(
   { region: "asia-east1" },
   request => manageAnnouncementLifecycleHandler(request),
@@ -159,6 +164,56 @@ export async function managePublisherAccessHandler(
   return { success: true, targetUid: input.targetUid, action: input.action };
 }
 
+export async function transferSystemAdminHandler(
+  request: { auth?: { uid: string } | null; data: unknown },
+  firestore: Firestore = db,
+) {
+  const callerUid = requireCallerUid(request.auth?.uid);
+  const targetUid = parseSystemAdminTransferInput(request.data);
+  if (targetUid === callerUid) {
+    throw new HttpsError("invalid-argument", "不能將最高管理權移交給自己。");
+  }
+
+  const callerRef = firestore.collection("authorizedPublishers").doc(callerUid);
+  const targetRef = firestore.collection("authorizedPublishers").doc(targetUid);
+
+  await firestore.runTransaction(async transaction => {
+    const [callerSnapshot, targetSnapshot] = await Promise.all([
+      transaction.get(callerRef),
+      transaction.get(targetRef),
+    ]);
+    assertSystemAdmin(callerSnapshot.exists, callerSnapshot.data());
+    if (!targetSnapshot.exists) {
+      throw new HttpsError("not-found", "找不到接任發布者帳號。");
+    }
+    const target = targetSnapshot.data();
+    if (
+      target?.enabled !== true
+      || target.role !== "publisher"
+      || typeof target.email !== "string"
+      || !target.email.trim()
+      || !(target.displayName === null || typeof target.displayName === "string")
+      || !isDepartment(target.defaultDepartment)
+    ) {
+      throw new HttpsError("failed-precondition", "接任者必須是已啟用的一般發布者。");
+    }
+
+    const now = FieldValue.serverTimestamp();
+    transaction.update(targetRef, {
+      role: "systemAdmin",
+      updatedAt: now,
+      updatedBy: callerUid,
+    });
+    transaction.update(callerRef, {
+      role: "publisher",
+      updatedAt: now,
+      updatedBy: callerUid,
+    });
+  });
+
+  return { success: true, previousSystemAdminUid: callerUid, systemAdminUid: targetUid };
+}
+
 export async function approvePublisherRequestHandler(
   request: { auth?: { uid: string } | null; data: unknown },
   firestore: Firestore = db,
@@ -276,6 +331,19 @@ function parseManagementInput(data: unknown) {
     action: action as "reject" | "disable" | "enable" | "changeDepartment",
     defaultDepartment: data.defaultDepartment,
   };
+}
+
+function parseSystemAdminTransferInput(data: unknown) {
+  if (
+    !isRecord(data)
+    || Object.keys(data).length !== 1
+    || typeof data.targetUid !== "string"
+    || !data.targetUid
+    || data.targetUid.trim() !== data.targetUid
+  ) {
+    throw new HttpsError("invalid-argument", "管理權移交資料格式不正確。");
+  }
+  return data.targetUid;
 }
 
 function parseAnnouncementLifecycleInput(data: unknown) {

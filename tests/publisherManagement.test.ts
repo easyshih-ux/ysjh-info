@@ -142,3 +142,29 @@ test("待審維持上方並顯示兩區數量與篩選空狀態", () => {
   assert.match(page, /現有發布者（\{state\.publishers\.length\}）/);
   assert.match(page, /沒有符合搜尋或篩選條件的發布者。/);
 });
+
+test("最高管理權移交只列 enabled publisher 並要求二次確認", () => {
+  const page = source("app/admin/publishers/page.tsx");
+  assert.match(page, /最高管理權移交/);
+  assert.match(page, /item\.uid !== publisher\.uid && item\.enabled && item\.role === "publisher" && item\.email\.trim\(\) && item\.defaultDepartment/);
+  assert.match(page, /移交後，對方將取得最高管理權限；你目前的最高管理權限將被移除，但仍保留一般發布者資格。/);
+  assert.match(page, /確認移交最高管理權/);
+  assert.doesNotMatch(page, /手動輸入 UID/);
+});
+
+test("移交使用 asia-east1 Callable 且成功後立即刷新權限並離開專屬頁面", () => {
+  const page = source("app/admin/publishers/page.tsx");
+  const repository = source("lib/publisherRequestManagement.ts");
+  assert.match(repository, /httpsCallable<\{ targetUid: string \}, \{ success: true \}>\(functions\(\), "transferSystemAdmin"\)/);
+  assert.match(repository, /await callable\(\{ targetUid \}\)/);
+  assert.match(page, /await transferSystemAdmin\(transferTarget\.uid\)/);
+  assert.match(page, /publisher\.refreshAuthorization\(\)/);
+  assert.match(page, /router\.replace\("\/admin"\)/);
+  assert.match(page, /最高管理權移交失敗，雙方權限均未變更/);
+});
+
+test("一般發布者管理仍禁止停用或降級 systemAdmin", () => {
+  const backend = source("functions/src/index.ts");
+  assert.match(backend, /if \(profile\?\.role === "systemAdmin"\)/);
+  assert.match(backend, /不能透過發布者管理變更系統管理員帳號。/);
+});

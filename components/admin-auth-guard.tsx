@@ -29,7 +29,7 @@ export function AdminAuthGuard({ children }: { children: ReactNode }) {
   } = useFirebaseAuth();
   const profileState = usePublisherProfile(user?.uid);
   const profileAuthorization = profileState.status === "not-found" || profileState.status === "legacy"
-    ? resolvePublisherAccess(profileState, user?.email, user?.uid)
+    ? resolvePublisherAccess(profileState, user?.email, user?.uid, profileState.refresh)
     : null;
   const canRequestAccess = profileAuthorization?.status === "unauthorized"
     && (profileAuthorization.reason === "not-found" || profileAuthorization.reason === "legacy-not-allowed");
@@ -69,7 +69,7 @@ export function AdminAuthGuard({ children }: { children: ReactNode }) {
     return <AuthShell><div className={styles.status} role="status"><span className={styles.spinner} />正在確認發布者身分…</div></AuthShell>;
   }
 
-  const authorization = resolvePublisherAccess(profileState, user.email, user.uid);
+  const authorization = resolvePublisherAccess(profileState, user.email, user.uid, profileState.refresh);
   if (authorization.status === "disabled") {
     return <DeniedShell
       title="此帳號的公務資訊發布權限已停用"
