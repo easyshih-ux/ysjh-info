@@ -1,0 +1,22 @@
+{
+  "name": "ysjh-info-functions",
+  "private": true,
+  "main": "lib/index.js",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "firebase-admin": "14.4.0",
+    "firebase-functions": "7.4.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.13",
+    "typescript": "7.0.2"
+  },
+  "type": "module"
+}
