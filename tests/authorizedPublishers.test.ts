@@ -31,9 +31,12 @@ test("學校網域但未授權仍不得發布", () => {
   assert.equal(getAuthorizedPublisher("teacher@ysjh.ntpc.edu.tw", publishers), null);
 });
 
-test("defaultDepartment 必須是正式發布單位", () => {
-  const invalid: AuthorizedPublisher[] = [
-    { email: "invalid@ysjh.ntpc.edu.tw", defaultDepartment: "不存在的單位", enabled: true },
+test("defaultDepartment 可使用 systemAdmin 核准後的合法自訂單位", () => {
+  const customDepartmentPublishers: AuthorizedPublisher[] = [
+    { email: "custom@ysjh.ntpc.edu.tw", defaultDepartment: "家長會", enabled: true },
   ];
-  assert.equal(getAuthorizedPublisher("invalid@ysjh.ntpc.edu.tw", invalid), null);
+  assert.equal(
+    getAuthorizedPublisher("custom@ysjh.ntpc.edu.tw", customDepartmentPublishers)?.defaultDepartment,
+    "家長會",
+  );
 });
