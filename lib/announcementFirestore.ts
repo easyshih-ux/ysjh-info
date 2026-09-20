@@ -14,7 +14,7 @@ const records = (value: unknown) => Array.isArray(value) ? value.filter(isRecord
 
 function normalizeImportantEvents(value: unknown): ImportantEvent[] {
   return records(value).flatMap(item => isDateOnly(item.date) && isNonEmptyString(item.title)
-    ? [{ date: item.date, ...(isDateOnly(item.endDate) ? { endDate: item.endDate } : {}), ...(isNonEmptyString(item.time) ? { time: item.time } : {}), title: item.title }]
+    ? [{ date: item.date, ...(isNonEmptyString(item.time) ? { time: item.time } : {}), ...(isDateOnly(item.endDate) ? { endDate: item.endDate } : {}), ...(isNonEmptyString(item.endTime) ? { endTime: item.endTime } : {}), title: item.title }]
     : []);
 }
 

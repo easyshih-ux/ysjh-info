@@ -54,6 +54,13 @@ test("Firestore 保留重要事項日期區間並正規化舊的非法對象組�
   assert.equal(item.importantEvents[0].endDate, "2026-09-21");
 });
 
+test("Firestore 解析 endTime 且舊公告沒有 endTime 仍相容", () => {
+  const modern = announcementFromFirestore("modern", firestoreRecord({ importantEvents: [{ date: "2026-09-19", time: "08:30", endTime: "10:30", title: "同日活動" }] }))!;
+  const legacy = announcementFromFirestore("legacy", firestoreRecord({ importantEvents: [{ date: "2026-09-19", time: "08:30", title: "舊活動" }] }))!;
+  assert.equal(modern.importantEvents[0].endTime, "10:30");
+  assert.equal(legacy.importantEvents[0].endTime, undefined);
+});
+
 test("正式 HTTPS attachment 可處理，非 HTTPS attachment 不進入首頁", () => {
   assert.match(announcementFromFirestore("one", firestoreRecord())!.attachments[0].url, /^https:\/\//);
   assert.deepEqual(announcementFromFirestore("two", firestoreRecord({ attachments: [{ id: "bad", type: "image", url: "blob:test", name: "本機圖片" }] }))!.attachments, []);

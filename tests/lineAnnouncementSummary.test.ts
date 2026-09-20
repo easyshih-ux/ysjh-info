@@ -25,6 +25,13 @@ test("importantEvents 日期區間顯示開始與結束日期", () => {
   assert.match(summary, /9\/18 ～ 9\/20 跨日活動/);
 });
 
+test("LINE 摘要顯示重要事項同日與跨日起訖時間", () => {
+  const sameDay = createLineAnnouncementSummary({ ...complete, importantEvents: [{ date: "2026-09-23", time: "08:30", endTime: "10:30", title: "同日活動" }] }, "https://school.example/", 2026);
+  const crossDay = createLineAnnouncementSummary({ ...complete, importantEvents: [{ date: "2026-09-23", time: "08:30", endDate: "2026-09-25", endTime: "16:00", title: "跨日活動" }] }, "https://school.example/", 2026);
+  assert.match(sameDay, /9\/23 08:30－10:30 同日活動/);
+  assert.match(crossDay, /9\/23 08:30 ～ 9\/25 16:00 跨日活動/);
+});
+
 test("deadlines 有資料顯示，空陣列時整區不顯示", () => {
   assert.match(createLineAnnouncementSummary(complete, "https://school.example/", 2026), /⏰ 截止：[\s\S]*・9\/18 16:00 七年級閱讀調查表繳交截止/);
   assert.doesNotMatch(createLineAnnouncementSummary({ ...complete, deadlines: [] }, "https://school.example/", 2026), /⏰ 截止：/);

@@ -92,3 +92,17 @@ test("舊公告的全校教師混合對象重新儲存時會正規化", () => {
   assert.deepEqual(validateAnnouncementCore(item), {});
   assert.deepEqual(createAnnouncementUpdate(item, "2026-09-20T00:00:00.000Z").audiences, ["全校教師"]);
 });
+
+test("編輯清空開始與結束時間後 Firestore update 不殘留舊值", () => {
+  const item = structuredClone(mockAnnouncements[0]);
+  item.importantEvents = [{ date: "2026-09-23", time: "08:30", endDate: "2026-09-25", endTime: "16:00", title: "跨日活動" }];
+  const edited = structuredClone(item);
+  edited.importantEvents[0].time = "";
+  edited.importantEvents[0].endDate = "";
+  edited.importantEvents[0].endTime = "";
+  const update = createAnnouncementUpdate(edited, "2026-09-20T00:00:00.000Z");
+  assert.deepEqual(update.importantEvents, [{ date: "2026-09-23", title: "跨日活動" }]);
+  assert.equal("time" in update.importantEvents[0], false);
+  assert.equal("endDate" in update.importantEvents[0], false);
+  assert.equal("endTime" in update.importantEvents[0], false);
+});

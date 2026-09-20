@@ -1,4 +1,4 @@
-import { normalizeAudiences, type Announcement, type Audience, type FollowUp } from "./announcements.ts";
+import { normalizeAudiences, normalizeImportantEvent, type Announcement, type Audience, type FollowUp } from "./announcements.ts";
 import { validateBasicDraft } from "./publishDraft.ts";
 
 export const MANAGE_DEPARTMENT_KEY = "manageDepartment";
@@ -31,7 +31,7 @@ export function createAnnouncementUpdate(edited: Announcement, updatedAt: string
     title: edited.title.trim(),
     audiences: normalizeAudiences(edited.audiences),
     content: edited.content.trim(),
-    importantEvents: edited.importantEvents.filter(item => item.date || item.time || item.title),
+    importantEvents: edited.importantEvents.filter(item => item.date || item.time || item.endDate || item.endTime || item.title).map(normalizeImportantEvent),
     deadlines: edited.deadlines.filter(item => item.date || item.time || item.label),
     links: edited.links,
     updatedAt,
