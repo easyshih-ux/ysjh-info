@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { isLineWebView } from "../lib/browserEnvironment.ts";
+import { copyOfficialPublicSiteUrl, OFFICIAL_PUBLIC_SITE_URL } from "../lib/siteUrl.ts";
 
 const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
@@ -33,17 +34,44 @@ test("LINE 點行政登入只開啟提示，不呼叫 signInWithPopup", () => {
   assert.match(login, /await signInWithPopup\(auth, provider\)/);
 });
 
-test("LINE 登入提示使用指定文字且只有關閉操作", () => {
+test("LINE 登入提示提供複製網站網址與關閉操作", () => {
   const warning = source("components/firebase-auth-login-warning.tsx");
   assert.match(warning, /請使用瀏覽器登入/);
   assert.match(warning, /LINE 內建瀏覽器可能無法正常完成 Google 登入/);
-  assert.match(warning, /請使用 Chrome 或 Safari 開啟本網站後，再進行行政登入/);
+  assert.match(warning, /請複製網站網址，使用 Chrome 或 Safari 開啟後，再進行行政登入/);
+  assert.match(warning, /複製網站網址/);
   assert.match(warning, />關閉<\/button>/);
   assert.doesNotMatch(warning, /繼續嘗試登入|signInWithPopup/);
+});
+
+test("複製按鈕固定複製正式首頁網址，不使用目前 location", async () => {
+  let copied = "";
+  const result = await copyOfficialPublicSiteUrl({ writeText: async value => { copied = value; } });
+
+  assert.equal(result, true);
+  assert.equal(copied, "https://easyshih-ux.github.io/ysjh-info/");
+  assert.equal(copied, OFFICIAL_PUBLIC_SITE_URL);
+  assert.doesNotMatch(copied, /\/admin|[?#]/);
+  assert.doesNotMatch(source("components/firebase-auth-login-warning.tsx"), /window\.location|location\.href/);
+});
+
+test("複製成功顯示成功狀態且不關閉 Dialog", () => {
+  const warning = source("components/firebase-auth-login-warning.tsx");
+  assert.match(warning, /✓ 網址已複製，請貼到 Chrome 或 Safari 開啟/);
+  assert.match(warning, /setCopyStatus\(copied \? "success" : "failure"\)/);
+  assert.doesNotMatch(warning.match(/const copySiteUrl = async \(\) => \{([\s\S]*?)\n  \};/)?.[1] ?? "", /onClose/);
+});
+
+test("Clipboard 不可用或拋出錯誤時安全失敗並顯示手動複製網址", async () => {
+  assert.equal(await copyOfficialPublicSiteUrl({ writeText: async () => { throw new Error("blocked"); } }), false);
+  assert.equal(await copyOfficialPublicSiteUrl(undefined), false);
+
+  const warning = source("components/firebase-auth-login-warning.tsx");
+  assert.match(warning, /無法自動複製，請手動複製下方網址：/);
+  assert.match(warning, /OFFICIAL_PUBLIC_SITE_URL/);
 });
 
 test("公開首頁不依賴 LINE 偵測或行政登入流程", () => {
   const homepage = source("app/page.tsx");
   assert.doesNotMatch(homepage, /isLineWebView|shouldWarnBeforeGoogleLogin|signInWithPopup|useFirebaseAuth/);
 });
-
