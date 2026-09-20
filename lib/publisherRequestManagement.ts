@@ -1,69 +1,36 @@
-import { collection, getDocs, type Timestamp } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
-import type { Department } from "./departments.ts";
 import { getFirebaseApp } from "./firebaseClient.ts";
-import {
-  getFirestoreClient,
-  PUBLISHER_REQUESTS_COLLECTION,
-} from "./firestoreClient.ts";
+import { isDepartment, type Department } from "./departments.ts";
 
-export interface PendingPublisherRequest {
-  uid: string;
-  email: string;
-  displayName: string | null;
-  requestedAt: Timestamp;
-  status: "pending";
+export interface PendingPublisherRequest { uid: string; email: string; displayName: string | null; requestedAtMillis: number; status: "pending" }
+export interface ManagedPublisher { uid: string; email: string; displayName: string | null; role: "publisher" | "systemAdmin"; enabled: boolean; defaultDepartment: Department | null }
+export interface PublisherManagementOverview { requests: PendingPublisherRequest[]; publishers: ManagedPublisher[] }
+
+const functions = () => getFunctions(getFirebaseApp(), "asia-east1");
+
+export async function approvePublisherRequest(targetUid: string, defaultDepartment: Department) {
+  if (!isDepartment(defaultDepartment)) throw new Error("invalid-department");
+  const callable = httpsCallable(functions(), "approvePublisherRequest");
+  await callable({ targetUid, defaultDepartment });
 }
 
-export async function approvePublisherRequest(
-  targetUid: string,
-  defaultDepartment: Department,
-) {
-  const functions = getFunctions(getFirebaseApp(), "asia-east1");
-  const approve = httpsCallable<
-    { targetUid: string; defaultDepartment: Department },
-    { approved: true; targetUid: string }
-  >(functions, "approvePublisherRequest");
-  await approve({ targetUid, defaultDepartment });
-}
-
-export async function listPendingPublisherRequests(): Promise<PendingPublisherRequest[]> {
-  const snapshot = await getDocs(
-    collection(getFirestoreClient(), PUBLISHER_REQUESTS_COLLECTION),
-  );
-
-  return snapshot.docs
-    .map(item => parsePendingPublisherRequest(item.id, item.data()))
-    .filter((item): item is PendingPublisherRequest => item !== null)
-    .sort((a, b) => a.requestedAt.toMillis() - b.requestedAt.toMillis());
-}
-
-export function parsePendingPublisherRequest(
-  uid: string,
-  data: unknown,
-): PendingPublisherRequest | null {
-  if (!isRecord(data) || data.status !== "pending") return null;
-  if (typeof data.email !== "string" || !data.email.trim()) return null;
-  if (!(data.displayName === null || typeof data.displayName === "string")) return null;
-  if (!isTimestamp(data.requestedAt)) return null;
-
+export async function listPublisherManagement(): Promise<PublisherManagementOverview> {
+  const callable = httpsCallable<Record<string, never>, PublisherManagementOverview>(functions(), "listPublisherManagement");
+  const result = await callable({});
   return {
-    uid,
-    email: data.email.trim(),
-    displayName: data.displayName,
-    requestedAt: data.requestedAt,
-    status: "pending",
+    requests: result.data.requests.slice().sort((a, b) => a.requestedAtMillis - b.requestedAtMillis),
+    publishers: result.data.publishers.slice().sort((a, b) => a.email.localeCompare(b.email)),
   };
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+export async function rejectPublisherRequest(targetUid: string) { await managePublisherAccess(targetUid, "reject"); }
+export async function setPublisherEnabled(targetUid: string, enabled: boolean) { await managePublisherAccess(targetUid, enabled ? "enable" : "disable"); }
+export async function changePublisherDepartment(targetUid: string, defaultDepartment: Department) {
+  if (!isDepartment(defaultDepartment)) throw new Error("invalid-department");
+  await managePublisherAccess(targetUid, "changeDepartment", defaultDepartment);
 }
 
-function isTimestamp(value: unknown): value is Timestamp {
-  if (!isRecord(value)) return false;
-  return typeof value.seconds === "number"
-    && typeof value.nanoseconds === "number"
-    && typeof value.toDate === "function"
-    && typeof value.toMillis === "function";
+async function managePublisherAccess(targetUid: string, action: "reject" | "enable" | "disable" | "changeDepartment", defaultDepartment?: Department) {
+  const callable = httpsCallable(functions(), "managePublisherAccess");
+  await callable(action === "changeDepartment" ? { targetUid, action, defaultDepartment } : { targetUid, action });
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Firestore } from "firebase-admin/firestore";
-import { approvePublisherRequestHandler } from "../src/index.ts";
+import { approvePublisherRequestHandler, listPublisherManagementHandler, managePublisherAccessHandler } from "../src/index.ts";
 
 type DocumentData = Record<string, unknown>;
 
@@ -14,7 +14,17 @@ function createStore(initial: Record<string, DocumentData> = {}) {
     collection(collectionName: string) {
       return {
         doc(id: string) {
-          return { path: `${collectionName}/${id}` };
+          const path = `${collectionName}/${id}`;
+          return {
+            path,
+            async get() {
+              const data = documents.get(path);
+              return { exists: data !== undefined, data: () => data === undefined ? undefined : structuredClone(data) };
+            },
+          };
+        },
+        async get() {
+          return { docs: [...documents.entries()].filter(([path]) => path.startsWith(`${collectionName}/`)).map(([path, data]) => ({ id: path.slice(collectionName.length + 1), data: () => structuredClone(data) })) };
         },
       };
     },
@@ -125,6 +135,19 @@ test("enabled systemAdmin 可以核准 pending request 並寫入正確資料", a
   assert.equal(store.get("publisherRequests/target")?.status, "approved");
 });
 
+test("校長是合法 defaultDepartment", async () => {
+  const store = createStore({
+    "authorizedPublishers/admin": admin(),
+    "publisherRequests/target": pending(),
+  });
+
+  await approvePublisherRequestHandler(
+    request("admin", { defaultDepartment: "校長" }),
+    store.firestore,
+  );
+  assert.equal(store.get("authorizedPublishers/target")?.defaultDepartment, "校長");
+});
+
 test("非法 defaultDepartment 被拒絕", async () => {
   const store = createStore();
   await rejectsWithCode(
@@ -190,4 +213,62 @@ test("既有 target profile 保留 createdAt 與 createdBy", async () => {
   const profile = store.get("authorizedPublishers/target");
   assert.equal(profile?.createdAt, "existing-created-at");
   assert.equal(profile?.createdBy, "original-admin");
+});
+
+const managementRequest = (action: string, data: Record<string, unknown> = {}, uid = "admin") => ({
+  auth: uid ? { uid } : null,
+  data: { targetUid: "target", action, ...data },
+});
+
+test("只有 enabled systemAdmin 可以執行發布者管理動作", async () => {
+  const store = createStore({
+    "authorizedPublishers/admin": { role: "publisher", enabled: true },
+    "authorizedPublishers/target": { role: "publisher", enabled: true },
+  });
+  await rejectsWithCode(managePublisherAccessHandler(managementRequest("disable"), store.firestore), "permission-denied");
+});
+
+test("systemAdmin 可以拒絕 pending 申請", async () => {
+  const store = createStore({ "authorizedPublishers/admin": admin(), "publisherRequests/target": pending() });
+  await managePublisherAccessHandler(managementRequest("reject"), store.firestore);
+  assert.equal(store.get("publisherRequests/target")?.status, "rejected");
+});
+
+test("停用與重新啟用維持既有角色及帳號資料", async () => {
+  const profile = { role: "publisher", enabled: true, email: "changed@example.test", displayName: "Changed", defaultDepartment: "設備組" };
+  const store = createStore({ "authorizedPublishers/admin": admin(), "authorizedPublishers/target": profile });
+  await managePublisherAccessHandler(managementRequest("disable"), store.firestore);
+  assert.equal(store.get("authorizedPublishers/target")?.enabled, false);
+  await managePublisherAccessHandler(managementRequest("enable"), store.firestore);
+  const updated = store.get("authorizedPublishers/target");
+  assert.equal(updated?.enabled, true);
+  assert.equal(updated?.role, "publisher");
+  assert.equal(updated?.email, "changed@example.test");
+  assert.equal(updated?.displayName, "Changed");
+});
+
+test("更換發布單位只接受正式 20 單位", async () => {
+  const store = createStore({ "authorizedPublishers/admin": admin(), "authorizedPublishers/target": { role: "publisher", enabled: true, defaultDepartment: "設備組" } });
+  await managePublisherAccessHandler(managementRequest("changeDepartment", { defaultDepartment: "校長" }), store.firestore);
+  assert.equal(store.get("authorizedPublishers/target")?.defaultDepartment, "校長");
+  await rejectsWithCode(managePublisherAccessHandler(managementRequest("changeDepartment", { defaultDepartment: "任意單位" }), store.firestore), "invalid-argument");
+});
+
+test("發布者管理不能變更 systemAdmin", async () => {
+  const original = { role: "systemAdmin", enabled: true, defaultDepartment: "設備組" };
+  const store = createStore({ "authorizedPublishers/admin": admin(), "authorizedPublishers/target": original });
+  await rejectsWithCode(managePublisherAccessHandler(managementRequest("disable"), store.firestore), "failed-precondition");
+  assert.deepEqual(store.get("authorizedPublishers/target"), original);
+});
+
+test("只有 enabled systemAdmin 可以取得待審與既有發布者清單", async () => {
+  const store = createStore({
+    "authorizedPublishers/admin": admin(),
+    "authorizedPublishers/target": { role: "publisher", enabled: true, email: "changed@example.test", displayName: "Changed", defaultDepartment: "設備組" },
+    "publisherRequests/pending-user": pending(),
+  });
+  const result = await listPublisherManagementHandler({ auth: { uid: "admin" } }, store.firestore);
+  assert.equal(result.publishers.some(item => item.uid === "target" && item.email === "changed@example.test"), true);
+  assert.equal(result.requests.some(item => item.uid === "pending-user"), true);
+  await rejectsWithCode(listPublisherManagementHandler({ auth: { uid: "target" } }, store.firestore), "permission-denied");
 });

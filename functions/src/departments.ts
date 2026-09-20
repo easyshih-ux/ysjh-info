@@ -1,5 +1,6 @@
 // Keep this backend authorization allowlist synchronized with lib/departments.ts.
 export const DEPARTMENTS = [
+  "校長",
   "教務處",
   "教學組",
   "註冊組",
@@ -12,12 +13,12 @@ export const DEPARTMENTS = [
   "體育組",
   "健康中心",
   "總務處",
-  "文書組",
   "出納組",
+  "文書組",
   "事務組",
   "輔導處",
-  "特教組",
   "輔導組",
+  "特教組",
   "生涯組",
 ] as const;
 

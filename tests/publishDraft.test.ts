@@ -7,7 +7,7 @@ const draft = (overrides: Partial<BasicAnnouncementDraft> = {}): BasicAnnounceme
 test("沒有圖片也能通過發布表單格式檢查",()=>{assert.deepEqual(validateBasicDraft(draft()),{})});
 test("發布表單要求四組基本資料",()=>{const errors=validateBasicDraft(draft({department:"",title:"",audiences:[],content:""}));assert.deepEqual(Object.keys(errors).sort(),["audiences","content","department","title"])});
 test("完整基本資料可通過前端格式檢查",()=>{const errors=validateBasicDraft(draft({audiences:["七年級導師","全校教師"],content:"第一段\n\n1. 第二段"}));assert.deepEqual(errors,{})});
-test("正式發布單位共19個",()=>{assert.equal(DEPARTMENTS.length,19);assert.equal(new Set(DEPARTMENTS).size,19)});
+test("正式發布單位共20個並包含校長",()=>{assert.equal(DEPARTMENTS.length,20);assert.equal(new Set(DEPARTMENTS).size,20);assert.ok(isDepartment("校長"))});
 test("發布單位依四個處室正確分組",()=>{assert.equal(departmentGroups.length,4);assert.deepEqual(departmentGroups.map(group=>group.office),["教務處","學務處","總務處","輔導處"]);assert.deepEqual(departmentGroups.map(group=>group.departments.length),[5,6,4,4])});
 test("設備組與健康中心保留正式儲存值",()=>{assert.ok(isDepartment("設備組"));assert.equal(DEPARTMENTS.find(item=>item==="設備組"),"設備組");assert.ok(isDepartment("健康中心"));assert.equal(DEPARTMENTS.find(item=>item==="健康中心"),"健康中心")});
 test("不接受清單以外的發布單位",()=>{assert.equal(isDepartment("其他"),false);assert.equal(isDepartment("教務處／設備組"),false);const errors=validateBasicDraft(draft({department:"其他" as never}));assert.equal(errors.department,"請選擇正式發布單位")});

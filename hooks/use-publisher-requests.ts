@@ -2,25 +2,26 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  listPendingPublisherRequests,
+  listPublisherManagement,
+  type ManagedPublisher,
   type PendingPublisherRequest,
 } from "@/lib/publisherRequestManagement";
 
 export type PublisherRequestsState =
-  | { status: "loading"; requests: [] }
-  | { status: "ready"; requests: PendingPublisherRequest[] }
-  | { status: "error"; requests: [] };
+  | { status: "loading"; requests: []; publishers: [] }
+  | { status: "ready"; requests: PendingPublisherRequest[]; publishers: ManagedPublisher[] }
+  | { status: "error"; requests: []; publishers: [] };
 
 export function usePublisherRequests(enabled: boolean) {
-  const [state, setState] = useState<PublisherRequestsState>({ status: "loading", requests: [] });
+  const [state, setState] = useState<PublisherRequestsState>({ status: "loading", requests: [], publishers: [] });
 
   const refresh = useCallback(async () => {
     if (!enabled) return;
-    setState({ status: "loading", requests: [] });
+    setState({ status: "loading", requests: [], publishers: [] });
     try {
-      setState({ status: "ready", requests: await listPendingPublisherRequests() });
+      setState({ status: "ready", ...await listPublisherManagement() });
     } catch {
-      setState({ status: "error", requests: [] });
+      setState({ status: "error", requests: [], publishers: [] });
     }
   }, [enabled]);
 
