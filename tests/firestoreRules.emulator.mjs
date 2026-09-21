@@ -84,6 +84,18 @@ function announcementData(title = "Emulator announcement", publisherUid = "userA
   return { title, content: "Rules integration test only", publisherUid, publicationStatus: "published", department: "設備組" };
 }
 
+function pdfAttachment(id, publisherUid = "userA") {
+  return {
+    id,
+    type: "pdf",
+    url: `https://example.test/${id}.pdf`,
+    name: `${id}.pdf`,
+    sizeBytes: 1024,
+    storagePath: `announcements/newA/pdf/${publisherUid}/${id}.pdf`,
+    contentType: "application/pdf",
+  };
+}
+
 test("01 未登入者不能 get publisher profile", async () => {
   await seed("authorizedPublishers/userA", profile());
   await assertFails(getDoc(doc(anonymousDb(), "authorizedPublishers/userA")));
@@ -358,4 +370,36 @@ test("40 disabled systemAdmin 不能 list publisherRequests", async () => {
 test("41 未登入者不能 list publisherRequests", async () => {
   await seed("publisherRequests/userA", { email: VERIFIED_EMAIL, status: "pending" });
   await assertFails(getDocs(collection(anonymousDb(), "publisherRequests")));
+});
+
+test("42 announcement create 接受最多兩份合法 PDF metadata", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await assertSucceeds(setDoc(doc(userDb("userA"), "announcements/newA"), {
+    ...announcementData(),
+    attachments: [pdfAttachment("pdf-1"), pdfAttachment("pdf-2")],
+  }));
+});
+
+test("43 announcement create 拒絕第三份 PDF", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await assertFails(setDoc(doc(userDb("userA"), "announcements/newA"), {
+    ...announcementData(),
+    attachments: [pdfAttachment("pdf-1"), pdfAttachment("pdf-2"), pdfAttachment("pdf-3")],
+  }));
+});
+
+test("44 舊 image attachment schema 維持接受", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await assertSucceeds(setDoc(doc(userDb("userA"), "announcements/newA"), {
+    ...announcementData(),
+    attachments: [{ id: "image-1", type: "image", url: "https://example.test/image.webp", name: "舊圖片", caption: "說明" }],
+  }));
+});
+
+test("45 PDF metadata 的路徑與 publisher UID 必須正確", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await assertFails(setDoc(doc(userDb("userA"), "announcements/newA"), {
+    ...announcementData(),
+    attachments: [{ ...pdfAttachment("pdf-1"), storagePath: "announcements/other/pdf/userB/pdf-1.pdf" }],
+  }));
 });

@@ -36,7 +36,7 @@ test("Firestore rules 公開讀取公告但只允許 UID 授權文件啟用者�
   assert.match(rules, /request\.resource\.data\.publicationStatus == 'published'/);
   assert.match(
     rules,
-    /allow update: if canManageAnnouncement\(\)\s*&& keepsLifecycleFields\(\)\s*&& canUseAnnouncementDepartment\(\);/,
+    /allow update: if canManageAnnouncement\(\)\s*&& keepsLifecycleFields\(\)\s*&& canUseAnnouncementDepartment\(\)\s*&& keepsValidAttachments\(announcementId\);/,
   );
   assert.match(rules, /function canUseAnnouncementDepartment\(\)/);
   assert.match(rules, /resource\.data\.publisherUid == request\.auth\.uid/);

@@ -68,10 +68,10 @@ test("管理頁防止重複送出、顯示友善狀態且不暴露 Firebase erro
   assert.doesNotMatch(page, /permission-denied|FirebaseError/);
 });
 
-test("圖片管理保持唯讀且不存在公告刪除流程", () => {
+test("附件管理保持唯讀且不存在 browser 刪除流程", () => {
   const page = source("app/manage/page.tsx");
   const combined = `${page}\n${source("lib/announcementManagementFirestore.ts")}`;
-  assert.match(page, /公告圖片（唯讀）/);
+  assert.match(page, /公告附件（唯讀）/);
   assert.doesNotMatch(page, /補登 Prototype 圖片|uploadBytes|deleteObject/);
   assert.doesNotMatch(combined, /deleteDoc/);
 });

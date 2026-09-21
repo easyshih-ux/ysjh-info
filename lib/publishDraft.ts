@@ -7,6 +7,7 @@ export interface BasicAnnouncementDraft {
   audiences: Audience[];
   content: string;
   attachments: PublishImageAttachment[];
+  pdfAttachments?: PublishPdfAttachment[];
   importantEvents: ImportantEvent[];
   deadlines: Deadline[];
   links: AnnouncementLink[];
@@ -18,6 +19,14 @@ export interface PublishImageAttachment {
   name: string;
   caption: string;
   previewUrl: string;
+  file?: File;
+}
+
+export interface PublishPdfAttachment {
+  id: string;
+  type: "pdf";
+  name: string;
+  sizeBytes: number;
   file?: File;
 }
 

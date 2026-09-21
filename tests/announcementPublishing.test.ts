@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { announcementImagePath, createFirestoreAnnouncement } from "../lib/announcementPublishing.ts";
+import { announcementImagePath, announcementPdfPath, createFirestoreAnnouncement } from "../lib/announcementPublishing.ts";
 import { fitImageWithinMaxEdge, MAX_COMPRESSED_IMAGE_BYTES, MAX_IMAGE_EDGE } from "../lib/imageCompression.ts";
 import type { BasicAnnouncementDraft } from "../lib/publishDraft.ts";
 
@@ -29,6 +29,7 @@ test("正式發布寫入 Firebase UID 作者與獨立發布狀態", () => {
 
 test("Storage path 與預先產生的 Firestore document ID 一致", () => {
   assert.equal(announcementImagePath("announcement-123", "image-456"), "announcements/announcement-123/image-456.webp");
+  assert.equal(announcementPdfPath("announcement-123", "publisher-uid", "pdf-456"), "announcements/announcement-123/pdf/publisher-uid/pdf-456.pdf");
 });
 
 test("發布先取得 Firestore ID、上傳圖片後才 setDoc", () => {
@@ -55,15 +56,15 @@ test("圖片輸出 WebP、最長邊不超過 1920 且限制 2 MB", () => {
 
 test("Firestore attachments 使用正式 URL 且不含 blob、File 或 previewUrl", () => {
   const document = createFirestoreAnnouncement(draft(), 115, "2026-09-19T10:00:00.000Z", [{ id: "image-1", type: "image", url: "https://firebasestorage.googleapis.com/example.webp", name: "原圖.jpg", caption: "說明" }]);
-  assert.equal(document.attachments[0].url.startsWith("https://"), true);
-  assert.equal(document.attachments[0].url.startsWith("blob:"), false);
+  assert.equal(document.attachments[0]?.url.startsWith("https://"), true);
+  assert.equal(document.attachments[0]?.url.startsWith("blob:"), false);
   assert.equal("previewUrl" in document.attachments[0], false);
   assert.equal("file" in document.attachments[0], false);
 });
 
 test("Storage 上傳失敗時不會執行後面的 Firestore setDoc", () => {
   const publishing = source("lib/announcementPublishing.ts");
-  assert.ok(publishing.indexOf("await Promise.all(compressed.map") < publishing.indexOf("await setDoc"));
+  assert.ok(publishing.indexOf("await uploadAnnouncementImage") < publishing.indexOf("await setDoc"));
   assert.match(publishing, /catch \(error\)[\s\S]*throw new AnnouncementPublishError/);
 });
 
@@ -111,7 +112,7 @@ test("預覽與確認發布按鈕具備獨立的 enabled 與 disabled 對比樣�
 
 test("圖片新增 UI、五張上限與本機預覽仍存在", () => {
   const page = source("app/publish/page.tsx");
-  assert.match(page, /公告圖片／附件/);
+  assert.match(page, /<h4>圖片<\/h4>/);
   assert.match(page, /accept="image\/\*" multiple/);
   assert.match(page, /＋新增圖片/);
   assert.match(page, /draft\.attachments\.length < MAX_PUBLISH_IMAGES/);

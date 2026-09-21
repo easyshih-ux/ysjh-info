@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Edit3, Eye, MessageSquarePlus, Search, Trash2 } from "lucide-react";
+import { ArrowLeft, Edit3, Eye, FileText, MessageSquarePlus, Search, Trash2 } from "lucide-react";
 import { AUDIENCES, formatImportantEventSchedule, toggleAudienceSelection, type Announcement, type Audience, type FollowUp } from "@/lib/announcements";
 import { CURRENT_ACADEMIC_YEAR, FRONTEND_ACADEMIC_YEARS } from "@/lib/academicYear";
 import { DEPARTMENTS, isDepartment, type Department } from "@/lib/departments";
@@ -20,6 +20,7 @@ import { DepartmentOptionGroups } from "@/components/department-option-groups";
 import { Textarea } from "@/components/ui/textarea";
 import { LineSummaryCard } from "@/components/line-summary-card";
 import { announcementTimeStates } from "@/lib/announcementLogic";
+import { formatFileSize } from "@/lib/attachmentFiles";
 import styles from "./manage.module.css";
 
 const clone = (item: Announcement): Announcement => structuredClone(item);
@@ -121,7 +122,7 @@ export default function ManagePage() {
       {loading ? <p className={styles.empty} aria-live="polite">公告載入中…</p> : loadError ? <p className={`${styles.empty} ${styles.errorNotice}`} role="alert">目前無法載入公告，請稍後再試。</p> : items.length === 0 ? <p className={styles.empty}>目前沒有已發布公告。</p> : <section className={styles.list} aria-label="公告列表">{visible.length === 0 ? <p className={styles.empty}>目前沒有符合的公告。</p> : visible.map(item => <article key={item.id}>
         <div className={styles.meta}><span>{item.academicYear} 學年度</span><span>{item.department}</span><span>{item.publicationStatus === "withdrawn" ? "已下架" : "正常發布"}</span><span>{announcementTimeStates(item, new Date()).deadline}</span>{announcementTimeStates(item, new Date()).activity !== "正常" && <span>{announcementTimeStates(item, new Date()).activity}</span>}{item.collectionStatus === "chasing" && <span>催繳中</span>}<span>發布者：{announcementPublisherLabel(item)}</span><span>發布 {formatDateTime(item.publishedAt)}</span>{item.updatedAt && <span>更新 {formatDateTime(item.updatedAt)}</span>}</div>
         <h2>{item.title}</h2><p>{item.audiences.join("、") || "未設定適用對象"}</p>
-        <div className={styles.flags}><span>{item.importantEvents.length ? `${item.importantEvents.length} 筆重要事項` : "無重要事項"}</span><span>{item.deadlines.length ? `${item.deadlines.length} 筆截止期限` : "無截止期限"}</span><span>{item.attachments.length ? `${item.attachments.length} 張圖片` : "無圖片"}</span><span>{item.followUps.length ? `${item.followUps.length} 筆補充／提醒` : "無補充／提醒"}</span></div>
+        <div className={styles.flags}><span>{item.importantEvents.length ? `${item.importantEvents.length} 筆重要事項` : "無重要事項"}</span><span>{item.deadlines.length ? `${item.deadlines.length} 筆截止期限` : "無截止期限"}</span><span>{item.attachments.filter(attachment => attachment.type === "image").length ? `${item.attachments.filter(attachment => attachment.type === "image").length} 張圖片` : "無圖片"}</span><span>{item.attachments.filter(attachment => attachment.type === "pdf").length ? `${item.attachments.filter(attachment => attachment.type === "pdf").length} 份 PDF` : "無 PDF"}</span><span>{item.followUps.length ? `${item.followUps.length} 筆補充／提醒` : "無補充／提醒"}</span></div>
         <div className={styles.cardActions}><Button variant="outline" onClick={() => setViewing(item)}><Eye />查看</Button><Button variant="outline" onClick={() => { setError(""); setEditing(clone(item)); }}><Edit3 />修正公告</Button><Button variant="outline" onClick={() => { setError(""); setMessage(""); setFollowTarget(item); }}><MessageSquarePlus />新增補充／提醒</Button>{item.publicationStatus === "withdrawn" ? <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "restore")}>復原公告</Button> : <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "withdraw")}>下架公告</Button>}{item.deadlines.length > 0 && (item.collectionStatus === "chasing" ? <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "stopChase")}>結束催繳</Button> : <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "startChase")}>啟動催繳</Button>)}{publisher.role === "systemAdmin" && <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "delete")}><Trash2 />永久刪除</Button>}</div>
       </article>)}</section>}
     </div>
@@ -159,4 +160,4 @@ function AnnouncementDetails({ item, onClose }: { item: Announcement | null; onC
 
 function DetailList({ title, empty, values }: { title: string; empty: string; values: string[] }) { return <section><h3>{title}</h3>{values.length ? <ul>{values.map((value, index) => <li key={`${value}-${index}`}>{value}</li>)}</ul> : <p>{empty}</p>}</section>; }
 
-function ReadOnlyImages({ item }: { item: Announcement }) { return <section className={styles.readOnlyImages}><h3>公告圖片（唯讀）</h3>{item.attachments.length ? <div>{item.attachments.map(attachment => <figure key={attachment.id}><img src={attachment.url} alt={attachment.caption || attachment.name} /><figcaption><strong>{attachment.name}</strong>{attachment.caption && <span>{attachment.caption}</span>}</figcaption></figure>)}</div> : <p>無公告圖片</p>}</section>; }
+function ReadOnlyImages({ item }: { item: Announcement }) { const images = item.attachments.filter(attachment => attachment.type === "image"); const pdfs = item.attachments.filter(attachment => attachment.type === "pdf"); return <section className={styles.readOnlyImages}><h3>公告附件（唯讀）</h3>{images.length ? <div>{images.map(attachment => <figure key={attachment.id}><img src={attachment.url} alt={attachment.caption || attachment.name} /><figcaption><strong>{attachment.name}</strong>{attachment.caption && <span>{attachment.caption}</span>}</figcaption></figure>)}</div> : <p>無公告圖片</p>}{pdfs.length ? <div className={styles.pdfAttachments}>{pdfs.map(attachment => <a key={attachment.id} href={attachment.url} target="_blank" rel="noopener noreferrer"><FileText /><span><strong>{attachment.name}</strong><small>PDF・{formatFileSize(attachment.sizeBytes)}</small></span>開啟文件 ↗</a>)}</div> : <p>無 PDF 文件</p>}</section>; }

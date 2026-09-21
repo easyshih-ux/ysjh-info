@@ -21,10 +21,10 @@ try {
       firebaseExecutable,
       "emulators:exec",
       "--only",
-      "firestore",
+      "firestore,storage",
       "--project",
       "demo-ysjh-info-rules-test",
-      "node --test tests/firestoreRules.emulator.mjs",
+      "node --test tests/firestoreRules.emulator.mjs tests/storageRules.emulator.mjs",
     ],
     {
       stdio: "inherit",
@@ -37,7 +37,7 @@ try {
     },
   );
 } finally {
-  for (const logFile of ["firestore-debug.log", "firebase-debug.log"]) {
+  for (const logFile of ["firestore-debug.log", "storage-debug.log", "firebase-debug.log"]) {
     rmSync(resolve(logFile), { force: true });
   }
   rmSync(cliConfigRoot, { recursive: true, force: true });

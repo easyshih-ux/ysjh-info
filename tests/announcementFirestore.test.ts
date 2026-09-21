@@ -32,7 +32,7 @@ test("Firestore document 轉成既有 Announcement 並使用 document ID", () =>
   const item = announcementFromFirestore("firestore-id", firestoreRecord());
   assert.equal(item?.id, "firestore-id");
   assert.equal(item?.department, "設備組");
-  assert.equal(item?.attachments[0].caption, "圖片說明");
+  assert.equal(item?.attachments[0].type === "image" ? item.attachments[0].caption : undefined, "圖片說明");
 });
 
 test("舊公告缺少生命週期欄位仍視為正常，下架公告由公開讀取層排除", () => {

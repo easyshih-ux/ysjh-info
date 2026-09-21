@@ -51,6 +51,68 @@ service cloud.firestore {
         || request.resource.data.department == get(/databases/$(database)/documents/authorizedPublishers/$(request.auth.uid)).data.defaultDepartment;
     }
 
+    function isValidImageAttachment(attachment) {
+      return attachment is map
+        && attachment.type == 'image'
+        && attachment.id is string
+        && attachment.id.size() > 0
+        && attachment.url is string
+        && attachment.url.matches('https://.*')
+        && attachment.name is string
+        && attachment.name.size() > 0;
+    }
+
+    function isValidPdfAttachment(attachment, announcementId, publisherUid) {
+      return attachment is map
+        && attachment.keys().hasAll(['id', 'type', 'url', 'name', 'sizeBytes', 'storagePath', 'contentType'])
+        && attachment.keys().hasOnly(['id', 'type', 'url', 'name', 'sizeBytes', 'storagePath', 'contentType'])
+        && attachment.type == 'pdf'
+        && attachment.id is string
+        && attachment.id.size() > 0
+        && attachment.name is string
+        && attachment.name.size() > 0
+        && attachment.name.size() <= 120
+        && attachment.url is string
+        && attachment.url.matches('https://.*')
+        && attachment.sizeBytes is int
+        && attachment.sizeBytes > 0
+        && attachment.sizeBytes <= 5 * 1024 * 1024
+        && attachment.contentType == 'application/pdf'
+        && attachment.storagePath == 'announcements/' + announcementId + '/pdf/' + publisherUid + '/' + attachment.id + '.pdf';
+    }
+
+    function isValidAttachment(attachment, announcementId, publisherUid) {
+      return isValidImageAttachment(attachment)
+        || isValidPdfAttachment(attachment, announcementId, publisherUid);
+    }
+
+    function hasAtMostTwoTrailingPdfs(attachments) {
+      return (attachments.size() < 3 || isValidImageAttachment(attachments[0]))
+        && (attachments.size() < 4 || isValidImageAttachment(attachments[1]))
+        && (attachments.size() < 5 || isValidImageAttachment(attachments[2]))
+        && (attachments.size() < 6 || isValidImageAttachment(attachments[3]))
+        && (attachments.size() < 7 || isValidImageAttachment(attachments[4]));
+    }
+
+    function isValidAttachments(data, announcementId, publisherUid) {
+      return !data.keys().hasAny(['attachments'])
+        || (data.attachments is list
+          && data.attachments.size() <= 7
+          && (data.attachments.size() < 1 || isValidAttachment(data.attachments[0], announcementId, publisherUid))
+          && (data.attachments.size() < 2 || isValidAttachment(data.attachments[1], announcementId, publisherUid))
+          && (data.attachments.size() < 3 || isValidAttachment(data.attachments[2], announcementId, publisherUid))
+          && (data.attachments.size() < 4 || isValidAttachment(data.attachments[3], announcementId, publisherUid))
+          && (data.attachments.size() < 5 || isValidAttachment(data.attachments[4], announcementId, publisherUid))
+          && (data.attachments.size() < 6 || isValidAttachment(data.attachments[5], announcementId, publisherUid))
+          && (data.attachments.size() < 7 || isValidAttachment(data.attachments[6], announcementId, publisherUid))
+          && hasAtMostTwoTrailingPdfs(data.attachments));
+    }
+
+    function keepsValidAttachments(announcementId) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['attachments'])
+        || isValidAttachments(request.resource.data, announcementId, request.resource.data.publisherUid);
+    }
+
     function isOwnVerifiedPublisherRequest(publisherUid) {
       return request.auth != null
         && request.auth.uid == publisherUid
@@ -90,10 +152,12 @@ service cloud.firestore {
       allow create: if isAuthorizedPublisher()
         && request.resource.data.publisherUid == request.auth.uid
         && request.resource.data.publicationStatus == 'published'
-        && canUseAnnouncementDepartment();
+        && canUseAnnouncementDepartment()
+        && isValidAttachments(request.resource.data, announcementId, request.auth.uid);
       allow update: if canManageAnnouncement()
         && keepsLifecycleFields()
-        && canUseAnnouncementDepartment();
+        && canUseAnnouncementDepartment()
+        && keepsValidAttachments(announcementId);
       allow delete: if false;
     }
 

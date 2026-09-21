@@ -1,6 +1,7 @@
 import { collection, getDocs } from "firebase/firestore";
 import { ANNOUNCEMENTS_COLLECTION, getFirestoreClient } from "./firestoreClient.ts";
 import { AUDIENCES, normalizeAudiences, type Announcement, type AnnouncementLink, type Attachment, type Audience, type Deadline, type FollowUp, type ImportantEvent } from "./announcements.ts";
+import { MAX_ATTACHMENT_NAME_LENGTH, MAX_PDF_BYTES } from "./attachmentFiles.ts";
 import { isDepartment } from "./departments.ts";
 
 type UnknownRecord = Record<string, unknown>;
@@ -25,9 +26,30 @@ function normalizeDeadlines(value: unknown): Deadline[] {
 }
 
 function normalizeAttachments(value: unknown): Attachment[] {
-  return records(value).flatMap(item => isNonEmptyString(item.id) && item.type === "image" && isNonEmptyString(item.url) && item.url.startsWith("https://") && isNonEmptyString(item.name)
-    ? [{ id: item.id, type: "image" as const, url: item.url, name: item.name, ...(isNonEmptyString(item.caption) ? { caption: item.caption } : {}) }]
-    : []);
+  const attachments: Attachment[] = [];
+  for (const item of records(value)) {
+    if (!isNonEmptyString(item.id) || !isNonEmptyString(item.url) || !item.url.startsWith("https://") || !isNonEmptyString(item.name)) continue;
+    if (item.type === "image") {
+      attachments.push({ id: item.id, type: "image", url: item.url, name: item.name, ...(isNonEmptyString(item.caption) ? { caption: item.caption } : {}) });
+      continue;
+    }
+    if (item.type === "pdf"
+      && item.name.length <= MAX_ATTACHMENT_NAME_LENGTH
+      && typeof item.sizeBytes === "number" && Number.isInteger(item.sizeBytes) && item.sizeBytes > 0 && item.sizeBytes <= MAX_PDF_BYTES
+      && isNonEmptyString(item.storagePath)
+      && item.contentType === "application/pdf") {
+      attachments.push({
+        id: item.id,
+        type: "pdf" as const,
+        url: item.url,
+        name: item.name,
+        sizeBytes: item.sizeBytes,
+        storagePath: item.storagePath,
+        contentType: "application/pdf" as const,
+      });
+    }
+  }
+  return attachments;
 }
 
 function normalizeLinks(value: unknown): AnnouncementLink[] {

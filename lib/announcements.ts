@@ -9,7 +9,17 @@ export type UserIdentity = (typeof USER_IDENTITIES)[number];
 
 export interface ImportantEvent { date: string; time?: string; endDate?: string; endTime?: string; title: string }
 export interface Deadline { date: string; time?: string; label: string }
-export interface Attachment { id: string; type: "image"; url: string; name: string; caption?: string }
+export interface ImageAttachment { id: string; type: "image"; url: string; name: string; caption?: string }
+export interface PdfAttachment {
+  id: string;
+  type: "pdf";
+  url: string;
+  name: string;
+  sizeBytes: number;
+  storagePath: string;
+  contentType: "application/pdf";
+}
+export type Attachment = ImageAttachment | PdfAttachment;
 export interface FollowUp { createdAt: string; type: "supplement" | "reminder"; message: string }
 export interface AnnouncementLink { id: string; label: string; url: string; type: "website"; isPrimary: boolean }
 export interface Announcement {

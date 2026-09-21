@@ -27,7 +27,7 @@ export function filterManagedAnnouncements(items: Announcement[], department: st
 }
 
 export function validateAnnouncementCore(item: Announcement) {
-  return validateBasicDraft({ department: item.department, title: item.title, audiences: normalizeAudiences(item.audiences), content: item.content, attachments: item.attachments.map(a => ({ ...a, caption: a.caption ?? "", previewUrl: a.url })), importantEvents: item.importantEvents, deadlines: item.deadlines, links: item.links });
+  return validateBasicDraft({ department: item.department, title: item.title, audiences: normalizeAudiences(item.audiences), content: item.content, attachments: item.attachments.filter(a => a.type === "image").map(a => ({ ...a, caption: a.caption ?? "", previewUrl: a.url })), importantEvents: item.importantEvents, deadlines: item.deadlines, links: item.links });
 }
 
 export function updateAnnouncement(items: Announcement[], edited: Announcement, updatedAt: string) {

@@ -1,14 +1,15 @@
 import { collection, doc, setDoc } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { getFunctions, httpsCallable } from "firebase/functions";
-import type { Announcement, Attachment } from "./announcements.ts";
+import type { Announcement, Attachment, PdfAttachment } from "./announcements.ts";
 import { ANNOUNCEMENTS_COLLECTION, getFirestoreClient, type FirestoreAnnouncement } from "./firestoreClient.ts";
 import { getFirebaseStorageClient } from "./firebaseStorageClient.ts";
 import { getFirebaseApp } from "./firebaseClient.ts";
 import { compressImageToWebP, ImageCompressionError } from "./imageCompression.ts";
-import { publishDraftToAnnouncement, type BasicAnnouncementDraft, type PublishImageAttachment } from "./publishDraft.ts";
+import { publishDraftToAnnouncement, type BasicAnnouncementDraft, type PublishImageAttachment, type PublishPdfAttachment } from "./publishDraft.ts";
+import { sanitizeAttachmentName } from "./attachmentFiles.ts";
 
-export type PublishStage = "processing-images" | "uploading-images" | "publishing";
+export type PublishStage = "processing-images" | "uploading-images" | "uploading-pdfs" | "publishing";
 
 export class AnnouncementPublishError extends Error {
   constructor(message: string) {
@@ -49,6 +50,10 @@ export function announcementImagePath(announcementId: string, imageId: string) {
   return `announcements/${announcementId}/${imageId}.webp`;
 }
 
+export function announcementPdfPath(announcementId: string, publisherUid: string, attachmentId: string) {
+  return `announcements/${announcementId}/pdf/${publisherUid}/${attachmentId}.pdf`;
+}
+
 export async function publishAnnouncement(
   draft: BasicAnnouncementDraft,
   academicYear: number,
@@ -62,19 +67,33 @@ export async function publishAnnouncement(
   const uploadedPaths: string[] = [];
 
   try {
-    if (draft.attachments.length > 0) {
+    const pdfAttachments = draft.pdfAttachments ?? [];
+    if (draft.attachments.length > 0 || pdfAttachments.length > 0) {
       if (!publisher) throw new AnnouncementPublishError("無法確認發布者身分，請重新登入後再試一次。");
-      onStage?.("processing-images");
-      const compressed = await Promise.all(draft.attachments.map(async attachment => ({
-        attachment,
-        blob: await compressDraftImage(attachment),
-      })));
-      onStage?.("uploading-images");
-      attachments = await Promise.all(compressed.map(async ({ attachment, blob }) => {
-        uploadedPaths.push(announcementImagePath(announcementReference.id, attachment.id));
-        const uploaded = await uploadAnnouncementImage(announcementReference.id, attachment, blob, publisher.uid);
-        return uploaded;
-      }));
+      if (draft.attachments.length > 0) {
+        onStage?.("processing-images");
+        const compressed = await Promise.all(draft.attachments.map(async attachment => ({
+          attachment,
+          blob: await compressDraftImage(attachment),
+        })));
+        onStage?.("uploading-images");
+        const images: Attachment[] = [];
+        for (const { attachment, blob } of compressed) {
+          uploadedPaths.push(announcementImagePath(announcementReference.id, attachment.id));
+          images.push(await uploadAnnouncementImage(announcementReference.id, attachment, blob, publisher.uid));
+        }
+        attachments.push(...images);
+      }
+      if (pdfAttachments.length > 0) {
+        onStage?.("uploading-pdfs");
+        const pdfs: PdfAttachment[] = [];
+        for (const attachment of pdfAttachments) {
+          const path = announcementPdfPath(announcementReference.id, publisher.uid, attachment.id);
+          uploadedPaths.push(path);
+          pdfs.push(await uploadAnnouncementPdf(announcementReference.id, attachment, publisher.uid));
+        }
+        attachments.push(...pdfs);
+      }
     }
 
     onStage?.("publishing");
@@ -132,5 +151,28 @@ async function uploadAnnouncementImage(
     url,
     name: attachment.name,
     caption: attachment.caption,
+  };
+}
+
+async function uploadAnnouncementPdf(
+  announcementId: string,
+  attachment: PublishPdfAttachment,
+  uploaderUid: string,
+): Promise<PdfAttachment> {
+  if (!attachment.file) throw new AnnouncementPublishError("PDF 檔案已失效，請移除後重新選擇。");
+  const storagePath = announcementPdfPath(announcementId, uploaderUid, attachment.id);
+  const storageReference = ref(getFirebaseStorageClient(), storagePath);
+  await uploadBytes(storageReference, attachment.file, {
+    contentType: "application/pdf",
+    customMetadata: { uploaderUid },
+  });
+  return {
+    id: attachment.id,
+    type: "pdf",
+    url: await getDownloadURL(storageReference),
+    name: sanitizeAttachmentName(attachment.name),
+    sizeBytes: attachment.sizeBytes,
+    storagePath,
+    contentType: "application/pdf",
   };
 }
