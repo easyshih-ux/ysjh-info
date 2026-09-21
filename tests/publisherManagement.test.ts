@@ -6,9 +6,23 @@ const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.
 
 test("systemAdmin 才會在行政工作台看到發布者管理入口", () => {
   const page = source("app/admin/page.tsx");
-  assert.match(page, /publisher\.role === "systemAdmin"/);
+  assert.match(page, /isSystemAdmin = publisher\.role === "systemAdmin"/);
+  assert.match(page, /usePublisherRequests\(isSystemAdmin\)/);
   assert.match(page, /href="\/admin\/publishers"/);
   assert.match(page, /發布者管理/);
+});
+
+test("行政工作台依真實 pending 數量顯示待審摘要且妥善處理載入與失敗", () => {
+  const page = source("app/admin/page.tsx");
+  const backend = source("functions/src/index.ts");
+  assert.match(page, /publisherManagement\.status === "loading"/);
+  assert.match(page, /正在確認待審申請…/);
+  assert.match(page, /待審狀態暫時無法讀取，仍可進入管理/);
+  assert.match(page, /publisherManagement\.requests\.length === 0/);
+  assert.match(page, /目前無待審申請/);
+  assert.match(page, /待審 \{publisherManagement\.requests\.length\}/);
+  assert.match(page, /有 \$\{publisherManagement\.requests\.length\} 筆發布權限申請待處理/);
+  assert.match(backend, /data\.status !== "pending"/);
 });
 
 test("發布者管理頁共用 AdminAuthGuard 並再次限制 systemAdmin", () => {
