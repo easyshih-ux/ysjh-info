@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Edit3, Eye, MessageSquarePlus, Search, Trash2 } from "lucide-react";
 import { AUDIENCES, formatImportantEventSchedule, toggleAudienceSelection, type Announcement, type Audience, type FollowUp } from "@/lib/announcements";
 import { CURRENT_ACADEMIC_YEAR, FRONTEND_ACADEMIC_YEARS } from "@/lib/academicYear";
-import { DEPARTMENTS, departmentGroups, isDepartment, isFixedDepartment, standaloneDepartments, type Department } from "@/lib/departments";
+import { DEPARTMENTS, isDepartment, type Department } from "@/lib/departments";
 import { announcementPublisherLabel, applyAnnouncementUpdate, filterManagedAnnouncements, MANAGE_DEPARTMENT_KEY, resolveInitialManageDepartment, validateAnnouncementCore } from "@/lib/announcementManagement";
 import { AnnouncementManagementError, appendManagedFollowUp, updateManagedAnnouncement } from "@/lib/announcementManagementFirestore";
 import { readManagedAnnouncements } from "@/lib/announcementFirestore";
@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { DepartmentOptionGroups } from "@/components/department-option-groups";
 import { Textarea } from "@/components/ui/textarea";
 import { LineSummaryCard } from "@/components/line-summary-card";
 import { announcementTimeStates } from "@/lib/announcementLogic";
@@ -111,7 +112,7 @@ export default function ManagePage() {
     <div className={styles.shell}>
       <section className={styles.controls}>
         {publisher.role === "systemAdmin" && <label>管理範圍<select value={managementScope} onChange={event => setManagementScope(event.target.value as "mine" | "all")}><option value="all">全校公告管理</option><option value="mine">我的公告</option></select></label>}
-        <label>發布單位<select value={department} onChange={event => changeDepartment(event.target.value as Department | "全部")}><option value="全部">全部發布單位</option>{departmentGroups.map(group => <optgroup key={group.office} label={group.office}>{group.departments.map(value => <option key={value}>{value}</option>)}</optgroup>)}</select></label>
+        <label>發布單位<select value={department} onChange={event => changeDepartment(event.target.value as Department | "全部")}><option value="全部">全部發布單位</option><DepartmentOptionGroups currentDepartment={department === "全部" ? undefined : department} /></select></label>
         <label>適用對象<select value={audience} onChange={event => setAudience(event.target.value as Audience | "全部")}><option value="全部">全部對象</option>{AUDIENCES.map(value => <option key={value}>{value}</option>)}</select></label>
         <label>學年度<select value={academicYear} onChange={event => setAcademicYear(Number(event.target.value))}>{FRONTEND_ACADEMIC_YEARS.map(value => <option key={value} value={value}>{value} 學年度</option>)}</select></label>
         <label className={styles.search}><Search /><Input value={query} onChange={event => setQuery(event.target.value)} placeholder="搜尋公告標題、內容或發布單位" /></label>
@@ -128,7 +129,7 @@ export default function ManagePage() {
     <AnnouncementDetails item={viewing} onClose={() => setViewing(null)} />
     <Dialog open={!!editing} onOpenChange={open => { if (!open && !saving) { setEditing(null); setError(""); } }}><DialogContent className={styles.editor} showCloseButton={!saving}>{editing && <>
       <DialogHeader><DialogDescription>修正既有公告 · 發布時間保持不變</DialogDescription><DialogTitle>{editing.title}</DialogTitle></DialogHeader>
-      <div className={styles.twoFields}><label>學年度<select value={editing.academicYear} onChange={event => setEditing({ ...editing, academicYear: Number(event.target.value) })}>{FRONTEND_ACADEMIC_YEARS.map(value => <option key={value} value={value}>{value} 學年度</option>)}</select></label><label>發布單位<select value={editing.department} onChange={event => setEditing({ ...editing, department: event.target.value as Department })}>{standaloneDepartments.map(value => <option key={value}>{value}</option>)}{departmentGroups.map(group => <optgroup key={group.office} label={group.office}>{group.departments.map(value => <option key={value}>{value}</option>)}</optgroup>)}{!isFixedDepartment(editing.department) && <option value={editing.department}>{editing.department}</option>}</select></label></div>
+      <div className={styles.twoFields}><label>學年度<select value={editing.academicYear} onChange={event => setEditing({ ...editing, academicYear: Number(event.target.value) })}>{FRONTEND_ACADEMIC_YEARS.map(value => <option key={value} value={value}>{value} 學年度</option>)}</select></label><label>發布單位<select value={editing.department} onChange={event => setEditing({ ...editing, department: event.target.value as Department })}><DepartmentOptionGroups currentDepartment={editing.department} /></select></label></div>
       <label>公告標題<Input value={editing.title} onChange={event => setEditing({ ...editing, title: event.target.value })} /></label>
       <fieldset><legend>適用對象</legend><div className={styles.audiences}>{AUDIENCES.map(value => <label key={value}><Checkbox checked={editing.audiences.includes(value)} onCheckedChange={checked => setEditing({ ...editing, audiences: toggleAudienceSelection(editing.audiences, value, checked === true) })} />{value}</label>)}</div></fieldset>
       <label>完整公告內容<Textarea value={editing.content} onChange={event => setEditing({ ...editing, content: event.target.value })} /></label>

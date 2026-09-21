@@ -86,7 +86,7 @@ export function HomeScreenInstall() {
               ? <>LINE 無法直接安裝義學公務。<br />請使用 Chrome 或 Safari 開啟網站後再安裝。</>
               : guidance === "safari"
                 ? "點擊 Safari 的分享按鈕，再選擇『加入主畫面』。"
-                : "請開啟瀏覽器選單，選擇「安裝應用程式」或「新增至主畫面」。"}
+                : "請點擊瀏覽器網址列右側的『安裝』按鈕，即可安裝義學公務。"}
           </DialogDescription>
         </DialogHeader>
         {guidance === "line" && <div className="install-line-actions">

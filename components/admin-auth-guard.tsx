@@ -10,8 +10,9 @@ import { useFirebaseAuth } from "@/hooks/use-firebase-auth";
 import { usePublisherProfile } from "@/hooks/use-publisher-profile";
 import { usePublisherRequest } from "@/hooks/use-publisher-request";
 import { FirebaseAuthLoginWarning } from "@/components/firebase-auth-login-warning";
+import { DepartmentOptionGroups } from "@/components/department-option-groups";
 import styles from "./admin-auth-guard.module.css";
-import { PUBLISHER_REQUEST_DEPARTMENT_OPTIONS, isPublisherRequestDepartment } from "@/lib/departments";
+import { isPublisherRequestDepartment } from "@/lib/departments";
 
 const AuthorizedPublisherContext = createContext<AuthorizedPublisherContextValue | null>(null);
 
@@ -120,7 +121,7 @@ export function AdminAuthGuard({ children }: { children: ReactNode }) {
           {!requestError && <label className={styles.requestDepartment}>申請發布單位
             <select value={requestedDepartment} onChange={event => setRequestedDepartment(event.target.value)} disabled={requestState.submitting}>
               <option value="" disabled>請選擇發布單位</option>
-              {PUBLISHER_REQUEST_DEPARTMENT_OPTIONS.map(department => <option key={department} value={department}>{department}</option>)}
+              <DepartmentOptionGroups includeOther />
             </select>
           </label>}
           <div className={styles.actions}>

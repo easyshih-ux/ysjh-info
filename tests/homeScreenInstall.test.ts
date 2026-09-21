@@ -43,14 +43,14 @@ test("beforeinstallprompt 使用原生安裝，appinstalled 後隱藏入口", ()
   assert.match(component, /setVisible\(false\)/);
 });
 
-test("LINE 不觸發原生安裝，Safari 與 fallback 顯示簡短說明", () => {
+test("LINE 不觸發原生安裝，Safari 與桌面 fallback 顯示對應說明", () => {
   const component = source("components/home-screen-install.tsx");
   const lineBranch = component.match(/if \(environment === "line"\) \{([\s\S]*?)\n    \}/)?.[1] ?? "";
   assert.match(lineBranch, /setGuidance\("line"\)/);
   assert.match(lineBranch, /return/);
   assert.doesNotMatch(lineBranch, /installPrompt\.prompt/);
   assert.match(component, /點擊 Safari 的分享按鈕，再選擇『加入主畫面』。/);
-  assert.match(component, /安裝應用程式.*新增至主畫面/);
+  assert.match(component, /請點擊瀏覽器網址列右側的『安裝』按鈕，即可安裝義學公務。/);
   assert.match(component, /LINE 無法直接安裝義學公務/);
   assert.match(component, /OFFICIAL_PUBLIC_SITE_URL/);
   assert.doesNotMatch(component, /window\.open|location\.href|intent:/);

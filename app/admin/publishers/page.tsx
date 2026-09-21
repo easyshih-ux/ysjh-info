@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, ChevronDown, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { AdminAuthGuard, useAuthorizedPublisher } from "@/components/admin-auth-guard";
+import { DepartmentOptionGroups } from "@/components/department-option-groups";
 import { usePublisherRequests } from "@/hooks/use-publisher-requests";
-import { OTHER_DEPARTMENT_OPTION, departmentGroups, isFixedDepartment, resolveDepartmentSelection, standaloneDepartments, type Department } from "@/lib/departments";
+import { OTHER_DEPARTMENT_OPTION, isFixedDepartment, resolveDepartmentSelection, type Department } from "@/lib/departments";
 import { approvePublisherRequest, changePublisherDepartment, rejectPublisherRequest, setPublisherEnabled, transferSystemAdmin } from "@/lib/publisherRequestManagement";
 import styles from "./publishers.module.css";
 
@@ -148,14 +149,7 @@ function PublisherRequestList() {
               disabled={busyAction !== null}
             >
               <option value="" disabled>請選擇發布單位</option>
-              {standaloneDepartments.map(department => <option key={department} value={department}>{department}</option>)}
-              {departmentGroups.flatMap(group => [
-                <option key={group.office} value={group.office}>【{group.office}】</option>,
-                ...group.departments.slice(1).map(department => (
-                  <option key={department} value={department}>　{department}</option>
-                )),
-              ])}
-              <option value={OTHER_DEPARTMENT_OPTION}>{OTHER_DEPARTMENT_OPTION}</option>
+              <DepartmentOptionGroups includeOther />
             </select>
           </label>
           {(departments[request.uid] ?? request.requestedDepartment) === OTHER_DEPARTMENT_OPTION && <label>實際發布單位名稱<input value={customDepartments[request.uid] ?? ""} maxLength={30} onChange={event => setCustomDepartments(current => ({ ...current, [request.uid]: event.target.value }))} disabled={busyAction !== null} placeholder="例如：家長會" /></label>}
@@ -183,9 +177,7 @@ function PublisherRequestList() {
           <span>{item.role === "systemAdmin" ? "系統管理員" : item.enabled ? "已啟用" : "已停用"}</span>
           <label>發布單位<select value={departments[item.uid] ?? (isFixedDepartment(item.defaultDepartment) ? item.defaultDepartment : item.defaultDepartment ? OTHER_DEPARTMENT_OPTION : "")} onChange={event => setDepartments(current => ({ ...current, [item.uid]: event.target.value as Department }))} disabled={busyAction !== null || item.role === "systemAdmin"}>
             <option value="" disabled>請選擇發布單位</option>
-            {standaloneDepartments.map(department => <option key={department} value={department}>{department}</option>)}
-            {departmentGroups.flatMap(group => [<option key={group.office} value={group.office}>【{group.office}】</option>, ...group.departments.slice(1).map(department => <option key={department} value={department}>　{department}</option>)])}
-            <option value={OTHER_DEPARTMENT_OPTION}>{OTHER_DEPARTMENT_OPTION}</option>
+            <DepartmentOptionGroups includeOther />
           </select></label>
           {(departments[item.uid] ?? (isFixedDepartment(item.defaultDepartment) ? item.defaultDepartment : OTHER_DEPARTMENT_OPTION)) === OTHER_DEPARTMENT_OPTION && item.role === "publisher" && <label>實際發布單位名稱<input value={customDepartments[item.uid] ?? (isFixedDepartment(item.defaultDepartment) ? "" : item.defaultDepartment ?? "")} maxLength={30} onChange={event => setCustomDepartments(current => ({ ...current, [item.uid]: event.target.value }))} disabled={busyAction !== null} /></label>}
           {item.role === "publisher" && <><button type="button" onClick={() => void runManagementAction(item.uid, "department")} disabled={busyAction !== null || !resolveDepartmentSelection(departments[item.uid] ?? (isFixedDepartment(item.defaultDepartment) ? item.defaultDepartment : OTHER_DEPARTMENT_OPTION), customDepartments[item.uid] ?? (isFixedDepartment(item.defaultDepartment) ? "" : item.defaultDepartment))}>儲存單位</button><button type="button" className={styles.secondaryButton} onClick={() => void runManagementAction(item.uid, item.enabled ? "disable" : "enable")} disabled={busyAction !== null}>{item.enabled ? "停用發布權限" : "重新啟用"}</button></>}

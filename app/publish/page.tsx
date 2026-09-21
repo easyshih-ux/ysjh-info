@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Eye, ImagePlus, Link2, Trash2 } from "lucide-react";
 import { AUDIENCES, formatImportantEventSchedule, toggleAudienceSelection, type Announcement, type Audience } from "@/lib/announcements";
-import { departmentGroups, isFixedDepartment, standaloneDepartments, type Department } from "@/lib/departments";
+import { type Department } from "@/lib/departments";
 import { CURRENT_ACADEMIC_YEAR } from "@/lib/academicYear";
 import { MAX_PUBLISH_IMAGES, publishDraftToAnnouncement, removePublishAttachment, selectPublishImages, setPrimaryLink, validateBasicDraft, type BasicAnnouncementDraft, type DraftErrors, type PublishImageAttachment } from "@/lib/publishDraft";
 import { AnnouncementPublishError, publishAnnouncement, type PublishStage } from "@/lib/announcementPublishing";
@@ -16,6 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AdminAuthGuard, useAuthorizedPublisher } from "@/components/admin-auth-guard";
 import { LineSummaryCard } from "@/components/line-summary-card";
+import { DepartmentOptionGroups } from "@/components/department-option-groups";
 import styles from "./publish.module.css";
 
 const emptyImportantEvents = () => Array.from({ length: 3 }, () => ({ date: "", time: "", title: "" }));
@@ -121,7 +122,7 @@ function PublishForm() {
       <section className={styles.section} aria-labelledby="basic-title">
         <div className={styles.sectionTitle}><span>01</span><div><h2 id="basic-title">基本資料</h2><p>先填寫老師查閱公告時最需要的內容。</p></div></div>
         <div className={styles.fields}>
-          <label className={styles.field}><span>發布單位 <em>必填</em></span><select className={styles.departmentSelect} value={draft.department} onChange={event => setDraft(current => ({ ...current, department: event.target.value as Department }))} aria-invalid={!!errors.department} aria-describedby={errors.department ? "department-error" : undefined}><option value="">請選擇發布單位</option>{standaloneDepartments.map(item => <option key={item} value={item}>{item}</option>)}{departmentGroups.map(group => <optgroup key={group.office} label={group.office}>{group.departments.map(item => <option key={item} value={item}>{item}</option>)}</optgroup>)}{draft.department && !isFixedDepartment(draft.department) && <option value={draft.department}>{draft.department}</option>}</select>{errors.department && <small id="department-error" className={styles.error}>{errors.department}</small>}</label>
+          <label className={styles.field}><span>發布單位 <em>必填</em></span><select className={styles.departmentSelect} value={draft.department} onChange={event => setDraft(current => ({ ...current, department: event.target.value as Department }))} aria-invalid={!!errors.department} aria-describedby={errors.department ? "department-error" : undefined}><option value="">請選擇發布單位</option><DepartmentOptionGroups currentDepartment={draft.department} /></select>{errors.department && <small id="department-error" className={styles.error}>{errors.department}</small>}</label>
           <label className={styles.field}><span>公告標題 <em>必填</em></span><Input value={draft.title} onChange={event => setDraft(current => ({ ...current, title: event.target.value }))} placeholder="例如：第一次段考命題範圍確認" aria-invalid={!!errors.title} aria-describedby={errors.title ? "title-error" : undefined} />{errors.title && <small id="title-error" className={styles.error}>{errors.title}</small>}</label>
           <fieldset className={styles.fieldset}><legend>適用對象 <em>可複選，必填</em></legend><div className={styles.audienceGrid}>{AUDIENCES.map(audience => { const checked = draft.audiences.includes(audience); return <label key={audience} className={checked ? styles.checked : ""}><Checkbox checked={checked} onCheckedChange={value => toggleAudience(audience, value === true)} aria-invalid={!!errors.audiences} /><span>{audience}</span></label>})}</div>{errors.audiences && <small className={styles.error}>{errors.audiences}</small>}</fieldset>
           <label className={`${styles.field} ${styles.full}`}><span>完整公告內容 <em>必填</em></span><Textarea value={draft.content} onChange={event => setDraft(current => ({ ...current, content: event.target.value }))} placeholder={"可直接貼上原本準備發布到 LINE 的完整文字。\n\n段落、換行與編號都會保留。"} aria-invalid={!!errors.content} aria-describedby={errors.content ? "content-error" : undefined} />{errors.content && <small id="content-error" className={styles.error}>{errors.content}</small>}<small className={styles.hint}>支援長文字、換行、段落與編號。</small></label>

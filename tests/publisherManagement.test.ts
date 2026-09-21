@@ -37,18 +37,17 @@ test("發布者管理資料層透過 asia-east1 callable，不由 browser 直寫
 
 test("pending 申請使用22個固定單位與其他並提供防重複核准狀態", () => {
   const page = source("app/admin/publishers/page.tsx");
-  assert.match(page, /standaloneDepartments\.map/);
-  assert.match(page, /departmentGroups\.flatMap/);
-  assert.match(page, /OTHER_DEPARTMENT_OPTION/);
+  assert.match(page, /DepartmentOptionGroups includeOther/);
   assert.match(page, /核准發布權限/);
   assert.match(page, /核准處理中…/);
   assert.match(page, /disabled=\{busyAction !== null/);
 });
 
-test("下拉顯示層級文字但 option value 維持正式單位名稱", () => {
-  const page = source("app/admin/publishers/page.tsx");
-  assert.match(page, /value=\{group\.office\}>【\{group\.office\}】/);
-  assert.match(page, /value=\{department\}>　\{department\}/);
+test("下拉使用原生 optgroup 且 option value 維持正式單位名稱", () => {
+  const component = source("components/department-option-groups.tsx");
+  assert.match(component, /<optgroup label="校級／獨立單位">/);
+  assert.match(component, /label=\{group\.office\}/);
+  assert.match(component, /value=\{department\}>\{department\}/);
 });
 
 test("發布單位沿用申請選擇，其他未填實際名稱時不得核准", () => {
@@ -58,6 +57,7 @@ test("發布單位沿用申請選擇，其他未填實際名稱時不得核准",
   assert.match(page, /實際發布單位名稱/);
   assert.match(page, /resolveDepartmentSelection/);
   assert.doesNotMatch(page, /departments\[targetUid\] \?\? DEPARTMENTS\[0\]/);
+  assert.match(page, /<DepartmentOptionGroups includeOther \/>/);
 });
 
 test("選擇有效單位後以該單位核准並維持 refresh", () => {
