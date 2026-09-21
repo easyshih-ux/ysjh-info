@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { MAX_ORIGINAL_IMAGE_BYTES, MAX_PUBLISH_IMAGES, isSupportedImage, limitPublishImageSelection, publishDraftToAnnouncement, removePublishAttachment, selectPublishImages, setPrimaryLink, validateBasicDraft, type BasicAnnouncementDraft } from "../lib/publishDraft.ts";
+import { MAX_ORIGINAL_IMAGE_BYTES, MAX_PUBLISH_IMAGES, isSupportedImage, limitPublishImageSelection, normalizeOptionalHttpUrl, publishDraftToAnnouncement, removePublishAttachment, selectPublishImages, setPrimaryLink, validateBasicDraft, type BasicAnnouncementDraft } from "../lib/publishDraft.ts";
 import { DEPARTMENTS, departmentGroups, isDepartment } from "../lib/departments.ts";
 import { toggleAudienceSelection } from "../lib/announcements.ts";
 import { formatImportantEventSchedule } from "../lib/announcements.ts";
@@ -29,3 +29,8 @@ test("重要事項支援同日與跨日起訖時間",()=>{assert.equal(formatImp
 test("同日結束時間不得早於開始時間，跨日不比較鐘點",()=>{assert.ok(validateBasicDraft(draft({importantEvents:[{date:"2026-09-23",time:"10:30",endTime:"08:30",title:"研習"}]})).importantEvents);assert.deepEqual(validateBasicDraft(draft({importantEvents:[{date:"2026-09-23",time:"10:30",endDate:"2026-09-24",endTime:"08:30",title:"研習"}]})),{})});
 test("Deadline 模型不含 submissionLink",()=>{const result=publishDraftToAnnouncement(draft({deadlines:[{date:"2026-09-23",time:"16:00",label:"研習報名截止"}]}),"preview","2026-09-19",115);assert.deepEqual(Object.keys(result.deadlines[0]).sort(),["date","label","time"])});
 test("相關網址最多只有一個主要連結",()=>{const links=[{id:"a",label:"A",url:"https://a.example",type:"website" as const,isPrimary:true},{id:"b",label:"B",url:"https://b.example",type:"website" as const,isPrimary:false}];const result=setPrimaryLink(links,"b",true);assert.equal(result.filter(item=>item.isPrimary).length,1);assert.equal(result.find(item=>item.id==="b")?.isPrimary,true)});
+test("選填網址空白及完整 http https 合法",()=>{for(const value of ["","https://www.example.com","http://www.example.com/path"])assert.equal(normalizeOptionalHttpUrl(value).error,undefined)});
+test("正常網域缺少 protocol 時安全補上 https",()=>{assert.deepEqual(normalizeOptionalHttpUrl("google.com"),{value:"https://google.com"});assert.deepEqual(normalizeOptionalHttpUrl("www.example.com"),{value:"https://www.example.com"})});
+test("中文說明與不像網域的文字不會被猜成網址",()=>{for(const value of ["義學網站","無","請看附件","abc"])assert.match(normalizeOptionalHttpUrl(value).error??"",/網址格式不正確/)});
+test("空白連結列可忽略，非法網址則阻止預覽與發布",()=>{assert.deepEqual(validateBasicDraft(draft({links:[{id:"blank",label:"",url:"",type:"website",isPrimary:false}]})),{});const errors=validateBasicDraft(draft({links:[{id:"bad",label:"義學網站",url:"請看附件",type:"website",isPrimary:false}]}));assert.equal(errors.links,"「相關連結」網址格式不正確")});
+test("附件總檢查維持圖片與 PDF 數量大小格式限制",()=>{const oversizedPdf={id:"pdf",type:"pdf" as const,name:"large.pdf",sizeBytes:5*1024*1024+1,file:{name:"large.pdf",type:"application/pdf",size:5*1024*1024+1} as File};assert.equal(validateBasicDraft(draft({pdfAttachments:[oversizedPdf]})).pdfAttachments,"PDF 單檔不可超過 5 MB");const invalidImage={id:"image",type:"image" as const,name:"not-image.txt",caption:"",previewUrl:"blob:test",file:{name:"not-image.txt",type:"text/plain",size:10} as File};assert.match(validateBasicDraft(draft({attachments:[invalidImage]})).attachments??"",/圖片格式不正確/)});

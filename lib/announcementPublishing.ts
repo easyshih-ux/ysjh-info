@@ -101,6 +101,11 @@ export async function publishAnnouncement(
     await setDoc(announcementReference, document);
     return { id: announcementReference.id, ...document } satisfies Announcement;
   } catch (error) {
+    console.error("announcement publish failed", {
+      code: typeof error === "object" && error !== null && "code" in error ? String(error.code) : undefined,
+      message: error instanceof Error ? error.message : String(error),
+      error,
+    });
     if (uploadedPaths.length > 0) {
       try {
         await cleanupFailedAnnouncementUpload(announcementReference.id);

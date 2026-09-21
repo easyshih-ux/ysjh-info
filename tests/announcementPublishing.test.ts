@@ -70,12 +70,27 @@ test("Storage 上傳失敗時不會執行後面的 Firestore setDoc", () => {
 
 test("發布失敗會由後端清理本次公告已嘗試上傳的圖片且保留原始錯誤", () => {
   const publishing = source("lib/announcementPublishing.ts");
+  const page = source("app/publish/page.tsx");
   assert.match(publishing, /uploadedPaths\.push\(announcementImagePath\(announcementReference\.id, attachment\.id\)\)/);
   assert.match(publishing, /customMetadata: \{ uploaderUid \}/);
   assert.match(publishing, /"cleanupFailedAnnouncementUpload"/);
   assert.match(publishing, /getFunctions\(getFirebaseApp\(\), "asia-east1"\)/);
+  assert.match(publishing, /console\.error\("announcement publish failed", \{[\s\S]*code:[\s\S]*message:[\s\S]*error,/);
   assert.match(publishing, /catch \(cleanupError\)[\s\S]*console\.error[\s\S]*throw new AnnouncementPublishError/);
+  assert.doesNotMatch(page, /error\.code|publisher\.uid.*publishError/);
+  assert.match(page, /error instanceof ImageCompressionError \|\| error instanceof AnnouncementPublishError \? error\.message : "公告發布失敗/);
   assert.doesNotMatch(publishing, /deleteObject\(/);
+});
+
+test("發布前總檢查顯示具體摘要並依 reduced motion 定位第一個錯誤欄位", () => {
+  const page = source("app/publish/page.tsx");
+  assert.match(page, /尚有資料需要修正/);
+  assert.match(page, /validateForPublish\(\)/);
+  assert.match(page, /formRef\.current\?\.querySelector/);
+  assert.match(page, /target\.setAttribute\("aria-invalid", "true"\)/);
+  assert.match(page, /prefers-reduced-motion: reduce/);
+  assert.match(page, /scrollIntoView\(\{ behavior: reducedMotion \? "auto" : "smooth"/);
+  assert.match(page, /const validatedDraft = validateForPublish\(\);[\s\S]*if \(!validatedDraft\) return;[\s\S]*publishAnnouncement\(validatedDraft/);
 });
 
 test("預覽 Modal 有固定操作、防重複送出與分階段狀態", () => {
