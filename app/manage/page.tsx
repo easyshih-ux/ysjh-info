@@ -6,7 +6,7 @@ import { ArrowLeft, Edit3, Eye, MessageSquarePlus, Search, Trash2 } from "lucide
 import { AUDIENCES, formatImportantEventSchedule, toggleAudienceSelection, type Announcement, type Audience, type FollowUp } from "@/lib/announcements";
 import { CURRENT_ACADEMIC_YEAR, FRONTEND_ACADEMIC_YEARS } from "@/lib/academicYear";
 import { DEPARTMENTS, departmentGroups, isDepartment, isFixedDepartment, standaloneDepartments, type Department } from "@/lib/departments";
-import { applyAnnouncementUpdate, filterManagedAnnouncements, MANAGE_DEPARTMENT_KEY, validateAnnouncementCore } from "@/lib/announcementManagement";
+import { announcementPublisherLabel, applyAnnouncementUpdate, filterManagedAnnouncements, MANAGE_DEPARTMENT_KEY, resolveInitialManageDepartment, validateAnnouncementCore } from "@/lib/announcementManagement";
 import { AnnouncementManagementError, appendManagedFollowUp, updateManagedAnnouncement } from "@/lib/announcementManagementFirestore";
 import { readManagedAnnouncements } from "@/lib/announcementFirestore";
 import { manageAnnouncementLifecycle, type AnnouncementLifecycleAction } from "@/lib/announcementLifecycle";
@@ -29,7 +29,7 @@ export default function ManagePage() {
   const [items, setItems] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
-  const [department, setDepartment] = useState<Department | "全部">("設備組");
+  const [department, setDepartment] = useState<Department | "全部">(publisher.defaultDepartment);
   const [audience, setAudience] = useState<Audience | "全部">("全部");
   const [academicYear, setAcademicYear] = useState(CURRENT_ACADEMIC_YEAR);
   const [query, setQuery] = useState("");
@@ -46,11 +46,12 @@ export default function ManagePage() {
 
   useEffect(() => {
     const saved = localStorage.getItem(MANAGE_DEPARTMENT_KEY);
-    if (isDepartment(saved)) setDepartment(saved);
+    const initialDepartment = resolveInitialManageDepartment(isDepartment(saved) ? saved : null, publisher.defaultDepartment);
+    if (isDepartment(initialDepartment)) setDepartment(initialDepartment);
     let active = true;
     readManagedAnnouncements().then(value => { if (active) setItems(value); }).catch(() => { if (active) setLoadError(true); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, []);
+  }, [publisher.defaultDepartment]);
 
   const changeDepartment = (value: Department | "全部") => {
     setDepartment(value);
@@ -117,7 +118,7 @@ export default function ManagePage() {
       </section>
       {notice && <p className={styles.notice} role="status">{notice}</p>}{error && !editing && !followTarget && <p className={styles.errorNotice} role="alert">{error}</p>}
       {loading ? <p className={styles.empty} aria-live="polite">公告載入中…</p> : loadError ? <p className={`${styles.empty} ${styles.errorNotice}`} role="alert">目前無法載入公告，請稍後再試。</p> : items.length === 0 ? <p className={styles.empty}>目前沒有已發布公告。</p> : <section className={styles.list} aria-label="公告列表">{visible.length === 0 ? <p className={styles.empty}>目前沒有符合的公告。</p> : visible.map(item => <article key={item.id}>
-        <div className={styles.meta}><span>{item.academicYear} 學年度</span><span>{item.department}</span><span>{item.publicationStatus === "withdrawn" ? "已下架" : "正常發布"}</span><span>{announcementTimeStates(item, new Date()).deadline}</span>{announcementTimeStates(item, new Date()).activity !== "正常" && <span>{announcementTimeStates(item, new Date()).activity}</span>}{item.collectionStatus === "chasing" && <span>催繳中</span>}<span>發布者：{item.publisherDisplayName || item.publisherEmail || item.publisherUid || "舊公告（無 UID）"}</span><span>發布 {formatDateTime(item.publishedAt)}</span>{item.updatedAt && <span>更新 {formatDateTime(item.updatedAt)}</span>}</div>
+        <div className={styles.meta}><span>{item.academicYear} 學年度</span><span>{item.department}</span><span>{item.publicationStatus === "withdrawn" ? "已下架" : "正常發布"}</span><span>{announcementTimeStates(item, new Date()).deadline}</span>{announcementTimeStates(item, new Date()).activity !== "正常" && <span>{announcementTimeStates(item, new Date()).activity}</span>}{item.collectionStatus === "chasing" && <span>催繳中</span>}<span>發布者：{announcementPublisherLabel(item)}</span><span>發布 {formatDateTime(item.publishedAt)}</span>{item.updatedAt && <span>更新 {formatDateTime(item.updatedAt)}</span>}</div>
         <h2>{item.title}</h2><p>{item.audiences.join("、") || "未設定適用對象"}</p>
         <div className={styles.flags}><span>{item.importantEvents.length ? `${item.importantEvents.length} 筆重要事項` : "無重要事項"}</span><span>{item.deadlines.length ? `${item.deadlines.length} 筆截止期限` : "無截止期限"}</span><span>{item.attachments.length ? `${item.attachments.length} 張圖片` : "無圖片"}</span><span>{item.followUps.length ? `${item.followUps.length} 筆補充／提醒` : "無補充／提醒"}</span></div>
         <div className={styles.cardActions}><Button variant="outline" onClick={() => setViewing(item)}><Eye />查看</Button><Button variant="outline" onClick={() => { setError(""); setEditing(clone(item)); }}><Edit3 />修正公告</Button><Button variant="outline" onClick={() => { setError(""); setMessage(""); setFollowTarget(item); }}><MessageSquarePlus />新增補充／提醒</Button>{item.publicationStatus === "withdrawn" ? <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "restore")}>復原公告</Button> : <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "withdraw")}>下架公告</Button>}{item.deadlines.length > 0 && (item.collectionStatus === "chasing" ? <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "stopChase")}>結束催繳</Button> : <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "startChase")}>啟動催繳</Button>)}{publisher.role === "systemAdmin" && <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "delete")}><Trash2 />永久刪除</Button>}</div>

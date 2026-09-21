@@ -3,6 +3,20 @@ import { validateBasicDraft } from "./publishDraft.ts";
 
 export const MANAGE_DEPARTMENT_KEY = "manageDepartment";
 
+export function resolveInitialManageDepartment(
+  savedDepartment: string | null,
+  publisherDepartment: string,
+): string {
+  return savedDepartment || publisherDepartment;
+}
+
+export function announcementPublisherLabel(item: Announcement) {
+  return item.publisherDisplayName?.trim()
+    || item.publisherEmail?.trim()
+    || item.department?.trim()
+    || "歷史公告";
+}
+
 export function filterManagedAnnouncements(items: Announcement[], department: string, query = "", audience: Audience | "全部" = "全部", academicYear?: number) {
   const needle = query.trim().toLocaleLowerCase("zh-Hant");
   return items.filter(item => (department === "全部" || item.department === department)

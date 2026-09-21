@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { mockAnnouncements } from "../data/mockAnnouncements.ts";
-import { applyAnnouncementUpdate, createAnnouncementUpdate, createFollowUp, filterManagedAnnouncements, validateAnnouncementCore } from "../lib/announcementManagement.ts";
+import { announcementPublisherLabel, applyAnnouncementUpdate, createAnnouncementUpdate, createFollowUp, filterManagedAnnouncements, resolveInitialManageDepartment, validateAnnouncementCore } from "../lib/announcementManagement.ts";
 import type { Announcement } from "../lib/announcements.ts";
 
 const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -115,4 +115,34 @@ test("發布與管理的重要事項時間欄位只在有值時提供清除操�
   assert.match(publishPage, /item\.endTime &&[\s\S]*updateImportantEvent\(index, "endTime", ""\)[\s\S]*清除時間/);
   assert.match(managePage, /entry\.time &&[\s\S]*updateEvent\(index, "time", ""\)[\s\S]*清除時間/);
   assert.match(managePage, /entry\.endTime &&[\s\S]*updateEvent\(index, "endTime", ""\)[\s\S]*清除時間/);
+});
+
+test("管理頁發布者顯示優先使用姓名、Email、發布單位且不暴露 UID", () => {
+  const base = structuredClone(mockAnnouncements[0]);
+  assert.equal(announcementPublisherLabel({ ...base, publisherDisplayName: "WenYi", publisherEmail: "wenyi@example.test", publisherUid: "firebase-secret-uid" }), "WenYi");
+  assert.equal(announcementPublisherLabel({ ...base, publisherDisplayName: undefined, publisherEmail: "legacy@example.test", publisherUid: "firebase-secret-uid" }), "legacy@example.test");
+  assert.equal(announcementPublisherLabel({ ...base, publisherDisplayName: undefined, publisherEmail: undefined, publisherUid: "firebase-secret-uid", department: "設備組" }), "設備組");
+  assert.equal(announcementPublisherLabel({ ...base, publisherDisplayName: undefined, publisherEmail: undefined, publisherUid: "firebase-secret-uid", department: "" }), "歷史公告");
+  const page = source("app/manage/page.tsx");
+  assert.doesNotMatch(page, /舊公告（無 UID）|發布者：\{item\.publisherUid/);
+});
+
+test("歷史公告仍由 systemAdmin 全校範圍管理且一般 publisher ownership 不變", () => {
+  const page = source("app/manage/page.tsx");
+  assert.match(page, /managementScope === "all" && publisher\.role === "systemAdmin" \? items/);
+  assert.match(page, /items\.filter\(item => item\.publisherUid === publisher\.uid\)/);
+});
+
+test("指定設備組進入管理頁時資料完成後立即套用組別篩選", () => {
+  const equipment = { ...structuredClone(mockAnnouncements[0]), department: "設備組", academicYear: 115 };
+  const other = { ...structuredClone(mockAnnouncements[1]), department: "教務處", academicYear: 115 };
+  const initialDepartment = resolveInitialManageDepartment(null, "設備組");
+  assert.equal(initialDepartment, "設備組");
+  assert.deepEqual(filterManagedAnnouncements([other, equipment], initialDepartment, "", "全部", 115).map(item => item.department), ["設備組"]);
+  assert.equal(resolveInitialManageDepartment("教務處", "設備組"), "教務處");
+  assert.equal(filterManagedAnnouncements([other, equipment], "全部", "", "全部", 115).length, 2);
+  assert.deepEqual(filterManagedAnnouncements([other, equipment], "教務處", "", "全部", 115).map(item => item.department), ["教務處"]);
+  const page = source("app/manage/page.tsx");
+  assert.match(page, /useState<Department \| "全部">\(publisher\.defaultDepartment\)/);
+  assert.match(page, /resolveInitialManageDepartment/);
 });
