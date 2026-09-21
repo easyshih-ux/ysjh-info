@@ -1,5 +1,6 @@
 import { initializeApp } from "firebase-admin/app";
 import { FieldValue, getFirestore, type Firestore } from "firebase-admin/firestore";
+import { getStorage } from "firebase-admin/storage";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { isDepartment, isFixedDepartment, isPublisherRequestDepartment } from "./departments.js";
 
@@ -32,14 +33,33 @@ export const manageAnnouncementLifecycle = onCall(
   request => manageAnnouncementLifecycleHandler(request),
 );
 
+export const cleanupFailedAnnouncementUpload = onCall(
+  { region: "asia-east1" },
+  request => cleanupFailedAnnouncementUploadHandler(request),
+);
+
 export async function manageAnnouncementLifecycleHandler(
   request: { auth?: { uid: string } | null; data: unknown },
   firestore: Firestore = db,
+  cleanupStorage: (announcementId: string) => Promise<void> = deleteAnnouncementStoragePrefix,
 ) {
   const callerUid = requireCallerUid(request.auth?.uid);
   const input = parseAnnouncementLifecycleInput(request.data);
   const callerRef = firestore.collection("authorizedPublishers").doc(callerUid);
   const announcementRef = firestore.collection("announcements").doc(input.announcementId);
+
+  if (input.action === "delete") {
+    await firestore.runTransaction(async transaction => {
+      const callerSnapshot = await transaction.get(callerRef);
+      assertSystemAdmin(callerSnapshot.exists, callerSnapshot.data());
+    });
+    await cleanupStorage(input.announcementId);
+    await firestore.runTransaction(async transaction => {
+      const announcementSnapshot = await transaction.get(announcementRef);
+      if (announcementSnapshot.exists) transaction.delete(announcementRef);
+    });
+    return { success: true, announcementId: input.announcementId, action: input.action };
+  }
 
   await firestore.runTransaction(async transaction => {
     const [callerSnapshot, announcementSnapshot] = await Promise.all([
@@ -54,11 +74,6 @@ export async function manageAnnouncementLifecycleHandler(
     const isSystemAdmin = caller?.role === "systemAdmin";
     if (!isSystemAdmin && announcement?.publisherUid !== callerUid) {
       throw new HttpsError("permission-denied", "只能管理自己發布的公告。");
-    }
-    if (input.action === "delete") {
-      if (!isSystemAdmin) throw new HttpsError("permission-denied", "只有系統管理員可以永久刪除公告。");
-      transaction.delete(announcementRef);
-      return;
     }
     const now = FieldValue.serverTimestamp();
     if (input.action === "withdraw") {
@@ -85,6 +100,42 @@ export async function manageAnnouncementLifecycleHandler(
     }
   });
   return { success: true, announcementId: input.announcementId, action: input.action };
+}
+
+export async function cleanupFailedAnnouncementUploadHandler(
+  request: { auth?: { uid: string } | null; data: unknown },
+  firestore: Firestore = db,
+  cleanupStorage: (announcementId: string, uploaderUid: string) => Promise<void> = deleteFailedUploadObjects,
+) {
+  const callerUid = requireCallerUid(request.auth?.uid);
+  const announcementId = parseCleanupUploadInput(request.data);
+  const [callerSnapshot, announcementSnapshot] = await Promise.all([
+    firestore.collection("authorizedPublishers").doc(callerUid).get(),
+    firestore.collection("announcements").doc(announcementId).get(),
+  ]);
+  const caller = callerSnapshot.data();
+  if (!callerSnapshot.exists || caller?.enabled !== true || !["publisher", "systemAdmin"].includes(String(caller.role))) {
+    throw new HttpsError("permission-denied", "目前帳號沒有附件清理權限。");
+  }
+  if (announcementSnapshot.exists) {
+    return { success: true, cleaned: false, reason: "announcement-exists" as const };
+  }
+  await cleanupStorage(announcementId, callerUid);
+  return { success: true, cleaned: true };
+}
+
+async function deleteAnnouncementStoragePrefix(announcementId: string) {
+  await getStorage().bucket().deleteFiles({ prefix: `announcements/${announcementId}/` });
+}
+
+async function deleteFailedUploadObjects(announcementId: string, uploaderUid: string) {
+  const [files] = await getStorage().bucket().getFiles({ prefix: `announcements/${announcementId}/` });
+  await Promise.all(files.map(async file => {
+    const [metadata] = await file.getMetadata();
+    if (metadata.metadata?.uploaderUid === uploaderUid) {
+      await file.delete({ ignoreNotFound: true });
+    }
+  }));
 }
 
 export async function listPublisherManagementHandler(
@@ -363,6 +414,20 @@ function parseAnnouncementLifecycleInput(data: unknown) {
     action: action as "withdraw" | "restore" | "startChase" | "stopChase" | "delete",
     message: typeof data.message === "string" ? data.message.trim().slice(0, 300) : "",
   };
+}
+
+function parseCleanupUploadInput(data: unknown) {
+  if (
+    !isRecord(data)
+    || Object.keys(data).length !== 1
+    || typeof data.announcementId !== "string"
+    || !data.announcementId
+    || data.announcementId.trim() !== data.announcementId
+    || data.announcementId.includes("/")
+  ) {
+    throw new HttpsError("invalid-argument", "附件清理資料格式不正確。");
+  }
+  return data.announcementId;
 }
 
 function requireCallerUid(uid: string | undefined) {

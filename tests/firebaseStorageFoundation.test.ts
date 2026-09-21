@@ -13,5 +13,5 @@ test("Firebase Storage 重用 shared Firebase App 與正式 bucket", () => {
 
 test("Storage 上傳 contentType 固定為 image/webp", () => {
   const publishing = source("lib/announcementPublishing.ts");
-  assert.match(publishing, /uploadBytes\(storageReference, blob, \{ contentType: "image\/webp" \}\)/);
+  assert.match(publishing, /uploadBytes\(storageReference, blob, \{[\s\S]*contentType: "image\/webp",[\s\S]*customMetadata: \{ uploaderUid \},[\s\S]*\}\)/);
 });

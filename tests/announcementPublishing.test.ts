@@ -67,6 +67,16 @@ test("Storage 上傳失敗時不會執行後面的 Firestore setDoc", () => {
   assert.match(publishing, /catch \(error\)[\s\S]*throw new AnnouncementPublishError/);
 });
 
+test("發布失敗會由後端清理本次公告已嘗試上傳的圖片且保留原始錯誤", () => {
+  const publishing = source("lib/announcementPublishing.ts");
+  assert.match(publishing, /uploadedPaths\.push\(announcementImagePath\(announcementReference\.id, attachment\.id\)\)/);
+  assert.match(publishing, /customMetadata: \{ uploaderUid \}/);
+  assert.match(publishing, /"cleanupFailedAnnouncementUpload"/);
+  assert.match(publishing, /getFunctions\(getFirebaseApp\(\), "asia-east1"\)/);
+  assert.match(publishing, /catch \(cleanupError\)[\s\S]*console\.error[\s\S]*throw new AnnouncementPublishError/);
+  assert.doesNotMatch(publishing, /deleteObject\(/);
+});
+
 test("預覽 Modal 有固定操作、防重複送出與分階段狀態", () => {
   const page = source("app/publish/page.tsx");
   const styles = source("app/publish/publish.module.css");
