@@ -18,6 +18,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { AdminAuthGuard, useAuthorizedPublisher } from "@/components/admin-auth-guard";
 import { LineSummaryCard } from "@/components/line-summary-card";
 import { DepartmentOptionGroups } from "@/components/department-option-groups";
+import { hasPublishAttachments, validateAttachmentPrivacyConfirmation } from "@/lib/attachmentPrivacyConfirmation";
 import styles from "./publish.module.css";
 
 const emptyImportantEvents = () => Array.from({ length: 3 }, () => ({ date: "", time: "", title: "" }));
@@ -39,6 +40,8 @@ function PublishForm() {
   const [publishedAnnouncement, setPublishedAnnouncement] = useState<Announcement | null>(null);
   const [imageNotice, setImageNotice] = useState("");
   const [pdfNotice, setPdfNotice] = useState("");
+  const [attachmentPrivacyConfirmed, setAttachmentPrivacyConfirmed] = useState(false);
+  const [attachmentPrivacyError, setAttachmentPrivacyError] = useState("");
   const [publishStage, setPublishStage] = useState<PublishStage | null>(null);
   const publishingRef = useRef(false);
   const formRef = useRef<HTMLFormElement>(null);
@@ -59,7 +62,11 @@ function PublishForm() {
       objectUrls.current.add(previewUrl);
       return { id: crypto.randomUUID(), type: "image", name: file.name, caption: "", previewUrl, file };
     });
-    if (additions.length) setDraft(current => ({ ...current, attachments: [...current.attachments, ...additions] }));
+    if (additions.length) {
+      setDraft(current => ({ ...current, attachments: [...current.attachments, ...additions] }));
+      setAttachmentPrivacyConfirmed(false);
+      setAttachmentPrivacyError("");
+    }
     const notices = [];
     if (oversizedCount > 0) notices.push("圖片過大，單張原始圖片不可超過 10 MB。");
     if (overLimitCount > 0) notices.push(`已達圖片上限，另有 ${overLimitCount} 張未加入。`);
@@ -71,6 +78,8 @@ function PublishForm() {
     URL.revokeObjectURL(attachment.previewUrl);
     objectUrls.current.delete(attachment.previewUrl);
     setDraft(current => ({ ...current, attachments: removePublishAttachment(current.attachments, attachment.id) }));
+    setAttachmentPrivacyConfirmed(false);
+    setAttachmentPrivacyError("");
     setImageNotice("");
   };
 
@@ -161,7 +170,11 @@ function PublishForm() {
       sizeBytes: file.size,
       file,
     }));
-    if (additions.length) setDraft(value => ({ ...value, pdfAttachments: [...(value.pdfAttachments ?? []), ...additions] }));
+    if (additions.length) {
+      setDraft(value => ({ ...value, pdfAttachments: [...(value.pdfAttachments ?? []), ...additions] }));
+      setAttachmentPrivacyConfirmed(false);
+      setAttachmentPrivacyError("");
+    }
     const notices = [];
     if (invalidTypeCount > 0) notices.push("只接受 PDF 文件（.pdf）。");
     if (oversizedCount > 0) notices.push("PDF 單檔不可超過 5 MB。");
@@ -172,6 +185,8 @@ function PublishForm() {
 
   const removePdf = (id: string) => {
     setDraft(current => ({ ...current, pdfAttachments: (current.pdfAttachments ?? []).filter(item => item.id !== id) }));
+    setAttachmentPrivacyConfirmed(false);
+    setAttachmentPrivacyError("");
     setPdfNotice("");
   };
 
@@ -179,6 +194,12 @@ function PublishForm() {
     if (publishingRef.current || !preview) return;
     const validatedDraft = validateForPublish();
     if (!validatedDraft) return;
+    const privacyError = validateAttachmentPrivacyConfirmation(validatedDraft, attachmentPrivacyConfirmed);
+    if (privacyError) {
+      setAttachmentPrivacyError(privacyError);
+      return;
+    }
+    setAttachmentPrivacyError("");
     publishingRef.current = true;
     setPublishing(true);
     setPublishStage(draft.attachments.length > 0 ? "processing-images" : (draft.pdfAttachments?.length ?? 0) > 0 ? "uploading-pdfs" : "publishing");
@@ -229,11 +250,11 @@ function PublishForm() {
           const missingUrl = !!errors.links && !!item.label.trim() && !item.url.trim();
           return <article key={item.id} className={styles.editorCard}><strong>網址 {index + 1}</strong><div className={styles.linkFields}><label>顯示名稱<Input value={item.label} onChange={event => updateLink(item.id, "label", event.target.value)} placeholder="例如：教師研習報名表" aria-invalid={missingLabel} />{missingLabel && <small className={styles.error}>請輸入相關連結名稱</small>}</label><label>網址<Input type="url" value={item.url} onChange={event => updateLink(item.id, "url", event.target.value)} onBlur={() => normalizeLink(item.id)} placeholder="https://" aria-invalid={!!urlError || missingUrl} />{urlError && <small className={styles.error}>{urlError}</small>}{missingUrl && <small className={styles.error}>請輸入相關連結網址</small>}</label><label className={styles.primaryCheck}><Checkbox checked={item.isPrimary} onCheckedChange={value => togglePrimaryLink(item.id, value === true)} />設為主要連結</label></div><Button type="button" variant="ghost" size="sm" onClick={() => removeLink(item.id)}><Trash2 />移除</Button></article>;
         })}{errors.links && <small className={styles.error}>{errors.links}</small>}</div>}
-        <section className={styles.imageSection} aria-labelledby="announcement-attachments-title"><h3 id="announcement-attachments-title">附件</h3><div className={styles.attachmentType}><div className={styles.imageSectionHeader}><div><h4>圖片</h4><p>支援現有圖片格式，最多 5 張；發布時會壓縮為 WebP。</p></div>{draft.attachments.length < MAX_PUBLISH_IMAGES && <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()}><ImagePlus />＋新增圖片</Button>}</div><input ref={fileInputRef} className={styles.fileInput} type="file" accept="image/*" multiple onChange={addImages} />{draft.attachments.length > 0 && <div className={styles.imageGrid}>{draft.attachments.map(attachment => <article key={attachment.id} className={styles.imageCard}><img src={attachment.previewUrl} alt={attachment.caption || attachment.name} /><div><strong title={attachment.name}>{attachment.name}</strong><label>圖片說明（選填）<Input value={attachment.caption} onChange={event => setDraft(current => ({ ...current, attachments: current.attachments.map(item => item.id === attachment.id ? { ...item, caption: event.target.value } : item) }))} placeholder="例如：家長日流程圖" /></label><Button type="button" variant="ghost" size="sm" onClick={() => removeImage(attachment)}><Trash2 />移除</Button></div></article>)}</div>}{draft.attachments.length >= MAX_PUBLISH_IMAGES && <p className={styles.imageLimit}>每則公告最多 5 張圖片</p>}{imageNotice && <p className={styles.imageNotice} role="status">{imageNotice}</p>}</div><div className={styles.attachmentType}><div className={styles.imageSectionHeader}><div><h4>PDF 文件</h4><p>最多 2 份，單檔上限 5 MB。</p></div>{(draft.pdfAttachments?.length ?? 0) < MAX_PUBLISH_PDFS && <Button type="button" variant="outline" onClick={() => pdfInputRef.current?.click()}><FileText />＋新增 PDF</Button>}</div><input ref={pdfInputRef} className={styles.fileInput} type="file" accept="application/pdf,.pdf" multiple onChange={addPdfs} />{(draft.pdfAttachments?.length ?? 0) > 0 && <div className={styles.pdfList}>{draft.pdfAttachments?.map(attachment => <article key={attachment.id} className={styles.pdfCard}><FileText aria-hidden="true" /><div><strong title={attachment.name}>{attachment.name}</strong><span>PDF・{formatFileSize(attachment.sizeBytes)}</span></div><Button type="button" variant="ghost" size="sm" onClick={() => removePdf(attachment.id)}><Trash2 />移除</Button></article>)}</div>}{(draft.pdfAttachments?.length ?? 0) >= MAX_PUBLISH_PDFS && <p className={styles.imageLimit}>每則公告最多 2 份 PDF</p>}{pdfNotice && <p className={styles.imageNotice} role="alert">{pdfNotice}</p>}</div></section>
+        <section className={styles.imageSection} aria-labelledby="announcement-attachments-title"><h3 id="announcement-attachments-title">附件</h3><div className={styles.attachmentType}><div className={styles.imageSectionHeader}><div><h4>圖片</h4><p>支援現有圖片格式，最多 5 張；發布時會壓縮為 WebP。</p></div>{draft.attachments.length < MAX_PUBLISH_IMAGES && <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()}><ImagePlus />＋新增圖片</Button>}</div><input ref={fileInputRef} className={styles.fileInput} type="file" accept="image/*" multiple onChange={addImages} />{draft.attachments.length > 0 && <div className={styles.imageGrid}>{draft.attachments.map(attachment => <article key={attachment.id} className={styles.imageCard}><img src={attachment.previewUrl} alt={attachment.caption || attachment.name} /><div><strong title={attachment.name}>{attachment.name}</strong><label>圖片說明（選填）<Input value={attachment.caption} onChange={event => setDraft(current => ({ ...current, attachments: current.attachments.map(item => item.id === attachment.id ? { ...item, caption: event.target.value } : item) }))} placeholder="例如：家長日流程圖" /></label><Button type="button" variant="ghost" size="sm" onClick={() => removeImage(attachment)}><Trash2 />移除</Button></div></article>)}</div>}{draft.attachments.length >= MAX_PUBLISH_IMAGES && <p className={styles.imageLimit}>每則公告最多 5 張圖片</p>}{imageNotice && <p className={styles.imageNotice} role="status">{imageNotice}</p>}</div><div className={styles.attachmentType}><div className={styles.imageSectionHeader}><div><h4>PDF 文件</h4><p>最多 2 份，單檔上限 5 MB。</p></div>{(draft.pdfAttachments?.length ?? 0) < MAX_PUBLISH_PDFS && <Button type="button" variant="outline" onClick={() => pdfInputRef.current?.click()}><FileText />＋新增 PDF</Button>}</div><input ref={pdfInputRef} className={styles.fileInput} type="file" accept="application/pdf,.pdf" multiple onChange={addPdfs} />{(draft.pdfAttachments?.length ?? 0) > 0 && <div className={styles.pdfList}>{draft.pdfAttachments?.map(attachment => <article key={attachment.id} className={styles.pdfCard}><FileText aria-hidden="true" /><div><strong title={attachment.name}>{attachment.name}</strong><span>PDF・{formatFileSize(attachment.sizeBytes)}</span></div><Button type="button" variant="ghost" size="sm" onClick={() => removePdf(attachment.id)}><Trash2 />移除</Button></article>)}</div>}{(draft.pdfAttachments?.length ?? 0) >= MAX_PUBLISH_PDFS && <p className={styles.imageLimit}>每則公告最多 2 份 PDF</p>}{pdfNotice && <p className={styles.imageNotice} role="alert">{pdfNotice}</p>}</div>{hasPublishAttachments(draft) && <aside className={styles.attachmentPrivacyNotice}><strong>⚠️ 附件公開提醒</strong><p>本站公告及附件可供公開瀏覽。上傳前請確認圖片及 PDF 未包含不宜公開的他人個人資料，例如身分證字號、私人電話、住址、生日、學生或家長資料，以及其他可識別特定個人的資訊。</p></aside>}</section>
       </section>
       <div className={styles.actions}><span className={styles.hint}>預覽確認後才會正式發布。</span><Button className={styles.previewButton} type="submit" size="lg"><Eye />預覽公告</Button></div>
     </form>
-    <Dialog open={previewOpen} onOpenChange={open => { if (!publishing) setPreviewOpen(open); }}><DialogContent className={styles.previewDialog} showCloseButton={!publishing}>{preview && <><div className={styles.previewScroll}><DialogHeader><DialogDescription>{preview.department} · {preview.academicYear} 學年度</DialogDescription><DialogTitle>{preview.title}</DialogTitle><div className={styles.previewAudiences}>{preview.audiences.map(item => <span key={item}>{item}</span>)}</div></DialogHeader>{preview.importantEvents.length > 0 && <section className={styles.previewOptional}><h3>重要日期／活動</h3>{preview.importantEvents.map((item, index) => <p key={`${item.date}-${item.time}-${index}`}><strong>{formatImportantEventSchedule(item)}</strong><span>{item.title}</span></p>)}</section>}{preview.deadlines.length > 0 && <section className={styles.previewOptional}><h3>繳交／填報期限</h3>{preview.deadlines.map((item, index) => <p key={`${item.date}-${item.time}-${index}`}><strong>{item.date}{item.time ? ` ${item.time}` : ""}</strong><span>{item.label}</span></p>)}</section>}<section className={styles.previewContent}><h3>公告內容</h3><p>{preview.content}</p></section>{preview.links.length > 0 && <section className={styles.previewOptional}><h3>相關連結</h3>{preview.links.map(item => <p key={item.id}><strong>{item.label}{item.isPrimary ? "（主要連結）" : ""}</strong><a href={item.url} target="_blank" rel="noopener noreferrer">開啟連結</a></p>)}</section>}{preview.attachments.length > 0 && <section className={styles.previewImages}><h3>公告圖片</h3><div>{preview.attachments.map(item => item.type === "image" && <figure key={item.id}><img src={item.url} alt={item.caption || item.name} /><figcaption><strong>{item.name}</strong>{item.caption && <span>{item.caption}</span>}</figcaption></figure>)}</div></section>}{(draft.pdfAttachments?.length ?? 0) > 0 && <section className={styles.previewPdfs}><h3>PDF 文件</h3>{draft.pdfAttachments?.map(item => <article key={item.id}><FileText /><div><strong>{item.name}</strong><span>PDF・{formatFileSize(item.sizeBytes)}</span></div></article>)}</section>}</div><footer className={styles.previewFooter}>{publishError && <p role="alert">{publishError}</p>}<div><Button type="button" variant="outline" onClick={() => setPreviewOpen(false)} disabled={publishing}>返回修改</Button><Button className={styles.publishButton} type="button" onClick={confirmPublish} disabled={publishing}>{publishing ? publishStageLabel(publishStage) : "確認發布"}</Button></div></footer></>}</DialogContent></Dialog>
+    <Dialog open={previewOpen} onOpenChange={open => { if (!publishing) setPreviewOpen(open); }}><DialogContent className={styles.previewDialog} showCloseButton={!publishing}>{preview && <><div className={styles.previewScroll}><DialogHeader><DialogDescription>{preview.department} · {preview.academicYear} 學年度</DialogDescription><DialogTitle>{preview.title}</DialogTitle><div className={styles.previewAudiences}>{preview.audiences.map(item => <span key={item}>{item}</span>)}</div></DialogHeader>{preview.importantEvents.length > 0 && <section className={styles.previewOptional}><h3>重要日期／活動</h3>{preview.importantEvents.map((item, index) => <p key={`${item.date}-${item.time}-${index}`}><strong>{formatImportantEventSchedule(item)}</strong><span>{item.title}</span></p>)}</section>}{preview.deadlines.length > 0 && <section className={styles.previewOptional}><h3>繳交／填報期限</h3>{preview.deadlines.map((item, index) => <p key={`${item.date}-${item.time}-${index}`}><strong>{item.date}{item.time ? ` ${item.time}` : ""}</strong><span>{item.label}</span></p>)}</section>}<section className={styles.previewContent}><h3>公告內容</h3><p>{preview.content}</p></section>{preview.links.length > 0 && <section className={styles.previewOptional}><h3>相關連結</h3>{preview.links.map(item => <p key={item.id}><strong>{item.label}{item.isPrimary ? "（主要連結）" : ""}</strong><a href={item.url} target="_blank" rel="noopener noreferrer">開啟連結</a></p>)}</section>}{preview.attachments.length > 0 && <section className={styles.previewImages}><h3>公告圖片</h3><div>{preview.attachments.map(item => item.type === "image" && <figure key={item.id}><img src={item.url} alt={item.caption || item.name} /><figcaption><strong>{item.name}</strong>{item.caption && <span>{item.caption}</span>}</figcaption></figure>)}</div></section>}{(draft.pdfAttachments?.length ?? 0) > 0 && <section className={styles.previewPdfs}><h3>PDF 文件</h3>{draft.pdfAttachments?.map(item => <article key={item.id}><FileText /><div><strong>{item.name}</strong><span>PDF・{formatFileSize(item.sizeBytes)}</span></div></article>)}</section>}</div><footer className={styles.previewFooter}>{hasPublishAttachments(draft) && <label className={styles.attachmentPrivacyConfirmation}><Checkbox checked={attachmentPrivacyConfirmed} onCheckedChange={value => { setAttachmentPrivacyConfirmed(value === true); if (value === true) setAttachmentPrivacyError(""); }} aria-invalid={!!attachmentPrivacyError} /><span>我已確認附件內容，未包含不應公開的他人個人資料。</span></label>}{attachmentPrivacyError && <p role="alert">{attachmentPrivacyError}</p>}{publishError && <p role="alert">{publishError}</p>}<div><Button type="button" variant="outline" onClick={() => setPreviewOpen(false)} disabled={publishing}>返回修改</Button><Button className={styles.publishButton} type="button" onClick={confirmPublish} disabled={publishing}>{publishing ? publishStageLabel(publishStage) : "確認發布"}</Button></div></footer></>}</DialogContent></Dialog>
   </main>;
 }
 
