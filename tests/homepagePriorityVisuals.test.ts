@@ -31,3 +31,14 @@ test("重點視覺只增加呈現 class，不改首頁資料分類呼叫", () =>
   assert.match(page, /upcomingDeadlines\(regularHomepageAnnouncements, now\)/);
   assert.match(page, /deadlineUrgency\(deadline\.date, now\)/);
 });
+
+test("即將截止依緊急程度只調整期限 badge、日期與時間顏色", () => {
+  const styles = source("app/globals.css");
+  assert.match(styles, /\.urgency-red \.deadline-status\{background:#c62828\}/);
+  assert.match(styles, /\.urgency-red \.deadline-date,\.urgency-red \.deadline-time\{color:#c62828\}/);
+  assert.match(styles, /\.urgency-orange \.deadline-status\{background:#d56a00\}/);
+  assert.match(styles, /\.urgency-orange \.deadline-date,\.urgency-orange \.deadline-time\{color:#d56a00\}/);
+  assert.match(styles, /\.urgency-normal \.deadline-status\{background:#64788c\}/);
+  assert.doesNotMatch(styles, /\.urgency-(?:red|orange|normal) \.deadline-main>strong/);
+  assert.doesNotMatch(styles, /\.urgency-(?:red|orange|normal) \.department-badge/);
+});

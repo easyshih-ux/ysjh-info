@@ -128,7 +128,7 @@ export function deadlineDateLabel(date: string) {
 
 export function deadlineUrgency(date: string, now: Date): "red" | "orange" | "normal" {
   const days = daysUntil(date, now);
-  if (days >= 1 && days <= 2) return "red";
+  if (days >= 0 && days <= 2) return "red";
   if (days >= 3 && days <= 5) return "orange";
   return "normal";
 }
