@@ -40,6 +40,14 @@ test("發布頁會在附件變動時重設確認並於正式發布前驗證", ()
   assert.ok(confirmPublish.indexOf("validateAttachmentPrivacyConfirmation") < confirmPublish.indexOf("publishAnnouncement"));
 });
 
+test("確認視窗 checkbox 維持緊湊原生尺寸且不受 footer 按鈕寬度拉伸", () => {
+  const styles = source("app/publish/publish.module.css");
+  assert.match(styles, /\.attachmentPrivacyConfirmation button\[data-slot="checkbox"\]\{width:18px;height:18px;min-width:18px;min-height:18px;flex:0 0 18px/);
+  assert.match(styles, /\.attachmentPrivacyConfirmation\{[^}]*font-size:14px;font-weight:400;[^}]*text-align:left/);
+  assert.match(styles, /\.previewFooter>div\{margin-top:14px\}/);
+  assert.match(styles, /\.attachmentPrivacyConfirmation span\{min-width:0;overflow-wrap:anywhere\}/);
+});
+
 test("附件確認狀態不屬於 draft、Announcement 或 Firestore 文件", () => {
   const document = createFirestoreAnnouncement(draft(), 115, "2026-09-22T00:00:00.000Z");
   assert.equal("attachmentPrivacyConfirmed" in document, false);
