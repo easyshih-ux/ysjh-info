@@ -61,6 +61,14 @@ export function toggleAudienceSelection(values: readonly Audience[], audience: A
   return [...values.filter(value => value !== "全校教師" && value !== audience), audience];
 }
 
+export function formatFollowUpType(type: FollowUp["type"]) {
+  return type === "supplement" ? "補充" : "提醒";
+}
+
+export function formatLatestFollowUpLabel(type: FollowUp["type"]) {
+  return `最新${formatFollowUpType(type)}`;
+}
+
 export function isImportantEventUsed(event: ImportantEvent) {
   return Boolean(event.date || event.title.trim());
 }

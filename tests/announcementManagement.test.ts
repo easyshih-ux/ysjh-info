@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mockAnnouncements } from "../data/mockAnnouncements.ts";
 import { addAnnouncementFollowUp, applyAnnouncementUpdate, createAnnouncementUpdate, filterManagedAnnouncements, updateAnnouncement, validateAnnouncementCore } from "../lib/announcementManagement.ts";
+import { formatFollowUpType, formatLatestFollowUpLabel } from "../lib/announcements.ts";
 import { readFileSync } from "node:fs";
 const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
@@ -16,6 +17,8 @@ test("管理頁儲存自訂 contact 時會 trim snapshot",()=>{const edited={...
 test("可補登並修正多筆 deadlines",()=>{const item=structuredClone(mockAnnouncements[0]);item.deadlines.push({date:"2026-09-30",label:"補登期限"});item.deadlines[0]={...item.deadlines[0],date:"2026-09-29"};assert.equal(item.deadlines.at(-1)?.label,"補登期限");assert.equal(item.deadlines[0].date,"2026-09-29")});
 test("可新增 supplement 並保留歷史",()=>{const before=mockAnnouncements[0].followUps.length;const result=addAnnouncementFollowUp(mockAnnouncements,"ann-001",{createdAt:"2026-09-19T10:00:00+08:00",type:"supplement",message:"補充內容"});assert.equal(result[0].followUps.length,before+1);assert.equal(result[0].followUps.at(-1)?.type,"supplement")});
 test("可新增 reminder 並保留歷史",()=>{const before=mockAnnouncements[0].followUps.length;const result=addAnnouncementFollowUp(mockAnnouncements,"ann-001",{createdAt:"2026-09-19T11:00:00+08:00",type:"reminder",message:"稽催內容"});assert.equal(result[0].followUps.length,before+1);assert.equal(result[0].followUps.at(-1)?.type,"reminder")});
+test("補充與提醒依實際 type 顯示且不混用催繳",()=>{assert.equal(formatFollowUpType("supplement"),"補充");assert.equal(formatFollowUpType("reminder"),"提醒");assert.equal(formatLatestFollowUpLabel("supplement"),"最新補充");assert.equal(formatLatestFollowUpLabel("reminder"),"最新提醒");const home=source("app/page.tsx");assert.doesNotMatch(home,/最新稽催|過往稽催/);assert.match(home,/formatLatestFollowUpLabel/);assert.match(home,/chasingAnnouncements/);assert.match(home,/collectionStatus !== "chasing"/)});
+test("管理頁主要 CTA 的 disabled 狀態使用低對比樣式",()=>{const page=source("app/manage/page.tsx");const styles=source("app/manage/manage.module.css");assert.equal((page.match(/className=\{styles\.primaryCta\}/g)||[]).length,2);assert.match(styles,/\.primaryCta\{[^}]*#173b63[^}]*#fff/);assert.match(styles,/\.primaryCta:disabled\{[^}]*cursor:not-allowed[^}]*#e7edf2[^}]*#73808d[^}]*opacity:1/)});
 test("新增與編輯共用核心資料驗證",()=>{assert.deepEqual(validateAnnouncementCore(mockAnnouncements[0]),{});const invalid={...mockAnnouncements[0],title:""};assert.equal(validateAnnouncementCore(invalid).title,"請輸入公告標題")});
 test("管理頁依 UID 區分自己的公告與 systemAdmin 全校管理",()=>{const page=source("app/manage/page.tsx");assert.match(page,/item\.publisherUid === publisher\.uid/);assert.match(page,/publisher\.role === "systemAdmin"/);assert.match(page,/全校公告管理/)});
 test("管理頁提供下架復原催繳與 systemAdmin 二次確認永久刪除",()=>{const page=source("app/manage/page.tsx");assert.match(page,/"withdraw"/);assert.match(page,/"restore"/);assert.match(page,/"startChase"/);assert.match(page,/"stopChase"/);assert.equal((page.match(/window\.confirm/g)||[]).length,2);assert.match(page,/永久刪除後無法復原/)});
