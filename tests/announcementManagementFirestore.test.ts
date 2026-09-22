@@ -77,11 +77,12 @@ test("followUp type 只接受 supplement/reminder 並產生 createdAt", () => {
   assert.throws(() => createFollowUp("invalid" as "supplement", "內容", "2026-09-19T13:00:00.000Z"));
 });
 
-test("Firestore 修正使用原 ID 的 updateDoc，followUp 使用 arrayUnion append", () => {
+test("Firestore 修正使用原 ID，follow-up 改寫入安全 subcollection", () => {
   const firestore = source("lib/announcementManagementFirestore.ts");
   assert.match(firestore, /updateDoc\(/);
   assert.match(firestore, /doc\(getFirestoreClient\(\), ANNOUNCEMENTS_COLLECTION, edited\.id\)/);
-  assert.match(firestore, /followUps: arrayUnion\(followUp\)/);
+  assert.match(firestore, /createAnnouncementFollowUp\(announcementId, type, message, publisher\)/);
+  assert.doesNotMatch(firestore, /arrayUnion|followUps:\s*arrayUnion/);
   assert.doesNotMatch(firestore, /updatedAt: createdAt|contentUpdatedAt: createdAt/);
   assert.match(firestore, /if \(!hasAnnouncementContentChanges\(original, edited\)\) return null/);
   assert.doesNotMatch(firestore, /setDoc|addDoc|deleteDoc/);

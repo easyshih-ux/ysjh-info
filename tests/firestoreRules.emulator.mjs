@@ -84,6 +84,17 @@ function announcementData(title = "Emulator announcement", publisherUid = "userA
   return { title, content: "Rules integration test only", publisherUid, publicationStatus: "published", department: "設備組" };
 }
 
+function followUpData(overrides = {}) {
+  return {
+    type: "supplement",
+    message: "補充內容",
+    authorUid: "userA",
+    department: "設備組",
+    createdAt: serverTimestamp(),
+    ...overrides,
+  };
+}
+
 function pdfAttachment(id, publisherUid = "userA") {
   return {
     id,
@@ -416,4 +427,56 @@ test("47 announcement contact 拒絕非法分機與多餘敏感欄位", async ()
   const database = userDb("userA");
   await assertFails(setDoc(doc(database, "announcements/badExtension"), { ...announcementData(), contact: { department: "設備組", extension: "09-1234" } }));
   await assertFails(setDoc(doc(database, "announcements/extraField"), { ...announcementData(), contact: { department: "設備組", extension: "104", email: "private@example.test" } }));
+});
+
+test("48 原 publisher 可新增 supplement 與 reminder", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await seed("announcements/own", announcementData("Own", "userA"));
+  const database = userDb("userA");
+  await assertSucceeds(setDoc(doc(database, "announcements/own/followUps/supplement"), followUpData()));
+  await assertSucceeds(setDoc(doc(database, "announcements/own/followUps/reminder"), followUpData({ type: "reminder" })));
+});
+
+test("49 enabled systemAdmin 可新增別人公告的 supplement", async () => {
+  await seed("authorizedPublishers/adminA", { ...profile("systemAdmin", true), defaultDepartment: "教務處" });
+  await seed("announcements/other", announcementData("Other", "userB"));
+  await assertSucceeds(setDoc(doc(userDb("adminA"), "announcements/other/followUps/admin"), followUpData({ authorUid: "adminA", department: "教務處" })));
+});
+
+test("50 其他 publisher 與 disabled publisher 不可新增 follow-up", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await seed("authorizedPublishers/userB", profile("publisher", false));
+  await seed("announcements/other", announcementData("Other", "owner"));
+  await assertFails(setDoc(doc(userDb("userA"), "announcements/other/followUps/a"), followUpData()));
+  await assertFails(setDoc(doc(userDb("userB"), "announcements/other/followUps/b"), followUpData({ authorUid: "userB" })));
+});
+
+test("51 follow-up 作者、單位、類型與建立時間不可偽造", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await seed("announcements/own", announcementData("Own", "userA"));
+  const database = userDb("userA");
+  const path = suffix => doc(database, `announcements/own/followUps/${suffix}`);
+  await assertFails(setDoc(path("author"), followUpData({ authorUid: "userB" })));
+  await assertFails(setDoc(path("department"), followUpData({ department: "教務處" })));
+  await assertFails(setDoc(path("type"), followUpData({ type: "related" })));
+  await assertFails(setDoc(path("time"), followUpData({ createdAt: Timestamp.fromMillis(0) })));
+  await assertFails(setDoc(path("extra"), followUpData({ authorEmail: "private@example.test" })));
+});
+
+test("52 follow-up 僅允許 create，公開可讀但 client 不可 update delete", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await seed("announcements/own", announcementData("Own", "userA"));
+  await seed("announcements/own/followUps/one", { type: "supplement", message: "內容", authorUid: "userA", department: "設備組", createdAt: Timestamp.now() });
+  await assertSucceeds(getDoc(doc(anonymousDb(), "announcements/own/followUps/one")));
+  const reference = doc(userDb("userA"), "announcements/own/followUps/one");
+  await assertFails(updateDoc(reference, { message: "修改" }));
+  await assertFails(deleteDoc(reference));
+});
+
+test("53 legacy followUps array 維持唯讀且不能從 announcement update 改寫", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await seed("announcements/own", { ...announcementData("Own", "userA"), followUps: [] });
+  await assertFails(updateDoc(doc(userDb("userA"), "announcements/own"), {
+    followUps: [{ type: "supplement", message: "不得寫回舊陣列", createdAt: "2026-09-22T10:00:00.000Z" }],
+  }));
 });

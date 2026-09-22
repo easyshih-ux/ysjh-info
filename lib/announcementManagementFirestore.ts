@@ -1,7 +1,9 @@
-import { arrayUnion, deleteField, doc, updateDoc } from "firebase/firestore";
+import { deleteField, doc, updateDoc } from "firebase/firestore";
 import type { Announcement, FollowUp } from "./announcements.ts";
-import { createAnnouncementUpdate, createFollowUp, hasAnnouncementContentChanges } from "./announcementManagement.ts";
+import { createAnnouncementUpdate, hasAnnouncementContentChanges } from "./announcementManagement.ts";
+import { createAnnouncementFollowUp } from "./announcementFollowUps.ts";
 import { ANNOUNCEMENTS_COLLECTION, getFirestoreClient } from "./firestoreClient.ts";
+import type { AuthorizedPublisherContextValue } from "./publisherAccess.ts";
 
 export class AnnouncementManagementError extends Error {
   constructor(message: string) {
@@ -24,15 +26,14 @@ export async function updateManagedAnnouncement(original: Announcement, edited: 
   }
 }
 
-export async function appendManagedFollowUp(announcementId: string, type: FollowUp["type"], message: string) {
-  const createdAt = new Date().toISOString();
-  const followUp = createFollowUp(type, message, createdAt);
+export async function appendManagedFollowUp(
+  announcementId: string,
+  type: FollowUp["type"],
+  message: string,
+  publisher: Pick<AuthorizedPublisherContextValue, "uid" | "defaultDepartment" | "displayName">,
+) {
   try {
-    await updateDoc(
-      doc(getFirestoreClient(), ANNOUNCEMENTS_COLLECTION, announcementId),
-      { followUps: arrayUnion(followUp) },
-    );
-    return followUp;
+    return await createAnnouncementFollowUp(announcementId, type, message, publisher);
   } catch {
     throw new AnnouncementManagementError("補充／提醒新增失敗，請確認網路連線與發布權限後再試一次。");
   }

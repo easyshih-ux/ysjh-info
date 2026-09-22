@@ -7,6 +7,7 @@ import { formatFileSize } from "@/lib/attachmentFiles";
 import { announcementsForIdentity, chasingAnnouncements, daysUntil, deadlineDateLabel, deadlineRelativeLabel, deadlineUrgency, filterAnnouncements, importantEventDateLabel, needsAcademicYearConfirmation, nextWeekBounds, nextWeekEvents, readSavedIdentity, saveIdentity, type SavedIdentity, upcomingDeadlines, weekBounds, weeklyEvents } from "@/lib/announcementLogic";
 import { announcementsForAcademicYear, CURRENT_ACADEMIC_YEAR, FRONTEND_ACADEMIC_YEARS } from "@/lib/academicYear";
 import { readPublicAnnouncements } from "@/lib/announcementFirestore";
+import { mergeAnnouncementFollowUps, readAnnouncementFollowUps } from "@/lib/announcementFollowUps";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { DepartmentOptionGroups } from "@/components/department-option-groups";
@@ -33,6 +34,7 @@ export default function Home() {
   const [announcementsError, setAnnouncementsError] = useState(false);
   const [now] = useState(() => new Date());
   const [selected, setSelected] = useState<Announcement | null>(null);
+  const [loadedFollowUps, setLoadedFollowUps] = useState<Record<string, Announcement["followUps"]>>({});
   const [previewAttachment, setPreviewAttachment] = useState<ImageAttachment | null>(null);
   const [identity, setIdentity] = useState<SavedIdentity | null | undefined>(undefined);
   const [newAcademicYear, setNewAcademicYear] = useState(false);
@@ -43,6 +45,22 @@ export default function Home() {
   const [department, setDepartment] = useState("全部");
   useEffect(() => { const stale = needsAcademicYearConfirmation(localStorage, CURRENT_ACADEMIC_YEAR); const saved = readSavedIdentity(localStorage, CURRENT_ACADEMIC_YEAR); setNewAcademicYear(stale); setIdentity(saved); setViewMode(saved === "全部" ? "all" : "related"); }, []);
   useEffect(() => { let active = true; readPublicAnnouncements().then(items => { if (active) setAnnouncements(items); }).catch(() => { if (active) setAnnouncementsError(true); }).finally(() => { if (active) setAnnouncementsLoading(false); }); return () => { active = false; }; }, []);
+  useEffect(() => {
+    if (!selected) return;
+    const announcementId = selected.id;
+    const cached = loadedFollowUps[announcementId];
+    if (cached) {
+      setSelected(current => current?.id === announcementId ? { ...current, followUps: mergeAnnouncementFollowUps(current.followUps, cached) } : current);
+      return;
+    }
+    let active = true;
+    readAnnouncementFollowUps(announcementId).then(followUps => {
+      if (!active) return;
+      setLoadedFollowUps(current => ({ ...current, [announcementId]: followUps }));
+      setSelected(current => current?.id === announcementId ? { ...current, followUps: mergeAnnouncementFollowUps(current.followUps, followUps) } : current);
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [selected?.id, loadedFollowUps]);
   const chooseIdentity = (value: SavedIdentity) => { saveIdentity(localStorage, value, CURRENT_ACADEMIC_YEAR); setIdentity(value); setNewAcademicYear(false); setViewMode(value === "全部" ? "all" : "related"); setSwitchingIdentity(false); setQuery(""); };
   const currentYearAnnouncements = useMemo(() => announcementsForAcademicYear(announcements, CURRENT_ACADEMIC_YEAR), [announcements]);
   const homepageAnnouncements = useMemo(() => viewMode === "all" || !identity || identity === "全部" ? currentYearAnnouncements : announcementsForIdentity(currentYearAnnouncements, identity as UserIdentity), [currentYearAnnouncements, identity, viewMode]);

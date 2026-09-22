@@ -36,7 +36,7 @@ test("Firestore rules 公開讀取公告但只允許 UID 授權文件啟用者�
   assert.match(rules, /request\.resource\.data\.publicationStatus == 'published'/);
   assert.match(
     rules,
-    /allow update: if canManageAnnouncement\(\)\s*&& keepsLifecycleFields\(\)\s*&& canUseAnnouncementDepartment\(\)\s*&& isValidContact\(request\.resource\.data\)\s*&& keepsValidAttachments\(announcementId\);/,
+    /allow update: if canManageAnnouncement\(\)\s*&& keepsLifecycleFields\(\)\s*&& keepsLegacyFollowUps\(\)\s*&& canUseAnnouncementDepartment\(\)\s*&& isValidContact\(request\.resource\.data\)\s*&& keepsValidAttachments\(announcementId\);/,
   );
   assert.match(rules, /function canUseAnnouncementDepartment\(\)/);
   assert.match(rules, /function isValidContact\(data\)/);
@@ -51,4 +51,14 @@ test("Firestore rules 公開讀取公告但只允許 UID 授權文件啟用者�
   assert.match(rules, /\.data\.role in \['systemAdmin', 'publisher'\]/);
   assert.match(rules, /allow list, create, update, delete: if false;/);
   assert.match(rules, /match \/\{document=\*\*\}[\s\S]*allow read, write: if false;/);
+});
+
+test("followUps subcollection 維持原公告 ownership 並拒絕 update delete", () => {
+  const rules = source("firestore.rules");
+  assert.match(rules, /match \/followUps\/\{followUpId\}/);
+  assert.match(rules, /canCreateAnnouncementFollowUp\(announcementId\)/);
+  assert.match(rules, /resource\.data\.publisherUid == request\.auth\.uid/);
+  assert.match(rules, /request\.resource\.data\.createdAt == request\.time/);
+  assert.match(rules, /keepsLegacyFollowUps\(\)/);
+  assert.match(rules, /allow update, delete: if false/);
 });

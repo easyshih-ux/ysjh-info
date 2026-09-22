@@ -21,7 +21,15 @@ export interface PdfAttachment {
   contentType: "application/pdf";
 }
 export type Attachment = ImageAttachment | PdfAttachment;
-export interface FollowUp { createdAt: string; type: "supplement" | "reminder"; message: string }
+export interface FollowUp {
+  id?: string;
+  createdAt: string;
+  type: "supplement" | "reminder";
+  message: string;
+  authorUid?: string;
+  department?: string;
+  authorDisplayName?: string;
+}
 export interface AnnouncementLink { id: string; label: string; url: string; type: "website"; isPrimary: boolean }
 export interface Announcement {
   id: string;

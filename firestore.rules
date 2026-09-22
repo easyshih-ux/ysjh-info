@@ -113,6 +113,10 @@ service cloud.firestore {
         || isValidAttachments(request.resource.data, announcementId, request.resource.data.publisherUid);
     }
 
+    function keepsLegacyFollowUps() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['followUps']);
+    }
+
     function isValidContact(data) {
       return !data.keys().hasAny(['contact'])
         || (data.contact is map
@@ -159,6 +163,46 @@ service cloud.firestore {
           || request.resource.data.requestedDepartment == '其他');
     }
 
+    function canCreateAnnouncementFollowUp(announcementId) {
+      return isAuthorizedPublisher()
+        && (isEnabledSystemAdmin()
+          || get(/databases/$(database)/documents/announcements/$(announcementId)).data.publisherUid == request.auth.uid);
+    }
+
+    function isValidNewAnnouncementFollowUp() {
+      let publisher = get(/databases/$(database)/documents/authorizedPublishers/$(request.auth.uid)).data;
+      return request.resource.data.keys().hasAll([
+          'type',
+          'message',
+          'authorUid',
+          'department',
+          'createdAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'type',
+          'message',
+          'authorUid',
+          'department',
+          'authorDisplayName',
+          'createdAt'
+        ])
+        && request.resource.data.type in ['supplement', 'reminder']
+        && request.resource.data.message is string
+        && request.resource.data.message.size() > 0
+        && request.resource.data.message.size() <= 3000
+        && request.resource.data.authorUid == request.auth.uid
+        && request.resource.data.department == publisher.defaultDepartment
+        && request.resource.data.department is string
+        && request.resource.data.department.size() > 0
+        && request.resource.data.department.size() <= 30
+        && request.resource.data.createdAt == request.time
+        && (!request.resource.data.keys().hasAny(['authorDisplayName'])
+          || (publisher.displayName is string
+            && publisher.displayName.size() > 0
+            && publisher.displayName.size() <= 100
+            && request.resource.data.authorDisplayName == publisher.displayName));
+    }
+
     match /announcements/{announcementId} {
       allow read: if true;
       allow create: if isAuthorizedPublisher()
@@ -169,10 +213,18 @@ service cloud.firestore {
         && isValidAttachments(request.resource.data, announcementId, request.auth.uid);
       allow update: if canManageAnnouncement()
         && keepsLifecycleFields()
+        && keepsLegacyFollowUps()
         && canUseAnnouncementDepartment()
         && isValidContact(request.resource.data)
         && keepsValidAttachments(announcementId);
       allow delete: if false;
+
+      match /followUps/{followUpId} {
+        allow read: if true;
+        allow create: if canCreateAnnouncementFollowUp(announcementId)
+          && isValidNewAnnouncementFollowUp();
+        allow update, delete: if false;
+      }
     }
 
     match /authorizedPublishers/{publisherUid} {
