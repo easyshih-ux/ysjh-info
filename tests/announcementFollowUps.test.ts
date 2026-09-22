@@ -73,7 +73,7 @@ test("related 可解析 updatedAt，並與 legacy supplement reminder 共同排�
 test("related UI 分區、不公開 UID email，首頁仍只在詳細頁 lazy load", () => {
   const home = source("app/page.tsx");
   const manage = source("app/manage/page.tsx");
-  assert.match(home, /💬 相關補充/);
+  assert.match(home, /💬 其他單位補充/);
   assert.match(home, /relatedFollowUps\(selected\)/);
   assert.doesNotMatch(home, /authorUid|authorEmail/);
   assert.match(manage, /value\.authorUid === publisher\.uid/);
