@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Eye, FileText, ImagePlus, Link2, Trash2 } from "lucide-react";
-import { AUDIENCES, formatImportantEventSchedule, toggleAudienceSelection, type Announcement, type Audience } from "@/lib/announcements";
+import { AUDIENCES, formatImportantEventSchedule, normalizeImportantEvent, toggleAudienceSelection, type Announcement, type Audience } from "@/lib/announcements";
 import { MAX_CUSTOM_DEPARTMENT_LENGTH, OTHER_DEPARTMENT_OPTION, type Department } from "@/lib/departments";
 import { CURRENT_ACADEMIC_YEAR } from "@/lib/academicYear";
 import { MAX_PUBLISH_IMAGES, normalizeOptionalHttpUrl, publishDraftToAnnouncement, removePublishAttachment, selectPublishImages, setPrimaryLink, validateBasicDraft, type BasicAnnouncementDraft, type DraftErrors, type PublishImageAttachment, type PublishPdfAttachment } from "@/lib/publishDraft";
@@ -138,6 +138,7 @@ function PublishForm() {
     });
     const normalizedDraft: BasicAnnouncementDraft = {
       ...draft,
+      importantEvents: draft.importantEvents.map(normalizeImportantEvent),
       links: draft.links.map(item => ({ ...item, url: normalizeOptionalHttpUrl(item.url).value })),
     };
     const nextErrors = validateBasicDraft(normalizedDraft);

@@ -1,4 +1,4 @@
-import { normalizeAudiences, normalizeImportantEvent, type Announcement, type Audience, type FollowUp } from "./announcements.ts";
+import { isImportantEventUsed, normalizeAudiences, normalizeImportantEvent, type Announcement, type Audience, type FollowUp } from "./announcements.ts";
 import { validateBasicDraft } from "./publishDraft.ts";
 import { normalizeAnnouncementContact } from "./departmentContacts.ts";
 
@@ -48,7 +48,7 @@ export function createAnnouncementUpdate(edited: Announcement, updatedAt: string
     audiences: normalizeAudiences(edited.audiences),
     content: edited.content.trim(),
     ...(contact ? { contact } : {}),
-    importantEvents: edited.importantEvents.filter(item => item.date || item.time || item.endDate || item.endTime || item.title).map(normalizeImportantEvent),
+    importantEvents: edited.importantEvents.filter(isImportantEventUsed).map(normalizeImportantEvent),
     deadlines: edited.deadlines.filter(item => item.date || item.time || item.label),
     links: edited.links,
     updatedAt,

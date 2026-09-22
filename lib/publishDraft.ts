@@ -1,4 +1,4 @@
-import { normalizeAudiences, normalizeImportantEvent, type Announcement, type AnnouncementLink, type Audience, type Deadline, type ImportantEvent } from "./announcements.ts";
+import { isImportantEventUsed, normalizeAudiences, normalizeImportantEvent, type Announcement, type AnnouncementLink, type Audience, type Deadline, type ImportantEvent } from "./announcements.ts";
 import { isDepartment, type Department } from "./departments.ts";
 import { isSupportedPdf, MAX_PDF_BYTES, MAX_PUBLISH_PDFS } from "./attachmentFiles.ts";
 import { normalizeAnnouncementContact, validateAnnouncementContact, type AnnouncementContact } from "./departmentContacts.ts";
@@ -70,7 +70,7 @@ export function publishDraftToAnnouncement(draft: BasicAnnouncementDraft, id: st
     id, publishedAt, academicYear, department: draft.department, title: draft.title,
     audiences: normalizeAudiences(draft.audiences), content: draft.content,
     ...(normalizeAnnouncementContact(draft.contact) ? { contact: normalizeAnnouncementContact(draft.contact) } : {}),
-    importantEvents: draft.importantEvents.filter(event => event.date || event.time || event.endDate || event.endTime || event.title).map(normalizeImportantEvent),
+    importantEvents: draft.importantEvents.filter(isImportantEventUsed).map(normalizeImportantEvent),
     deadlines: draft.deadlines.filter(deadline => deadline.date || deadline.time || deadline.label),
     links: draft.links
       .filter(link => link.label.trim() || link.url.trim())
@@ -91,9 +91,11 @@ export function validateBasicDraft(draft: BasicAnnouncementDraft): DraftErrors {
   if (!draft.content.trim()) errors.content = "請輸入完整公告內容";
   const contactError = validateAnnouncementContact(draft.contact);
   if (contactError) errors.contact = contactError;
-  if (draft.importantEvents.some(item => (item.date || item.time || item.endDate || item.endTime || item.title) && (!item.date || !item.title.trim()))) errors.importantEvents = "已填寫的重要事項需要完整的日期與事項名稱";
-  if (draft.importantEvents.some(item => item.endDate && (!item.date || item.endDate < item.date))) errors.importantEvents = "重要事項的結束日期不得早於開始日期";
-  if (draft.importantEvents.some(item => item.time && item.endTime && (!item.endDate || item.endDate === item.date) && item.endTime < item.time)) errors.importantEvents = "同一天的重要事項結束時間不得早於開始時間";
+  const enteredImportantEvents = draft.importantEvents.filter(isImportantEventUsed);
+  if (enteredImportantEvents.some(item => !item.date)) errors.importantEvents = "請填寫重要事項的開始日期";
+  else if (enteredImportantEvents.some(item => !item.title.trim())) errors.importantEvents = "請填寫重要事項的事項名稱";
+  else if (enteredImportantEvents.some(item => item.endDate && item.endDate < item.date)) errors.importantEvents = "重要事項的結束日期不得早於開始日期";
+  else if (enteredImportantEvents.some(item => item.time && item.endTime && (!item.endDate || item.endDate === item.date) && item.endTime < item.time)) errors.importantEvents = "同一天的重要事項結束時間不得早於開始時間";
   if (draft.deadlines.some(item => (item.date || item.time || item.label) && (!item.date || !item.label.trim()))) errors.deadlines = "已填寫的繳交期限需要完整的截止日期與事項名稱";
   const enteredLinks = draft.links.filter(item => item.label.trim() || item.url.trim());
   if (enteredLinks.some(item => !item.label.trim() || !item.url.trim())) errors.links = "相關連結需要完整名稱與網址";

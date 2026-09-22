@@ -61,7 +61,12 @@ export function toggleAudienceSelection(values: readonly Audience[], audience: A
   return [...values.filter(value => value !== "全校教師" && value !== audience), audience];
 }
 
+export function isImportantEventUsed(event: ImportantEvent) {
+  return Boolean(event.date || event.title.trim());
+}
+
 export function normalizeImportantEvent(event: ImportantEvent): ImportantEvent {
+  if (!isImportantEventUsed(event)) return { date: "", title: "" };
   return {
     date: event.date,
     ...(event.time ? { time: event.time } : {}),
