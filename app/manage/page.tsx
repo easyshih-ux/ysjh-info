@@ -11,7 +11,8 @@ import { AnnouncementManagementError, appendManagedFollowUp, updateManagedAnnoun
 import { readManagedAnnouncements } from "@/lib/announcementFirestore";
 import { manageAnnouncementLifecycle, type AnnouncementLifecycleAction } from "@/lib/announcementLifecycle";
 import { useAuthorizedPublisher } from "@/components/admin-auth-guard";
-import { setPrimaryLink } from "@/lib/publishDraft";
+import { setPrimaryLink, validatePublisherDepartment } from "@/lib/publishDraft";
+import { departmentVisualFamily } from "@/lib/departmentVisual";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -88,6 +89,8 @@ export default function ManagePage() {
   const saveEdit = async () => {
     if (!editing || savingRef.current) return;
     const validation = validateAnnouncementCore(editing);
+    const departmentAuthorityError = validatePublisherDepartment(editing.department, publisher);
+    if (departmentAuthorityError) validation.department = departmentAuthorityError;
     if (Object.keys(validation).length) { setError(Object.values(validation)[0] ?? "請確認公告資料是否完整。"); return; }
     savingRef.current = true; setSaving(true); setError("");
     try {
@@ -134,7 +137,7 @@ export default function ManagePage() {
     <AnnouncementDetails item={viewing} publisher={publisher} onClose={() => setViewing(null)} />
     <Dialog open={!!editing} onOpenChange={open => { if (!open && !saving) { setEditing(null); setError(""); } }}><DialogContent className={styles.editor} showCloseButton={!saving}>{editing && <>
       <DialogHeader><DialogDescription>修正既有公告 · 發布時間保持不變</DialogDescription><DialogTitle>{editing.title}</DialogTitle></DialogHeader>
-      <div className={styles.twoFields}><label>學年度<select value={editing.academicYear} onChange={event => setEditing({ ...editing, academicYear: Number(event.target.value) })}>{FRONTEND_ACADEMIC_YEARS.map(value => <option key={value} value={value}>{value} 學年度</option>)}</select></label><label>發布單位<select value={editing.department} onChange={event => setEditing({ ...editing, department: event.target.value as Department })}><DepartmentOptionGroups currentDepartment={editing.department} /></select></label></div>
+      <div className={styles.twoFields}><label>學年度<select value={editing.academicYear} onChange={event => setEditing({ ...editing, academicYear: Number(event.target.value) })}>{FRONTEND_ACADEMIC_YEARS.map(value => <option key={value} value={value}>{value} 學年度</option>)}</select></label>{publisher.role === "systemAdmin" ? <label>發布單位<select value={editing.department} onChange={event => setEditing({ ...editing, department: event.target.value as Department })}><DepartmentOptionGroups currentDepartment={editing.department} /></select></label> : <div className={styles.lockedDepartment}><span>發布單位</span><strong className={`department-badge department-${departmentVisualFamily(editing.department)}`}>{editing.department}</strong><small>依您的發布權限固定，不可修改</small></div>}</div>
       <label>公告標題<Input value={editing.title} onChange={event => setEditing({ ...editing, title: event.target.value })} /></label>
       <fieldset><legend>適用對象</legend><div className={styles.audiences}>{AUDIENCES.map(value => <label key={value}><Checkbox checked={editing.audiences.includes(value)} onCheckedChange={checked => setEditing({ ...editing, audiences: toggleAudienceSelection(editing.audiences, value, checked === true) })} />{value}</label>)}</div></fieldset>
       <label>完整公告內容<Textarea value={editing.content} onChange={event => setEditing({ ...editing, content: event.target.value })} /></label>

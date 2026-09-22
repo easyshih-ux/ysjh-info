@@ -82,6 +82,24 @@ export function publishDraftToAnnouncement(draft: BasicAnnouncementDraft, id: st
 
 export type DraftErrors = Partial<Record<keyof BasicAnnouncementDraft, string>>;
 
+export interface PublisherDepartmentAuthority {
+  role: "publisher" | "systemAdmin" | null;
+  defaultDepartment: Department;
+}
+
+export function validatePublisherDepartment(
+  department: BasicAnnouncementDraft["department"],
+  publisher: PublisherDepartmentAuthority,
+) {
+  if (publisher.role === "systemAdmin") return null;
+  if (!isDepartment(publisher.defaultDepartment)) {
+    return "您的發布單位權限設定不完整，請聯絡系統管理者。";
+  }
+  return department === publisher.defaultDepartment
+    ? null
+    : "發布單位必須與帳號核准的發布單位一致。";
+}
+
 export function validateBasicDraft(draft: BasicAnnouncementDraft): DraftErrors {
   const errors: DraftErrors = {};
   if (!isDepartment(draft.department)) errors.department = "請選擇正式發布單位";

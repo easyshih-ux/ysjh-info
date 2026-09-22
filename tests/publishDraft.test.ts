@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { MAX_ORIGINAL_IMAGE_BYTES, MAX_PUBLISH_IMAGES, isSupportedImage, limitPublishImageSelection, normalizeOptionalHttpUrl, publishDraftToAnnouncement, removePublishAttachment, selectPublishImages, setPrimaryLink, validateBasicDraft, type BasicAnnouncementDraft } from "../lib/publishDraft.ts";
+import { MAX_ORIGINAL_IMAGE_BYTES, MAX_PUBLISH_IMAGES, isSupportedImage, limitPublishImageSelection, normalizeOptionalHttpUrl, publishDraftToAnnouncement, removePublishAttachment, selectPublishImages, setPrimaryLink, validateBasicDraft, validatePublisherDepartment, type BasicAnnouncementDraft } from "../lib/publishDraft.ts";
 import { DEPARTMENTS, departmentGroups, isDepartment } from "../lib/departments.ts";
 import { normalizeImportantEvent, toggleAudienceSelection } from "../lib/announcements.ts";
 import { formatImportantEventSchedule } from "../lib/announcements.ts";
@@ -13,6 +13,7 @@ test("全校教師與所有其他身分互斥",()=>{assert.deepEqual(toggleAudie
 test("非法對象組合驗證拒絕且送出時正規化",()=>{const illegal=draft({audiences:["全校教師","行政"]});assert.ok(validateBasicDraft(illegal).audiences);assert.deepEqual(publishDraftToAnnouncement(illegal,"id","2026-09-19",115).audiences,["全校教師"])});
 test("正式固定發布單位共22個並包含校長、人事室與會計室",()=>{assert.equal(DEPARTMENTS.length,22);assert.equal(new Set(DEPARTMENTS).size,22);for(const value of ["校長","人事室","會計室"])assert.ok(isDepartment(value))});
 test("發布單位依四個處室正確分組",()=>{assert.equal(departmentGroups.length,4);assert.deepEqual(departmentGroups.map(group=>group.office),["教務處","學務處","總務處","輔導處"]);assert.deepEqual(departmentGroups.map(group=>group.departments.length),[5,6,4,4])});
+test("一般 publisher 只能使用核准單位且 systemAdmin 可代發",()=>{assert.equal(validatePublisherDepartment("設備組",{role:"publisher",defaultDepartment:"設備組"}),null);assert.match(validatePublisherDepartment("教務處",{role:"publisher",defaultDepartment:"設備組"})??"",/核准/);assert.equal(validatePublisherDepartment("教師會",{role:"publisher",defaultDepartment:"教師會"}),null);assert.equal(validatePublisherDepartment("訓育組",{role:"systemAdmin",defaultDepartment:"設備組"}),null);assert.match(validatePublisherDepartment("",{role:"publisher",defaultDepartment:""})??"",/聯絡系統管理者/)});
 test("設備組與健康中心保留正式儲存值",()=>{assert.ok(isDepartment("設備組"));assert.equal(DEPARTMENTS.find(item=>item==="設備組"),"設備組");assert.ok(isDepartment("健康中心"));assert.equal(DEPARTMENTS.find(item=>item==="健康中心"),"健康中心")});
 test("其他是申請選項而非實際單位，自訂名稱需去除空白且限制長度",async()=>{const {normalizeCustomDepartment,isPublisherRequestDepartment}=await import("../lib/departments.ts");assert.equal(isPublisherRequestDepartment("其他"),true);assert.equal(isDepartment("其他"),false);assert.equal(normalizeCustomDepartment("  家長會  "),"家長會");assert.equal(normalizeCustomDepartment(" "),null);assert.equal(normalizeCustomDepartment("甲".repeat(31)),null)});
 test("接受 image/* 並拒絕非圖片檔案",()=>{for(const type of ["image/jpeg","image/png","image/webp","image/gif"])assert.ok(isSupportedImage({name:"photo",type}));assert.equal(isSupportedImage({name:"report.pdf",type:"application/pdf"}),false)});

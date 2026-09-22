@@ -52,8 +52,8 @@ test("announcements 只接受已登入、啟用且具有正式角色的 UID prof
   assert.match(announcementMatch, /allow create: if isAuthorizedPublisher\(\)/);
   assert.match(announcementMatch, /request\.resource\.data\.publisherUid == request\.auth\.uid/);
   assert.match(announcementMatch, /request\.resource\.data\.publicationStatus == 'published'/);
-  assert.match(announcementMatch, /canUseAnnouncementDepartment\(\)/);
-  assert.match(announcementMatch, /allow update: if canManageAnnouncement\(\)[\s\S]*keepsLifecycleFields\(\)[\s\S]*canUseAnnouncementDepartment\(\)/);
+  assert.match(announcementMatch, /canCreateAnnouncementDepartment\(\)/);
+  assert.match(announcementMatch, /allow update: if canManageAnnouncement\(\)[\s\S]*keepsLifecycleFields\(\)[\s\S]*canUpdateAnnouncementDepartment\(\)/);
   const managementFunction = rules.match(/function canManageAnnouncement\(\) \{([\s\S]*?)\n    \}/)?.[1] ?? "";
   const lifecycleFunction = rules.match(/function keepsLifecycleFields\(\) \{([\s\S]*?)\n    \}/)?.[1] ?? "";
   assert.match(managementFunction, /isEnabledSystemAdmin\(\)/);
@@ -62,9 +62,11 @@ test("announcements 只接受已登入、啟用且具有正式角色的 UID prof
   assert.match(lifecycleFunction, /'publisherUid'/);
   assert.match(lifecycleFunction, /'publicationStatus'/);
   assert.match(lifecycleFunction, /'collectionStatus'/);
-  const departmentFunction = rules.match(/function canUseAnnouncementDepartment\(\) \{([\s\S]*?)\n    \}/)?.[1] ?? "";
-  assert.match(departmentFunction, /isFixedDepartment\(request\.resource\.data\.department\)/);
-  assert.match(departmentFunction, /authorizedPublishers\/\$\(request\.auth\.uid\).*defaultDepartment/s);
+  const createDepartmentFunction = rules.match(/function canCreateAnnouncementDepartment\(\) \{([\s\S]*?)\n    \}/)?.[1] ?? "";
+  const updateDepartmentFunction = rules.match(/function canUpdateAnnouncementDepartment\(\) \{([\s\S]*?)\n    \}/)?.[1] ?? "";
+  assert.match(createDepartmentFunction, /publisher\.role == 'publisher'/);
+  assert.match(createDepartmentFunction, /request\.resource\.data\.department == publisher\.defaultDepartment/);
+  assert.match(updateDepartmentFunction, /request\.resource\.data\.department == resource\.data\.department/);
   assert.doesNotMatch(announcementMatch, /publisherRequests/);
   assert.match(announcementMatch, /allow delete: if false/);
 });

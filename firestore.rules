@@ -51,10 +51,19 @@ service cloud.firestore {
       ];
     }
 
-    function canUseAnnouncementDepartment() {
+    function canCreateAnnouncementDepartment() {
+      let publisher = get(/databases/$(database)/documents/authorizedPublishers/$(request.auth.uid)).data;
       return isEnabledSystemAdmin()
-        || isFixedDepartment(request.resource.data.department)
-        || request.resource.data.department == get(/databases/$(database)/documents/authorizedPublishers/$(request.auth.uid)).data.defaultDepartment;
+        || (publisher.role == 'publisher'
+          && request.resource.data.department == publisher.defaultDepartment);
+    }
+
+    function canUpdateAnnouncementDepartment() {
+      let publisher = get(/databases/$(database)/documents/authorizedPublishers/$(request.auth.uid)).data;
+      return isEnabledSystemAdmin()
+        || (publisher.role == 'publisher'
+          && request.resource.data.department == publisher.defaultDepartment
+          && request.resource.data.department == resource.data.department);
     }
 
     function isValidImageAttachment(attachment) {
@@ -239,14 +248,14 @@ service cloud.firestore {
         && request.resource.data.publisherUid == request.auth.uid
         && request.resource.data.publicationStatus == 'published'
         && !request.resource.data.keys().hasAny(['hasRelatedFollowUp'])
-        && canUseAnnouncementDepartment()
+        && canCreateAnnouncementDepartment()
         && isValidContact(request.resource.data)
         && isValidAttachments(request.resource.data, announcementId, request.auth.uid);
       allow update: if canManageAnnouncement()
         && keepsLifecycleFields()
         && keepsServerManagedSummary()
         && keepsLegacyFollowUps()
-        && canUseAnnouncementDepartment()
+        && canUpdateAnnouncementDepartment()
         && isValidContact(request.resource.data)
         && keepsValidAttachments(announcementId);
       allow delete: if false;

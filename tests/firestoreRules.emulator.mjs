@@ -269,11 +269,11 @@ test("28 enabled publisher 可以 create announcement", async () => {
   await assertSucceeds(setDoc(doc(userDb("userA"), "announcements/newA"), announcementData()));
 });
 
-test("28b publisher 只能使用固定單位或自己的自訂單位", async () => {
+test("28b publisher 只能使用 profile 核准的固定或自訂單位", async () => {
   await seed("authorizedPublishers/userA", { ...profile("publisher", true), defaultDepartment: "家長會" });
   const database = userDb("userA");
   await assertSucceeds(setDoc(doc(database, "announcements/customA"), { ...announcementData(), department: "家長會" }));
-  await assertSucceeds(setDoc(doc(database, "announcements/fixedA"), { ...announcementData(), department: "人事室" }));
+  await assertFails(setDoc(doc(database, "announcements/fixedA"), { ...announcementData(), department: "人事室" }));
   await assertFails(setDoc(doc(database, "announcements/foreignA"), { ...announcementData(), department: "校友會" }));
 });
 
@@ -281,11 +281,13 @@ test("29 enabled publisher 可以 update announcement", async () => {
   await seed("authorizedPublishers/userA", profile("publisher", true));
   await seed("announcements/existingA", announcementData());
   await assertSucceeds(updateDoc(doc(userDb("userA"), "announcements/existingA"), { title: "Updated" }));
+  await assertFails(updateDoc(doc(userDb("userA"), "announcements/existingA"), { department: "教務處" }));
 });
 
 test("30 enabled systemAdmin 可以 create announcement", async () => {
   await seed("authorizedPublishers/adminA", profile("systemAdmin", true));
   await assertSucceeds(setDoc(doc(userDb("adminA"), "announcements/newA"), announcementData("Emulator announcement", "adminA")));
+  await assertSucceeds(setDoc(doc(userDb("adminA"), "announcements/customAdmin"), { ...announcementData("Custom", "adminA"), department: "教師會" }));
 });
 
 test("31 enabled systemAdmin 可以 update announcement", async () => {
