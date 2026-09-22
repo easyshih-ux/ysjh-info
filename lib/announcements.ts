@@ -24,7 +24,8 @@ export type Attachment = ImageAttachment | PdfAttachment;
 export interface FollowUp {
   id?: string;
   createdAt: string;
-  type: "supplement" | "reminder";
+  updatedAt?: string;
+  type: "supplement" | "reminder" | "related";
   message: string;
   authorUid?: string;
   department?: string;
@@ -71,7 +72,7 @@ export function toggleAudienceSelection(values: readonly Audience[], audience: A
 }
 
 export function formatFollowUpType(type: FollowUp["type"]) {
-  return type === "supplement" ? "補充" : "提醒";
+  return type === "supplement" ? "補充" : type === "reminder" ? "提醒" : "相關補充";
 }
 
 export function formatLatestFollowUpLabel(type: FollowUp["type"]) {

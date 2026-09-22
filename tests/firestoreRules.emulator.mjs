@@ -443,7 +443,7 @@ test("49 enabled systemAdmin 可新增別人公告的 supplement", async () => {
   await assertSucceeds(setDoc(doc(userDb("adminA"), "announcements/other/followUps/admin"), followUpData({ authorUid: "adminA", department: "教務處" })));
 });
 
-test("50 其他 publisher 與 disabled publisher 不可新增 follow-up", async () => {
+test("50 其他 publisher 不可新增 supplement reminder，disabled publisher 不可新增", async () => {
   await seed("authorizedPublishers/userA", profile("publisher", true));
   await seed("authorizedPublishers/userB", profile("publisher", false));
   await seed("announcements/other", announcementData("Other", "owner"));
@@ -479,4 +479,62 @@ test("53 legacy followUps array 維持唯讀且不能從 announcement update 改
   await assertFails(updateDoc(doc(userDb("userA"), "announcements/own"), {
     followUps: [{ type: "supplement", message: "不得寫回舊陣列", createdAt: "2026-09-22T10:00:00.000Z" }],
   }));
+});
+
+test("54 B publisher 可對 A 公告新增 related，owner A 不使用 related", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await seed("authorizedPublishers/userB", { ...profile("publisher", true), defaultDepartment: "教務處" });
+  await seed("authorizedPublishers/adminA", profile("systemAdmin", true));
+  await seed("announcements/ownedByA", announcementData("A", "userA"));
+  await assertSucceeds(setDoc(doc(userDb("userB"), "announcements/ownedByA/followUps/related"), followUpData({ type: "related", authorUid: "userB", department: "教務處" })));
+  await assertSucceeds(setDoc(doc(userDb("adminA"), "announcements/ownedByA/followUps/admin-related"), followUpData({ type: "related", authorUid: "adminA" })));
+  await assertFails(setDoc(doc(userDb("userA"), "announcements/ownedByA/followUps/owner-related"), followUpData({ type: "related" })));
+});
+
+test("55 related 拒絕 disabled、無 profile 與偽造作者單位時間", async () => {
+  await seed("authorizedPublishers/userB", { ...profile("publisher", true), defaultDepartment: "教務處" });
+  await seed("authorizedPublishers/disabled", profile("publisher", false));
+  await seed("announcements/ownedByA", announcementData("A", "userA"));
+  const path = suffix => doc(userDb("userB"), `announcements/ownedByA/followUps/${suffix}`);
+  await assertFails(setDoc(path("author"), followUpData({ type: "related", authorUid: "userC", department: "教務處" })));
+  await assertFails(setDoc(path("department"), followUpData({ type: "related", authorUid: "userB", department: "設備組" })));
+  await assertFails(setDoc(path("time"), followUpData({ type: "related", authorUid: "userB", department: "教務處", createdAt: Timestamp.fromMillis(0) })));
+  await assertFails(setDoc(doc(userDb("disabled"), "announcements/ownedByA/followUps/disabled"), followUpData({ type: "related", authorUid: "disabled" })));
+  await assertFails(setDoc(doc(userDb("missing"), "announcements/ownedByA/followUps/missing"), followUpData({ type: "related", authorUid: "missing" })));
+});
+
+test("56 B 只能修改自己 related 的 message 與 server updatedAt", async () => {
+  await seed("authorizedPublishers/userB", { ...profile("publisher", true), defaultDepartment: "教務處" });
+  await seed("authorizedPublishers/userC", profile("publisher", true));
+  await seed("announcements/ownedByA", announcementData("A", "userA"));
+  const createdAt = Timestamp.fromMillis(1000);
+  await seed("announcements/ownedByA/followUps/byB", { type: "related", message: "B", authorUid: "userB", department: "教務處", createdAt });
+  await seed("announcements/ownedByA/followUps/byC", { type: "related", message: "C", authorUid: "userC", department: "設備組", createdAt });
+  await seed("announcements/ownedByA/followUps/supplement", { type: "supplement", message: "A", authorUid: "userA", department: "設備組", createdAt });
+  const own = doc(userDb("userB"), "announcements/ownedByA/followUps/byB");
+  await assertSucceeds(updateDoc(own, { message: "B revised", updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(own, { department: "設備組", updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(doc(userDb("userB"), "announcements/ownedByA/followUps/byC"), { message: "spoof", updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(doc(userDb("userB"), "announcements/ownedByA/followUps/supplement"), { message: "edit", updatedAt: serverTimestamp() }));
+});
+
+test("57 related 只能由作者刪除，原公告作者不可刪，systemAdmin 可管理", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await seed("authorizedPublishers/userB", { ...profile("publisher", true), defaultDepartment: "教務處" });
+  await seed("authorizedPublishers/adminA", profile("systemAdmin", true));
+  await seed("announcements/ownedByA", announcementData("A", "userA"));
+  const record = { type: "related", message: "B", authorUid: "userB", department: "教務處", createdAt: Timestamp.fromMillis(1000) };
+  await seed("announcements/ownedByA/followUps/deleteByB", record);
+  await seed("announcements/ownedByA/followUps/notByA", record);
+  await seed("announcements/ownedByA/followUps/admin", record);
+  await assertSucceeds(deleteDoc(doc(userDb("userB"), "announcements/ownedByA/followUps/deleteByB")));
+  await assertFails(deleteDoc(doc(userDb("userA"), "announcements/ownedByA/followUps/notByA")));
+  await assertSucceeds(updateDoc(doc(userDb("adminA"), "announcements/ownedByA/followUps/admin"), { message: "admin edit", updatedAt: serverTimestamp() }));
+  await assertSucceeds(deleteDoc(doc(userDb("adminA"), "announcements/ownedByA/followUps/admin")));
+});
+
+test("58 related 權限不放寬原 Announcement update", async () => {
+  await seed("authorizedPublishers/userB", profile("publisher", true));
+  await seed("announcements/ownedByA", announcementData("A", "userA"));
+  await assertFails(updateDoc(doc(userDb("userB"), "announcements/ownedByA"), { title: "B cannot edit A" }));
 });

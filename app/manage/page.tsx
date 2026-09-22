@@ -20,9 +20,11 @@ import { DepartmentOptionGroups } from "@/components/department-option-groups";
 import { defaultContactForDepartment, formatContactCompact, getFixedDepartmentExtension, MAX_CONTACT_EXTENSION_LENGTH, selectContactDepartment } from "@/lib/departmentContacts";
 import { Textarea } from "@/components/ui/textarea";
 import { LineSummaryCard } from "@/components/line-summary-card";
+import { copyLineAnnouncement, createLineRelatedFollowUpSummary } from "@/lib/lineAnnouncementSummary";
 import { announcementTimeStates } from "@/lib/announcementLogic";
 import { formatFileSize } from "@/lib/attachmentFiles";
-import { mergeAnnouncementFollowUps, readAnnouncementFollowUps } from "@/lib/announcementFollowUps";
+import { deleteRelatedFollowUp, mergeAnnouncementFollowUps, readAnnouncementFollowUps, updateRelatedFollowUp } from "@/lib/announcementFollowUps";
+import type { AuthorizedPublisherContextValue } from "@/lib/publisherAccess";
 import styles from "./manage.module.css";
 
 const clone = (item: Announcement): Announcement => structuredClone(item);
@@ -62,7 +64,7 @@ export default function ManagePage() {
     if (value === "全部") localStorage.removeItem(MANAGE_DEPARTMENT_KEY);
     else localStorage.setItem(MANAGE_DEPARTMENT_KEY, value);
   };
-  const manageable = useMemo(() => managementScope === "all" && publisher.role === "systemAdmin" ? items : items.filter(item => item.publisherUid === publisher.uid), [items, managementScope, publisher.role, publisher.uid]);
+  const manageable = useMemo(() => publisher.role === "systemAdmin" && managementScope === "mine" ? items.filter(item => item.publisherUid === publisher.uid) : items, [items, managementScope, publisher.role, publisher.uid]);
   const visible = useMemo(() => filterManagedAnnouncements(manageable, department, query, audience, academicYear), [manageable, department, query, audience, academicYear]);
 
   const runLifecycleAction = async (item: Announcement, action: AnnouncementLifecycleAction) => {
@@ -105,7 +107,7 @@ export default function ManagePage() {
     savingRef.current = true; setSaving(true); setError("");
     try {
       await appendManagedFollowUp(followTarget.id, followType, message, publisher);
-      setFollowTarget(null); setMessage(""); setNotice(followType === "supplement" ? "補充已新增" : "提醒已新增");
+      setFollowTarget(null); setMessage(""); setNotice(followType === "supplement" ? "補充已新增" : followType === "reminder" ? "提醒已新增" : "相關補充已新增");
     } catch (caught) {
       setError(caught instanceof AnnouncementManagementError ? caught.message : "補充／提醒新增失敗，請稍後再試。");
     } finally { savingRef.current = false; setSaving(false); }
@@ -126,11 +128,11 @@ export default function ManagePage() {
         <div className={styles.meta}><span>{item.academicYear} 學年度</span><span>{item.department}</span><span>{item.publicationStatus === "withdrawn" ? "已下架" : "正常發布"}</span><span>{announcementTimeStates(item, new Date()).deadline}</span>{announcementTimeStates(item, new Date()).activity !== "正常" && <span>{announcementTimeStates(item, new Date()).activity}</span>}{item.collectionStatus === "chasing" && <span>催繳中</span>}<span>發布者：{announcementPublisherLabel(item)}</span><span>發布 {formatDateTime(item.publishedAt)}</span>{item.contentUpdatedAt && <span>更新 {formatDateTime(item.contentUpdatedAt)}</span>}</div>
         <h2>{item.title}</h2><p>{item.audiences.join("、") || "未設定適用對象"}</p>
         <div className={styles.flags}><span>{item.importantEvents.length ? `${item.importantEvents.length} 筆重要事項` : "無重要事項"}</span><span>{item.deadlines.length ? `${item.deadlines.length} 筆截止期限` : "無截止期限"}</span><span>{item.attachments.filter(attachment => attachment.type === "image").length ? `${item.attachments.filter(attachment => attachment.type === "image").length} 張圖片` : "無圖片"}</span><span>{item.attachments.filter(attachment => attachment.type === "pdf").length ? `${item.attachments.filter(attachment => attachment.type === "pdf").length} 份 PDF` : "無 PDF"}</span><span>{item.followUps.length ? `${item.followUps.length} 筆歷史補充／提醒` : "查看補充／提醒"}</span></div>
-        <div className={styles.cardActions}><Button variant="outline" onClick={() => setViewing(item)}><Eye />查看</Button><Button variant="outline" onClick={() => { setError(""); setEditing(clone(item)); }}><Edit3 />修正公告</Button><Button variant="outline" onClick={() => { setError(""); setMessage(""); setFollowTarget(item); }}><MessageSquarePlus />新增補充／提醒</Button>{item.publicationStatus === "withdrawn" ? <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "restore")}>復原公告</Button> : <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "withdraw")}>下架公告</Button>}{item.deadlines.length > 0 && (item.collectionStatus === "chasing" ? <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "stopChase")}>結束催繳</Button> : <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "startChase")}>啟動催繳</Button>)}{publisher.role === "systemAdmin" && <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "delete")}><Trash2 />永久刪除</Button>}</div>
+        <div className={styles.cardActions}><Button variant="outline" onClick={() => setViewing(item)}><Eye />查看</Button>{(item.publisherUid === publisher.uid || publisher.role === "systemAdmin") ? <><Button variant="outline" onClick={() => { setError(""); setEditing(clone(item)); }}><Edit3 />修正公告</Button><Button variant="outline" onClick={() => { setError(""); setMessage(""); setFollowType("supplement"); setFollowTarget(item); }}><MessageSquarePlus />新增補充／提醒</Button>{item.publicationStatus === "withdrawn" ? <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "restore")}>復原公告</Button> : <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "withdraw")}>下架公告</Button>}{item.deadlines.length > 0 && (item.collectionStatus === "chasing" ? <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "stopChase")}>結束催繳</Button> : <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "startChase")}>啟動催繳</Button>)}{publisher.role === "systemAdmin" && <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "delete")}><Trash2 />永久刪除</Button>}{publisher.role === "systemAdmin" && item.publisherUid !== publisher.uid && <Button variant="outline" onClick={() => { setError(""); setMessage(""); setFollowType("related"); setFollowTarget(item); }}><MessageSquarePlus />💬 新增相關補充</Button>}</> : <Button variant="outline" onClick={() => { setError(""); setMessage(""); setFollowType("related"); setFollowTarget(item); }}><MessageSquarePlus />💬 新增相關補充</Button>}</div>
       </article>)}</section>}
     </div>
 
-    <AnnouncementDetails item={viewing} onClose={() => setViewing(null)} />
+    <AnnouncementDetails item={viewing} publisher={publisher} onClose={() => setViewing(null)} />
     <Dialog open={!!editing} onOpenChange={open => { if (!open && !saving) { setEditing(null); setError(""); } }}><DialogContent className={styles.editor} showCloseButton={!saving}>{editing && <>
       <DialogHeader><DialogDescription>修正既有公告 · 發布時間保持不變</DialogDescription><DialogTitle>{editing.title}</DialogTitle></DialogHeader>
       <div className={styles.twoFields}><label>學年度<select value={editing.academicYear} onChange={event => setEditing({ ...editing, academicYear: Number(event.target.value) })}>{FRONTEND_ACADEMIC_YEARS.map(value => <option key={value} value={value}>{value} 學年度</option>)}</select></label><label>發布單位<select value={editing.department} onChange={event => setEditing({ ...editing, department: event.target.value as Department })}><DepartmentOptionGroups currentDepartment={editing.department} /></select></label></div>
@@ -143,7 +145,7 @@ export default function ManagePage() {
       <div className={styles.editorActions}><Button variant="outline" onClick={() => setEditing(null)} disabled={saving}>取消</Button><Button className={styles.primaryCta} onClick={saveEdit} disabled={saving}>{saving ? "儲存中…" : "儲存修改"}</Button></div>
     </>}</DialogContent></Dialog>
 
-    <Dialog open={!!followTarget} onOpenChange={open => { if (!open && !saving) { setFollowTarget(null); setError(""); } }}><DialogContent showCloseButton={!saving}><DialogHeader><DialogDescription>{followTarget?.title}</DialogDescription><DialogTitle>新增補充／提醒</DialogTitle></DialogHeader><label className={styles.dialogField}>類型<select value={followType} onChange={event => setFollowType(event.target.value as FollowUp["type"])}><option value="supplement">補充</option><option value="reminder">提醒</option></select></label><label className={styles.dialogField}>內容<Textarea value={message} onChange={event => setMessage(event.target.value)} placeholder="輸入新增資訊；既有紀錄不會被覆蓋。" /></label>{error && <p className={styles.errorNotice} role="alert">{error}</p>}<Button className={styles.primaryCta} disabled={!message.trim() || saving} onClick={addFollow}>{saving ? "儲存中…" : "新增紀錄"}</Button></DialogContent></Dialog>
+    <Dialog open={!!followTarget} onOpenChange={open => { if (!open && !saving) { setFollowTarget(null); setError(""); } }}><DialogContent showCloseButton={!saving}><DialogHeader><DialogDescription>{followTarget?.title}</DialogDescription><DialogTitle>{followType === "related" ? "新增相關補充" : "新增補充／提醒"}</DialogTitle></DialogHeader>{followType === "related" ? <p>此補充會顯示於原公告下方，並標示您的發布單位。</p> : <label className={styles.dialogField}>類型<select value={followType} onChange={event => setFollowType(event.target.value as FollowUp["type"])}><option value="supplement">補充</option><option value="reminder">提醒</option></select></label>}<label className={styles.dialogField}>內容<Textarea value={message} onChange={event => setMessage(event.target.value)} placeholder="輸入新增資訊；既有紀錄不會被覆蓋。" /></label>{error && <p className={styles.errorNotice} role="alert">{error}</p>}<Button className={styles.primaryCta} disabled={!message.trim() || saving} onClick={addFollow}>{saving ? "儲存中…" : followType === "related" ? "新增相關補充" : "新增紀錄"}</Button></DialogContent></Dialog>
   </main>;
 }
 
@@ -162,9 +164,12 @@ function ContactEditor({ item, setItem }: { item: Announcement; setItem: (item: 
   return <section className={styles.contactEditor}><div><h3>業務聯絡資訊</h3><label><Checkbox checked={!!contact} onCheckedChange={checked => setItem({ ...item, contact: checked === true ? defaultContactForDepartment(item.department) : undefined })} />顯示業務聯絡資訊</label></div>{contact && <div className={styles.contactFields}><label>聯絡單位<select value={getFixedDepartmentExtension(contact.department) ? contact.department : OTHER_DEPARTMENT_OPTION} onChange={event => setItem({ ...item, contact: selectContactDepartment(contact, event.target.value) })}><DepartmentOptionGroups includeOther /></select></label>{getFixedDepartmentExtension(contact.department) ? <label>校內分機<Input value={getFixedDepartmentExtension(contact.department)} readOnly /></label> : <><label>實際聯絡單位名稱<Input maxLength={MAX_CUSTOM_DEPARTMENT_LENGTH} value={contact.department} onChange={event => setItem({ ...item, contact: { ...contact, department: event.target.value } })} /></label><label>校內分機<Input inputMode="numeric" maxLength={MAX_CONTACT_EXTENSION_LENGTH} value={contact.extension} onChange={event => setItem({ ...item, contact: { ...contact, extension: event.target.value } })} /></label></>}</div>}</section>;
 }
 
-function AnnouncementDetails({ item, onClose }: { item: Announcement | null; onClose: () => void }) {
+function AnnouncementDetails({ item, publisher, onClose }: { item: Announcement | null; publisher: AuthorizedPublisherContextValue; onClose: () => void }) {
   const [currentFollowUps, setCurrentFollowUps] = useState<FollowUp[]>([]);
   const [followUpsLoading, setFollowUpsLoading] = useState(false);
+  const [editingRelated, setEditingRelated] = useState<FollowUp | null>(null);
+  const [relatedMessage, setRelatedMessage] = useState("");
+  const [relatedBusy, setRelatedBusy] = useState(false);
   useEffect(() => {
     if (!item) { setCurrentFollowUps([]); return; }
     let active = true;
@@ -174,7 +179,27 @@ function AnnouncementDetails({ item, onClose }: { item: Announcement | null; onC
     return () => { active = false; };
   }, [item?.id]);
   const followUps = item ? mergeAnnouncementFollowUps(item.followUps, currentFollowUps) : [];
-  return <Dialog open={!!item} onOpenChange={open => !open && onClose()}><DialogContent className={styles.details}>{item && <><DialogHeader><DialogDescription>{item.department} · {item.academicYear} 學年度</DialogDescription><DialogTitle>{item.title}</DialogTitle></DialogHeader><dl className={styles.timestamps}><div><dt>發布時間</dt><dd>{formatDateTime(item.publishedAt)}</dd></div>{item.contentUpdatedAt && <div><dt>更新時間</dt><dd>{formatDateTime(item.contentUpdatedAt)}</dd></div>}<div><dt>適用對象</dt><dd>{item.audiences.join("、") || "未設定"}</dd></div></dl><section><h3>公告內容</h3><p className={styles.fullContent}>{item.content}</p></section><DetailList title="重要日期／活動" empty="無重要事項" values={item.importantEvents.map(entry => `${formatImportantEventSchedule(entry)}｜${entry.title}`)} /><DetailList title="繳交／填報期限" empty="無截止期限" values={item.deadlines.map(entry => `${entry.date}${entry.time ? ` ${entry.time}` : ""}｜${entry.label}`)} /><ReadOnlyImages item={item} /><section><h3>相關網址</h3>{item.links.length ? <ul>{item.links.map(link => <li key={link.id}><a href={link.url} target="_blank" rel="noopener noreferrer">{link.label}{link.isPrimary ? "（主要連結）" : ""}</a></li>)}</ul> : <p>無相關網址</p>}</section><section><h3>補充／提醒</h3>{followUpsLoading ? <p>補充／提醒載入中…</p> : followUps.length ? <div className={styles.followUps}>{followUps.map((followUp, index) => <article key={followUp.id ?? `${followUp.createdAt}-${index}`}><strong>{formatFollowUpType(followUp.type)}</strong><time>{followUp.department ?? item.department}｜{formatDateTime(followUp.createdAt)}</time><p>{followUp.message}</p></article>)}</div> : <p>無補充或提醒</p>}</section><LineSummaryCard announcement={item} /></>}</DialogContent></Dialog>;
+  const original = followUps.filter(value => value.type !== "related");
+  const related = followUps.filter(value => value.type === "related");
+  const canManageRelated = (value: FollowUp) => publisher.role === "systemAdmin" || value.authorUid === publisher.uid;
+  const saveRelated = async () => {
+    if (!item || !editingRelated?.id || !relatedMessage.trim() || relatedBusy) return;
+    setRelatedBusy(true);
+    try {
+      const updated = await updateRelatedFollowUp(item.id, editingRelated.id, relatedMessage);
+      setCurrentFollowUps(values => values.map(value => value.id === updated.id ? updated : value));
+      setEditingRelated(null);
+    } finally { setRelatedBusy(false); }
+  };
+  const removeRelated = async (value: FollowUp) => {
+    if (!item || !value.id || relatedBusy || !window.confirm("確定刪除這筆相關補充？")) return;
+    setRelatedBusy(true);
+    try {
+      await deleteRelatedFollowUp(item.id, value.id);
+      setCurrentFollowUps(values => values.filter(entry => entry.id !== value.id));
+    } finally { setRelatedBusy(false); }
+  };
+  return <><Dialog open={!!item} onOpenChange={open => !open && onClose()}><DialogContent className={styles.details}>{item && <><DialogHeader><DialogDescription>{item.department} · {item.academicYear} 學年度</DialogDescription><DialogTitle>{item.title}</DialogTitle></DialogHeader><dl className={styles.timestamps}><div><dt>發布時間</dt><dd>{formatDateTime(item.publishedAt)}</dd></div>{item.contentUpdatedAt && <div><dt>更新時間</dt><dd>{formatDateTime(item.contentUpdatedAt)}</dd></div>}<div><dt>適用對象</dt><dd>{item.audiences.join("、") || "未設定"}</dd></div></dl><section><h3>公告內容</h3><p className={styles.fullContent}>{item.content}</p></section><DetailList title="重要日期／活動" empty="無重要事項" values={item.importantEvents.map(entry => `${formatImportantEventSchedule(entry)}｜${entry.title}`)} /><DetailList title="繳交／填報期限" empty="無截止期限" values={item.deadlines.map(entry => `${entry.date}${entry.time ? ` ${entry.time}` : ""}｜${entry.label}`)} /><ReadOnlyImages item={item} /><section><h3>相關網址</h3>{item.links.length ? <ul>{item.links.map(link => <li key={link.id}><a href={link.url} target="_blank" rel="noopener noreferrer">{link.label}{link.isPrimary ? "（主要連結）" : ""}</a></li>)}</ul> : <p>無相關網址</p>}</section><section><h3>補充／提醒</h3>{followUpsLoading ? <p>補充／提醒載入中…</p> : original.length ? <div className={styles.followUps}>{original.map((followUp, index) => <article key={followUp.id ?? `${followUp.createdAt}-${index}`}><strong>{formatFollowUpType(followUp.type)}</strong><time>{followUp.department ?? item.department}｜{formatDateTime(followUp.createdAt)}</time><p>{followUp.message}</p></article>)}</div> : <p>無補充或提醒</p>}</section><section><h3>💬 相關補充</h3>{related.length ? <div className={`${styles.followUps} ${styles.relatedFollowUps}`}>{related.map(value => <article key={value.id}><strong>{value.department}｜{formatDateTime(value.createdAt)}</strong>{value.updatedAt && <small>🔄 已編輯</small>}<p>{value.message}</p><div className={styles.relatedActions}><Button variant="ghost" size="sm" onClick={() => void copyLineAnnouncement(createLineRelatedFollowUpSummary(item.title, value.department ?? item.department, value.message))}>複製補充通知</Button>{canManageRelated(value) && <><Button variant="ghost" size="sm" onClick={() => { setEditingRelated(value); setRelatedMessage(value.message); }}>修改</Button><Button variant="ghost" size="sm" disabled={relatedBusy} onClick={() => void removeRelated(value)}>刪除</Button></>}</div></article>)}</div> : <p>無相關補充</p>}</section><LineSummaryCard announcement={item} /></>}</DialogContent></Dialog><Dialog open={!!editingRelated} onOpenChange={open => !open && !relatedBusy && setEditingRelated(null)}><DialogContent><DialogHeader><DialogTitle>修改相關補充</DialogTitle><DialogDescription>僅會修改這筆補充內容。</DialogDescription></DialogHeader><label className={styles.dialogField}>內容<Textarea value={relatedMessage} onChange={event => setRelatedMessage(event.target.value)} /></label><Button className={styles.primaryCta} disabled={!relatedMessage.trim() || relatedBusy} onClick={() => void saveRelated()}>{relatedBusy ? "儲存中…" : "儲存修改"}</Button></DialogContent></Dialog></>;
 }
 
 function DetailList({ title, empty, values }: { title: string; empty: string; values: string[] }) { return <section><h3>{title}</h3>{values.length ? <ul>{values.map((value, index) => <li key={`${value}-${index}`}>{value}</li>)}</ul> : <p>{empty}</p>}</section>; }

@@ -53,12 +53,17 @@ test("Firestore rules 公開讀取公告但只允許 UID 授權文件啟用者�
   assert.match(rules, /match \/\{document=\*\*\}[\s\S]*allow read, write: if false;/);
 });
 
-test("followUps subcollection 維持原公告 ownership 並拒絕 update delete", () => {
+test("followUps subcollection 不放寬原公告 ownership，related 限本人或管理員管理", () => {
   const rules = source("firestore.rules");
   assert.match(rules, /match \/followUps\/\{followUpId\}/);
   assert.match(rules, /canCreateAnnouncementFollowUp\(announcementId\)/);
   assert.match(rules, /resource\.data\.publisherUid == request\.auth\.uid/);
   assert.match(rules, /request\.resource\.data\.createdAt == request\.time/);
   assert.match(rules, /keepsLegacyFollowUps\(\)/);
-  assert.match(rules, /allow update, delete: if false/);
+  assert.match(rules, /request\.resource\.data\.type == 'related'/);
+  assert.match(rules, /resource\.data\.authorUid == request\.auth\.uid/);
+  assert.match(rules, /affectedKeys\(\)\.hasOnly\(\['message', 'updatedAt'\]\)/);
+  assert.match(rules, /request\.resource\.data\.updatedAt == request\.time/);
+  assert.match(rules, /allow update: if canUpdateRelatedFollowUp\(\)/);
+  assert.match(rules, /allow delete: if canDeleteRelatedFollowUp\(\)/);
 });

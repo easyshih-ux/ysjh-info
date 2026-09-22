@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { mockAnnouncements } from "../data/mockAnnouncements.ts";
-import { copyLineAnnouncement, createLineAnnouncementSummary, formatLineDate } from "../lib/lineAnnouncementSummary.ts";
+import { copyLineAnnouncement, createLineAnnouncementSummary, createLineRelatedFollowUpSummary, formatLineDate } from "../lib/lineAnnouncementSummary.ts";
+import { OFFICIAL_PUBLIC_SITE_URL } from "../lib/siteUrl.ts";
 import { getPublicSiteUrl } from "../lib/siteUrl.ts";
 
 const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -99,6 +100,11 @@ test("Clipboard 成功與失敗都回傳狀態且不拋出例外", async () => {
   assert.equal(copied, "摘要");
   assert.equal(await copyLineAnnouncement("摘要", { writeText: async () => { throw new Error("blocked"); } }), false);
   assert.equal(await copyLineAnnouncement("摘要", undefined), false);
+});
+
+test("related 複製通知只包含補充與正式首頁網址", () => {
+  const summary = createLineRelatedFollowUpSummary("第八節點名表", "教務處", "點名表位置如下。");
+  assert.equal(summary, `📌 公告補充｜第八節點名表\n\n教務處補充：\n點名表位置如下。\n\n🔗 查看原公告與完整補充：\n${OFFICIAL_PUBLIC_SITE_URL}`);
 });
 
 test("publish 成功保留正式 announcement snapshot，manage 使用同一摘要元件", () => {

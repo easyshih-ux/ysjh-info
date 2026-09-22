@@ -159,7 +159,9 @@ test("管理頁發布者顯示優先使用姓名、Email、發布單位且不暴
 
 test("歷史公告仍由 systemAdmin 全校範圍管理且一般 publisher ownership 不變", () => {
   const page = source("app/manage/page.tsx");
-  assert.match(page, /managementScope === "all" && publisher\.role === "systemAdmin" \? items/);
+  assert.match(page, /publisher\.role === "systemAdmin" && managementScope === "mine" \? items\.filter/);
+  assert.match(page, /item\.publisherUid === publisher\.uid \|\| publisher\.role === "systemAdmin"/);
+  assert.match(page, /item\.publisherUid !== publisher\.uid/);
   assert.match(page, /items\.filter\(item => item\.publisherUid === publisher\.uid\)/);
 });
 

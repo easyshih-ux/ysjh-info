@@ -1,5 +1,6 @@
 import { formatImportantEventSchedule, type Announcement } from "./announcements.ts";
 import { formatContactSentence } from "./departmentContacts.ts";
+import { OFFICIAL_PUBLIC_SITE_URL } from "./siteUrl.ts";
 
 export function createLineAnnouncementSummary(announcement: Announcement, siteUrl: string, currentYear = new Date().getFullYear()) {
   const sections = [
@@ -36,4 +37,8 @@ export async function copyLineAnnouncement(text: string, clipboard?: Pick<Clipbo
   } catch {
     return false;
   }
+}
+
+export function createLineRelatedFollowUpSummary(title: string, department: string, message: string) {
+  return `📌 公告補充｜${title}\n\n${department}補充：\n${message.trim()}\n\n🔗 查看原公告與完整補充：\n${OFFICIAL_PUBLIC_SITE_URL}`;
 }

@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs, orderBy, query, serverTimestamp, setDoc, type Timestamp } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDoc, getDocs, orderBy, query, serverTimestamp, setDoc, updateDoc, type Timestamp } from "firebase/firestore";
 import type { FollowUp } from "./announcements.ts";
 import { ANNOUNCEMENTS_COLLECTION, getFirestoreClient } from "./firestoreClient.ts";
 
@@ -22,7 +22,7 @@ function isTimestamp(value: unknown): value is Timestamp {
 
 export function followUpFromFirestore(id: string, value: unknown): FollowUp | null {
   if (!isRecord(value)
-    || (value.type !== "supplement" && value.type !== "reminder")
+    || (value.type !== "supplement" && value.type !== "reminder" && value.type !== "related")
     || typeof value.message !== "string" || !value.message.trim()
     || typeof value.authorUid !== "string" || !value.authorUid.trim()
     || typeof value.department !== "string" || !value.department.trim()
@@ -38,6 +38,7 @@ export function followUpFromFirestore(id: string, value: unknown): FollowUp | nu
       ? { authorDisplayName: value.authorDisplayName.trim() }
       : {}),
     createdAt: value.createdAt.toDate().toISOString(),
+    ...(isTimestamp(value.updatedAt) ? { updatedAt: value.updatedAt.toDate().toISOString() } : {}),
   };
 }
 
@@ -81,4 +82,17 @@ export async function createAnnouncementFollowUp(
   const followUp = followUpFromFirestore(snapshot.id, snapshot.data());
   if (!followUp) throw new Error("Invalid follow-up response");
   return followUp;
+}
+
+export async function updateRelatedFollowUp(announcementId: string, followUpId: string, message: string) {
+  const reference = doc(followUpsCollection(announcementId), followUpId);
+  await updateDoc(reference, { message: message.trim(), updatedAt: serverTimestamp() });
+  const snapshot = await getDoc(reference);
+  const followUp = followUpFromFirestore(snapshot.id, snapshot.data());
+  if (!followUp) throw new Error("Invalid related follow-up response");
+  return followUp;
+}
+
+export async function deleteRelatedFollowUp(announcementId: string, followUpId: string) {
+  await deleteDoc(doc(followUpsCollection(announcementId), followUpId));
 }
