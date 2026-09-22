@@ -8,6 +8,7 @@ import {
 import {
   Timestamp,
   collection,
+  deleteField,
   deleteDoc,
   doc,
   getDoc,
@@ -413,6 +414,26 @@ test("45 PDF metadata 的路徑與 publisher UID 必須正確", async () => {
     ...announcementData(),
     attachments: [{ ...pdfAttachment("pdf-1"), storagePath: "announcements/other/pdf/userB/pdf-1.pdf" }],
   }));
+});
+
+test("hasRelatedFollowUp 只能由 server 維護，client create 不得偽造", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await seed("authorizedPublishers/adminA", profile("systemAdmin", true));
+  await assertFails(setDoc(doc(userDb("userA"), "announcements/forgedByOwner"), { ...announcementData(), hasRelatedFollowUp: true }));
+  await assertFails(setDoc(doc(userDb("adminA"), "announcements/forgedByAdmin"), { ...announcementData("Admin", "adminA"), hasRelatedFollowUp: true }));
+  await assertSucceeds(setDoc(doc(userDb("userA"), "announcements/normal"), announcementData()));
+});
+
+test("owner、其他 publisher 與 systemAdmin client 都不能修改 related summary", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await seed("authorizedPublishers/userB", { ...profile("publisher", true), defaultDepartment: "教務處" });
+  await seed("authorizedPublishers/adminA", profile("systemAdmin", true));
+  await seed("announcements/summary", { ...announcementData(), hasRelatedFollowUp: true });
+  await assertFails(updateDoc(doc(userDb("userA"), "announcements/summary"), { hasRelatedFollowUp: false }));
+  await assertFails(updateDoc(doc(userDb("userB"), "announcements/summary"), { hasRelatedFollowUp: false }));
+  await assertFails(updateDoc(doc(userDb("adminA"), "announcements/summary"), { hasRelatedFollowUp: false }));
+  await assertFails(updateDoc(doc(userDb("userA"), "announcements/summary"), { hasRelatedFollowUp: deleteField() }));
+  await assertSucceeds(updateDoc(doc(userDb("userA"), "announcements/summary"), { title: "正常修改" }));
 });
 
 test("46 announcement contact optional 且合法精簡結構可建立", async () => {

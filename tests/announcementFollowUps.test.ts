@@ -77,6 +77,6 @@ test("related UI 分區、不公開 UID email，首頁仍只在詳細頁 lazy lo
   assert.match(home, /relatedFollowUps\(selected\)/);
   assert.doesNotMatch(home, /authorUid|authorEmail/);
   assert.match(manage, /value\.authorUid === publisher\.uid/);
-  assert.match(manage, /複製補充通知/);
+  assert.doesNotMatch(`${home}\n${manage}`, /複製補充通知|createLineRelatedFollowUpSummary/);
   assert.doesNotMatch(source("lib/announcementFirestore.ts"), /followUpsCollection|readAnnouncementFollowUps/);
 });

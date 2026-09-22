@@ -99,6 +99,13 @@ test("缺少遠端陣列欄位時一律正規化為空陣列", () => {
   assert.deepEqual({ audiences: item.audiences, attachments: item.attachments, links: item.links, followUps: item.followUps, importantEvents: item.importantEvents, deadlines: item.deadlines }, { audiences: [], attachments: [], links: [], followUps: [], importantEvents: [], deadlines: [] });
 });
 
+test("related summary 只有嚴格 true 才解析，缺少或 false 皆不啟用", () => {
+  assert.equal(announcementFromFirestore("true", firestoreRecord({ hasRelatedFollowUp: true }))?.hasRelatedFollowUp, true);
+  assert.equal(announcementFromFirestore("false", firestoreRecord({ hasRelatedFollowUp: false }))?.hasRelatedFollowUp, undefined);
+  assert.equal(announcementFromFirestore("missing", firestoreRecord({ hasRelatedFollowUp: undefined }))?.hasRelatedFollowUp, undefined);
+  assert.equal(announcementFromFirestore("string", firestoreRecord({ hasRelatedFollowUp: "true" }))?.hasRelatedFollowUp, undefined);
+});
+
 test("不合法核心文件會被略過，不影響其他公告", () => {
   assert.equal(announcementFromFirestore("bad", firestoreRecord({ publishedAt: "not-a-date" })), null);
   assert.equal(announcementFromFirestore("bad", firestoreRecord({ department: "其他" })), null);

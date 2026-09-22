@@ -41,8 +41,7 @@ test("其他單位補充使用單位 badge、內層小卡與手機防溢出樣�
   assert.match(page, /💬 其他單位補充/);
   assert.match(page, /className="related-followup-card"/);
   assert.match(page, /<DepartmentBadge department=\{item\.department/);
-  assert.match(page, /className="related-copy-button"/);
+  assert.doesNotMatch(page, /className="related-copy-button"/);
   assert.match(styles, /\.related-followup-meta\{[^}]*flex-wrap:wrap[^}]*min-width:0/);
   assert.match(styles, /\.related-followup-card p\{[^}]*overflow-wrap:anywhere/);
-  assert.match(styles, /@media\(max-width:420px\)[\s\S]*\.related-copy-button\{width:100%/);
 });

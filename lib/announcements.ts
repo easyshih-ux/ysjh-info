@@ -46,6 +46,7 @@ export interface Announcement {
   collectionStartedBy?: string;
   updatedAt?: string;
   contentUpdatedAt?: string;
+  hasRelatedFollowUp?: boolean;
   academicYear: number;
   publishedAt: string;
   department: Department;
