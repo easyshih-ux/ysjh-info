@@ -32,7 +32,8 @@ test("附件全部移除後不再阻擋發布", () => {
 test("發布頁會在附件變動時重設確認並於正式發布前驗證", () => {
   const page = source("app/publish/page.tsx");
   assert.match(page, /⚠️ 附件公開提醒/);
-  assert.match(page, /我已確認附件內容，未包含不應公開的他人個人資料。/);
+  assert.match(page, /若內容包含學生、家長或教職員資料，請確認與公告目的相關且有公開必要/);
+  assert.match(page, /我已確認附件內容適合公開，且未包含與公告目的無關或不宜公開的個人資料。/);
   assert.match(page, /setAttachmentPrivacyConfirmed\(false\)/);
   const confirmPublish = page.slice(page.indexOf("const confirmPublish"), page.indexOf("if (publishedAnnouncement)"));
   assert.match(confirmPublish, /validateAttachmentPrivacyConfirmation\(validatedDraft, attachmentPrivacyConfirmed\)/);
