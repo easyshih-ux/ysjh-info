@@ -113,6 +113,18 @@ service cloud.firestore {
         || isValidAttachments(request.resource.data, announcementId, request.resource.data.publisherUid);
     }
 
+    function isValidContact(data) {
+      return !data.keys().hasAny(['contact'])
+        || (data.contact is map
+          && data.contact.keys().hasAll(['department', 'extension'])
+          && data.contact.keys().hasOnly(['department', 'extension'])
+          && data.contact.department is string
+          && data.contact.department.size() > 0
+          && data.contact.department.size() <= 30
+          && data.contact.extension is string
+          && data.contact.extension.matches('^[0-9]{2,6}$'));
+    }
+
     function isOwnVerifiedPublisherRequest(publisherUid) {
       return request.auth != null
         && request.auth.uid == publisherUid
@@ -153,10 +165,12 @@ service cloud.firestore {
         && request.resource.data.publisherUid == request.auth.uid
         && request.resource.data.publicationStatus == 'published'
         && canUseAnnouncementDepartment()
+        && isValidContact(request.resource.data)
         && isValidAttachments(request.resource.data, announcementId, request.auth.uid);
       allow update: if canManageAnnouncement()
         && keepsLifecycleFields()
         && canUseAnnouncementDepartment()
+        && isValidContact(request.resource.data)
         && keepsValidAttachments(announcementId);
       allow delete: if false;
     }

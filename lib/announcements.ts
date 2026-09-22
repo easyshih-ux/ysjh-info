@@ -4,6 +4,7 @@ export type { Department } from "./departments.ts";
 
 export type Audience = (typeof AUDIENCES)[number];
 import type { Department } from "./departments.ts";
+import type { AnnouncementContact } from "./departmentContacts.ts";
 export const USER_IDENTITIES = ["七年級導師", "八年級導師", "九年級導師", "專任教師", "行政"] as const;
 export type UserIdentity = (typeof USER_IDENTITIES)[number];
 
@@ -41,6 +42,7 @@ export interface Announcement {
   title: string;
   audiences: Audience[];
   content: string;
+  contact?: AnnouncementContact;
   importantEvents: ImportantEvent[];
   deadlines: Deadline[];
   attachments: Attachment[];

@@ -403,3 +403,17 @@ test("45 PDF metadata 的路徑與 publisher UID 必須正確", async () => {
     attachments: [{ ...pdfAttachment("pdf-1"), storagePath: "announcements/other/pdf/userB/pdf-1.pdf" }],
   }));
 });
+
+test("46 announcement contact optional 且合法精簡結構可建立", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  const database = userDb("userA");
+  await assertSucceeds(setDoc(doc(database, "announcements/noContact"), announcementData()));
+  await assertSucceeds(setDoc(doc(database, "announcements/withContact"), { ...announcementData(), contact: { department: "設備組", extension: "104" } }));
+});
+
+test("47 announcement contact 拒絕非法分機與多餘敏感欄位", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  const database = userDb("userA");
+  await assertFails(setDoc(doc(database, "announcements/badExtension"), { ...announcementData(), contact: { department: "設備組", extension: "09-1234" } }));
+  await assertFails(setDoc(doc(database, "announcements/extraField"), { ...announcementData(), contact: { department: "設備組", extension: "104", email: "private@example.test" } }));
+});

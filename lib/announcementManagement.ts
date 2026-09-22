@@ -1,5 +1,6 @@
 import { normalizeAudiences, normalizeImportantEvent, type Announcement, type Audience, type FollowUp } from "./announcements.ts";
 import { validateBasicDraft } from "./publishDraft.ts";
+import { normalizeAnnouncementContact } from "./departmentContacts.ts";
 
 export const MANAGE_DEPARTMENT_KEY = "manageDepartment";
 
@@ -27,7 +28,7 @@ export function filterManagedAnnouncements(items: Announcement[], department: st
 }
 
 export function validateAnnouncementCore(item: Announcement) {
-  return validateBasicDraft({ department: item.department, title: item.title, audiences: normalizeAudiences(item.audiences), content: item.content, attachments: item.attachments.filter(a => a.type === "image").map(a => ({ ...a, caption: a.caption ?? "", previewUrl: a.url })), importantEvents: item.importantEvents, deadlines: item.deadlines, links: item.links });
+  return validateBasicDraft({ department: item.department, title: item.title, audiences: normalizeAudiences(item.audiences), content: item.content, contact: item.contact, attachments: item.attachments.filter(a => a.type === "image").map(a => ({ ...a, caption: a.caption ?? "", previewUrl: a.url })), importantEvents: item.importantEvents, deadlines: item.deadlines, links: item.links });
 }
 
 export function updateAnnouncement(items: Announcement[], edited: Announcement, updatedAt: string) {
@@ -39,12 +40,14 @@ export function addAnnouncementFollowUp(items: Announcement[], id: string, follo
 }
 
 export function createAnnouncementUpdate(edited: Announcement, updatedAt: string) {
+  const contact = normalizeAnnouncementContact(edited.contact);
   return {
     academicYear: edited.academicYear,
     department: edited.department,
     title: edited.title.trim(),
     audiences: normalizeAudiences(edited.audiences),
     content: edited.content.trim(),
+    ...(contact ? { contact } : {}),
     importantEvents: edited.importantEvents.filter(item => item.date || item.time || item.endDate || item.endTime || item.title).map(normalizeImportantEvent),
     deadlines: edited.deadlines.filter(item => item.date || item.time || item.label),
     links: edited.links,
@@ -53,7 +56,7 @@ export function createAnnouncementUpdate(edited: Announcement, updatedAt: string
 }
 
 export function applyAnnouncementUpdate(original: Announcement, edited: Announcement, updatedAt: string): Announcement {
-  return { ...original, ...createAnnouncementUpdate(edited, updatedAt), id: original.id, publishedAt: original.publishedAt, attachments: original.attachments, followUps: original.followUps };
+  return { ...original, ...createAnnouncementUpdate(edited, updatedAt), contact: normalizeAnnouncementContact(edited.contact), id: original.id, publishedAt: original.publishedAt, attachments: original.attachments, followUps: original.followUps };
 }
 
 export function createFollowUp(type: FollowUp["type"], message: string, createdAt: string): FollowUp {

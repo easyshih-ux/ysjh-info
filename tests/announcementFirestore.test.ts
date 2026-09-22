@@ -56,6 +56,12 @@ test("publishedAt 依新到舊排序", () => {
   assert.deepEqual(sortAnnouncementsNewestFirst([older, newer]).map(item => item.id), ["newer", "older"]);
 });
 
+test("舊公告無 contact 相容，新公告只接受精簡聯絡 snapshot", () => {
+  assert.equal(announcementFromFirestore("legacy", firestoreRecord({ contact: undefined }))?.contact, undefined);
+  assert.deepEqual(announcementFromFirestore("contact", firestoreRecord({ contact: { department: "設備組", extension: "104" } }))?.contact, { department: "設備組", extension: "104" });
+  assert.equal(announcementFromFirestore("extra", firestoreRecord({ contact: { department: "設備組", extension: "104", email: "private@example.test" } }))?.contact, undefined);
+});
+
 test("Firestore importantEvents 與 deadlines 分別進入既有首頁邏輯", () => {
   const item = announcementFromFirestore("one", firestoreRecord())!;
   const now = new Date("2026-09-19T08:00:00+08:00");

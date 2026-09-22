@@ -20,6 +20,14 @@ test("管理列表依 publishedAt 新到舊並支援 department、audience、aca
   assert.deepEqual(items.map(item => item.publishedAt), [...items].map(item => item.publishedAt).sort().reverse());
 });
 
+test("管理更新可保存 contact 並以 deleteField 真正清除舊值", () => {
+  const management = source("lib/announcementManagementFirestore.ts");
+  const page = source("app/manage/page.tsx");
+  assert.match(management, /contact: edited\.contact \?\? deleteField\(\)/);
+  assert.match(page, /<ContactEditor item=\{editing\}/);
+  assert.match(page, /formatContactCompact\(item\.contact\)/);
+});
+
 test("修正公告 patch 只包含可修改欄位並更新 updatedAt", () => {
   const original = mockAnnouncements[0];
   const patch = createAnnouncementUpdate({ ...original, title: "新標題" }, "2026-09-19T12:00:00.000Z");

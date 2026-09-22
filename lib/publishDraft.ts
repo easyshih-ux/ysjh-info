@@ -1,12 +1,14 @@
 import { normalizeAudiences, normalizeImportantEvent, type Announcement, type AnnouncementLink, type Audience, type Deadline, type ImportantEvent } from "./announcements.ts";
 import { isDepartment, type Department } from "./departments.ts";
 import { isSupportedPdf, MAX_PDF_BYTES, MAX_PUBLISH_PDFS } from "./attachmentFiles.ts";
+import { normalizeAnnouncementContact, validateAnnouncementContact, type AnnouncementContact } from "./departmentContacts.ts";
 
 export interface BasicAnnouncementDraft {
   department: Department | "";
   title: string;
   audiences: Audience[];
   content: string;
+  contact?: AnnouncementContact;
   attachments: PublishImageAttachment[];
   pdfAttachments?: PublishPdfAttachment[];
   importantEvents: ImportantEvent[];
@@ -67,6 +69,7 @@ export function publishDraftToAnnouncement(draft: BasicAnnouncementDraft, id: st
   return {
     id, publishedAt, academicYear, department: draft.department, title: draft.title,
     audiences: normalizeAudiences(draft.audiences), content: draft.content,
+    ...(normalizeAnnouncementContact(draft.contact) ? { contact: normalizeAnnouncementContact(draft.contact) } : {}),
     importantEvents: draft.importantEvents.filter(event => event.date || event.time || event.endDate || event.endTime || event.title).map(normalizeImportantEvent),
     deadlines: draft.deadlines.filter(deadline => deadline.date || deadline.time || deadline.label),
     links: draft.links
@@ -86,6 +89,8 @@ export function validateBasicDraft(draft: BasicAnnouncementDraft): DraftErrors {
   if (draft.audiences.length === 0) errors.audiences = "請至少選擇一個適用對象";
   if (draft.audiences.includes("全校教師") && draft.audiences.length > 1) errors.audiences = "全校教師不可與其他適用對象同時選擇";
   if (!draft.content.trim()) errors.content = "請輸入完整公告內容";
+  const contactError = validateAnnouncementContact(draft.contact);
+  if (contactError) errors.contact = contactError;
   if (draft.importantEvents.some(item => (item.date || item.time || item.endDate || item.endTime || item.title) && (!item.date || !item.title.trim()))) errors.importantEvents = "已填寫的重要事項需要完整的日期與事項名稱";
   if (draft.importantEvents.some(item => item.endDate && (!item.date || item.endDate < item.date))) errors.importantEvents = "重要事項的結束日期不得早於開始日期";
   if (draft.importantEvents.some(item => item.time && item.endTime && (!item.endDate || item.endDate === item.date) && item.endTime < item.time)) errors.importantEvents = "同一天的重要事項結束時間不得早於開始時間";

@@ -1,4 +1,4 @@
-import { arrayUnion, doc, updateDoc } from "firebase/firestore";
+import { arrayUnion, deleteField, doc, updateDoc } from "firebase/firestore";
 import type { Announcement, FollowUp } from "./announcements.ts";
 import { createAnnouncementUpdate, createFollowUp } from "./announcementManagement.ts";
 import { ANNOUNCEMENTS_COLLECTION, getFirestoreClient } from "./firestoreClient.ts";
@@ -15,7 +15,7 @@ export async function updateManagedAnnouncement(edited: Announcement) {
   try {
     await updateDoc(
       doc(getFirestoreClient(), ANNOUNCEMENTS_COLLECTION, edited.id),
-      createAnnouncementUpdate(edited, updatedAt),
+      { ...createAnnouncementUpdate(edited, updatedAt), contact: edited.contact ?? deleteField() },
     );
     return updatedAt;
   } catch {

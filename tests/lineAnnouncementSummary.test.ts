@@ -37,6 +37,13 @@ test("deadlines 有資料顯示，空陣列時整區不顯示", () => {
   assert.doesNotMatch(createLineAnnouncementSummary({ ...complete, deadlines: [] }, "https://school.example/", 2026), /⏰ 截止：/);
 });
 
+test("LINE 摘要使用共用 formatter 輸出聯絡資訊，舊公告不輸出", () => {
+  const withContact = createLineAnnouncementSummary({ ...complete, contact: { department: "設備組", extension: "104" } }, "https://school.example/", 2026);
+  assert.match(withContact, /☎ 如有任何疑問，請洽設備組，分機 104。/);
+  assert.ok(withContact.indexOf("☎ 如有任何疑問") < withContact.indexOf("🔗 主要連結"));
+  assert.doesNotMatch(createLineAnnouncementSummary({ ...complete, contact: undefined }, "https://school.example/", 2026), /☎ 如有任何疑問/);
+});
+
 test("日期無 time 只顯示日期，有 time 顯示日期加時間，跨年顯示年份", () => {
   assert.equal(formatLineDate("2026-09-25", undefined, 2026), "9/25");
   assert.equal(formatLineDate("2026-09-25", "07:50", 2026), "9/25 07:50");

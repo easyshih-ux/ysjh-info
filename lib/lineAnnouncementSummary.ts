@@ -1,4 +1,5 @@
 import { formatImportantEventSchedule, type Announcement } from "./announcements.ts";
+import { formatContactSentence } from "./departmentContacts.ts";
 
 export function createLineAnnouncementSummary(announcement: Announcement, siteUrl: string, currentYear = new Date().getFullYear()) {
   const sections = [
@@ -12,6 +13,7 @@ export function createLineAnnouncementSummary(announcement: Announcement, siteUr
   if (announcement.deadlines.length > 0) {
     sections.push(`⏰ 截止：\n${announcement.deadlines.map(item => `・${formatLineDate(item.date, item.time, currentYear)} ${item.label}`).join("\n")}`);
   }
+  if (announcement.contact) sections.push(formatContactSentence(announcement.contact));
 
   const primaryLink = announcement.links.find(link => link.isPrimary);
   if (primaryLink) sections.push(`🔗 主要連結：${primaryLink.label}\n${primaryLink.url}`);

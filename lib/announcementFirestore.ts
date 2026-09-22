@@ -3,6 +3,7 @@ import { ANNOUNCEMENTS_COLLECTION, getFirestoreClient } from "./firestoreClient.
 import { AUDIENCES, normalizeAudiences, type Announcement, type AnnouncementLink, type Attachment, type Audience, type Deadline, type FollowUp, type ImportantEvent } from "./announcements.ts";
 import { MAX_ATTACHMENT_NAME_LENGTH, MAX_PDF_BYTES } from "./attachmentFiles.ts";
 import { isDepartment } from "./departments.ts";
+import { MAX_CONTACT_EXTENSION_LENGTH, type AnnouncementContact } from "./departmentContacts.ts";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -64,6 +65,16 @@ function normalizeFollowUps(value: unknown): FollowUp[] {
     : []);
 }
 
+function normalizeContact(value: unknown): AnnouncementContact | undefined {
+  if (!isRecord(value)
+    || !isNonEmptyString(value.department)
+    || value.department.trim().length > 30
+    || !isNonEmptyString(value.extension)
+    || !new RegExp(`^\\d{2,${MAX_CONTACT_EXTENSION_LENGTH}}$`).test(value.extension)
+    || Object.keys(value).some(key => key !== "department" && key !== "extension")) return undefined;
+  return { department: value.department.trim(), extension: value.extension };
+}
+
 export function announcementFromFirestore(id: string, value: unknown): Announcement | null {
   if (!isRecord(value) || !isNonEmptyString(id) || !Number.isInteger(value.academicYear) || !isDateTime(value.publishedAt) || !isDepartment(value.department) || !isNonEmptyString(value.title) || !isString(value.content)) return null;
 
@@ -90,6 +101,7 @@ export function announcementFromFirestore(id: string, value: unknown): Announcem
     title: value.title,
     audiences: normalizeAudiences(audiences),
     content: value.content,
+    ...(normalizeContact(value.contact) ? { contact: normalizeContact(value.contact) } : {}),
     importantEvents: normalizeImportantEvents(value.importantEvents),
     deadlines: normalizeDeadlines(value.deadlines),
     attachments: normalizeAttachments(value.attachments),
