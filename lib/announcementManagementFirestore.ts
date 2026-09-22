@@ -1,6 +1,6 @@
 import { arrayUnion, deleteField, doc, updateDoc } from "firebase/firestore";
 import type { Announcement, FollowUp } from "./announcements.ts";
-import { createAnnouncementUpdate, createFollowUp } from "./announcementManagement.ts";
+import { createAnnouncementUpdate, createFollowUp, hasAnnouncementContentChanges } from "./announcementManagement.ts";
 import { ANNOUNCEMENTS_COLLECTION, getFirestoreClient } from "./firestoreClient.ts";
 
 export class AnnouncementManagementError extends Error {
@@ -10,7 +10,8 @@ export class AnnouncementManagementError extends Error {
   }
 }
 
-export async function updateManagedAnnouncement(edited: Announcement) {
+export async function updateManagedAnnouncement(original: Announcement, edited: Announcement) {
+  if (!hasAnnouncementContentChanges(original, edited)) return null;
   const updatedAt = new Date().toISOString();
   try {
     await updateDoc(
@@ -29,7 +30,7 @@ export async function appendManagedFollowUp(announcementId: string, type: Follow
   try {
     await updateDoc(
       doc(getFirestoreClient(), ANNOUNCEMENTS_COLLECTION, announcementId),
-      { followUps: arrayUnion(followUp), updatedAt: createdAt },
+      { followUps: arrayUnion(followUp) },
     );
     return followUp;
   } catch {

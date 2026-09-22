@@ -97,6 +97,7 @@ export function announcementFromFirestore(id: string, value: unknown): Announcem
     academicYear: value.academicYear as number,
     publishedAt: value.publishedAt,
     ...(isNonEmptyString(value.updatedAt) ? { updatedAt: value.updatedAt } : {}),
+    ...(isDateTime(value.contentUpdatedAt) ? { contentUpdatedAt: value.contentUpdatedAt } : {}),
     department: value.department,
     title: value.title,
     audiences: normalizeAudiences(audiences),

@@ -56,6 +56,13 @@ test("publishedAt 依新到舊排序", () => {
   assert.deepEqual(sortAnnouncementsNewestFirst([older, newer]).map(item => item.id), ["newer", "older"]);
 });
 
+test("舊 updatedAt 不推測為原文更新，只有合法 contentUpdatedAt 才解析", () => {
+  const legacy = announcementFromFirestore("legacy", firestoreRecord({ updatedAt: "2026-09-20T08:00:00.000Z", contentUpdatedAt: undefined }))!;
+  const edited = announcementFromFirestore("edited", firestoreRecord({ contentUpdatedAt: "2026-09-20T09:30:00.000Z" }))!;
+  assert.equal(legacy.contentUpdatedAt, undefined);
+  assert.equal(edited.contentUpdatedAt, "2026-09-20T09:30:00.000Z");
+});
+
 test("舊公告無 contact 相容，新公告只接受精簡聯絡 snapshot", () => {
   assert.equal(announcementFromFirestore("legacy", firestoreRecord({ contact: undefined }))?.contact, undefined);
   assert.deepEqual(announcementFromFirestore("contact", firestoreRecord({ contact: { department: "設備組", extension: "104" } }))?.contact, { department: "設備組", extension: "104" });

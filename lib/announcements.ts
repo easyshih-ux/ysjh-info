@@ -36,6 +36,7 @@ export interface Announcement {
   collectionStartedAt?: string;
   collectionStartedBy?: string;
   updatedAt?: string;
+  contentUpdatedAt?: string;
   academicYear: number;
   publishedAt: string;
   department: Department;

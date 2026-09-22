@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { mockAnnouncements } from "../data/mockAnnouncements.ts";
-import { announcementPublisherLabel, applyAnnouncementUpdate, createAnnouncementUpdate, createFollowUp, filterManagedAnnouncements, resolveInitialManageDepartment, validateAnnouncementCore } from "../lib/announcementManagement.ts";
+import { announcementPublisherLabel, applyAnnouncementUpdate, createAnnouncementUpdate, createFollowUp, filterManagedAnnouncements, hasAnnouncementContentChanges, resolveInitialManageDepartment, validateAnnouncementCore } from "../lib/announcementManagement.ts";
 import type { Announcement } from "../lib/announcements.ts";
 
 const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -33,6 +33,7 @@ test("修正公告 patch 只包含可修改欄位並更新 updatedAt", () => {
   const patch = createAnnouncementUpdate({ ...original, title: "新標題" }, "2026-09-19T12:00:00.000Z");
   assert.equal(patch.title, "新標題");
   assert.equal(patch.updatedAt, "2026-09-19T12:00:00.000Z");
+  assert.equal(patch.contentUpdatedAt, "2026-09-19T12:00:00.000Z");
   assert.ok(!("id" in patch));
   assert.ok(!("publishedAt" in patch));
   assert.ok(!("attachments" in patch));
@@ -47,6 +48,25 @@ test("本機同步修正保持 ID、publishedAt、attachments 與 followUps", ()
   assert.deepEqual(result.attachments, original.attachments);
   assert.deepEqual(result.followUps, original.followUps);
   assert.equal(result.updatedAt, "2026-09-19T12:00:00.000Z");
+  assert.equal(result.contentUpdatedAt, "2026-09-19T12:00:00.000Z");
+});
+
+test("正規化後沒有實質差異時不建立新的原文更新時間", () => {
+  const original = structuredClone(mockAnnouncements[0]);
+  const whitespaceOnly = { ...structuredClone(original), title: `  ${original.title}  `, content: `  ${original.content}  ` };
+  assert.equal(hasAnnouncementContentChanges(original, whitespaceOnly), false);
+  assert.equal(hasAnnouncementContentChanges(original, { ...structuredClone(original), title: "真正的新標題" }), true);
+});
+
+test("標題、對象、日期與聯絡資訊都屬於原公告內容變更", () => {
+  const original = structuredClone(mockAnnouncements[0]);
+  const changes: Announcement[] = [
+    { ...structuredClone(original), title: "新標題" },
+    { ...structuredClone(original), audiences: ["行政"] },
+    { ...structuredClone(original), importantEvents: [{ date: "2026-09-30", title: "新日期" }] },
+    { ...structuredClone(original), contact: { department: "訓育組", extension: "202" } },
+  ];
+  assert.ok(changes.every(edited => hasAnnouncementContentChanges(original, edited)));
 });
 
 test("followUp type 只接受 supplement/reminder 並產生 createdAt", () => {
@@ -62,7 +82,8 @@ test("Firestore 修正使用原 ID 的 updateDoc，followUp 使用 arrayUnion ap
   assert.match(firestore, /updateDoc\(/);
   assert.match(firestore, /doc\(getFirestoreClient\(\), ANNOUNCEMENTS_COLLECTION, edited\.id\)/);
   assert.match(firestore, /followUps: arrayUnion\(followUp\)/);
-  assert.match(firestore, /updatedAt: createdAt/);
+  assert.doesNotMatch(firestore, /updatedAt: createdAt|contentUpdatedAt: createdAt/);
+  assert.match(firestore, /if \(!hasAnnouncementContentChanges\(original, edited\)\) return null/);
   assert.doesNotMatch(firestore, /setDoc|addDoc|deleteDoc/);
 });
 

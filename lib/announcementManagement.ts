@@ -36,10 +36,10 @@ export function updateAnnouncement(items: Announcement[], edited: Announcement, 
 }
 
 export function addAnnouncementFollowUp(items: Announcement[], id: string, followUp: FollowUp) {
-  return items.map(item => item.id === id ? { ...item, followUps: [...item.followUps, followUp], updatedAt: followUp.createdAt } : item);
+  return items.map(item => item.id === id ? { ...item, followUps: [...item.followUps, followUp] } : item);
 }
 
-export function createAnnouncementUpdate(edited: Announcement, updatedAt: string) {
+export function normalizeEditableAnnouncement(edited: Announcement) {
   const contact = normalizeAnnouncementContact(edited.contact);
   return {
     academicYear: edited.academicYear,
@@ -51,8 +51,15 @@ export function createAnnouncementUpdate(edited: Announcement, updatedAt: string
     importantEvents: edited.importantEvents.filter(isImportantEventUsed).map(normalizeImportantEvent),
     deadlines: edited.deadlines.filter(item => item.date || item.time || item.label),
     links: edited.links,
-    updatedAt,
   };
+}
+
+export function hasAnnouncementContentChanges(original: Announcement, edited: Announcement) {
+  return JSON.stringify(normalizeEditableAnnouncement(original)) !== JSON.stringify(normalizeEditableAnnouncement(edited));
+}
+
+export function createAnnouncementUpdate(edited: Announcement, contentUpdatedAt: string) {
+  return { ...normalizeEditableAnnouncement(edited), updatedAt: contentUpdatedAt, contentUpdatedAt };
 }
 
 export function applyAnnouncementUpdate(original: Announcement, edited: Announcement, updatedAt: string): Announcement {

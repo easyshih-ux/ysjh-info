@@ -13,6 +13,7 @@ test("Firestore 文件使用既有 schema 且初次發布時間一致", () => {
   const document = createFirestoreAnnouncement(draft(), 115, publishedAt);
   assert.equal(document.publishedAt, publishedAt);
   assert.equal(document.updatedAt, publishedAt);
+  assert.equal(document.contentUpdatedAt, undefined);
   assert.equal(document.academicYear, 115);
   assert.deepEqual(document.attachments, []);
   assert.deepEqual(document.deadlines, []);
