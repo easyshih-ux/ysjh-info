@@ -35,6 +35,7 @@ export interface LatestFollowUpSummary {
   type: "supplement" | "reminder";
   createdAt: string;
 }
+export interface FollowUpCounts { supplement: number; reminder: number; related: number }
 export interface AnnouncementLink { id: string; label: string; url: string; type: "website"; isPrimary: boolean }
 export interface Announcement {
   id: string;
@@ -50,7 +51,9 @@ export interface Announcement {
   collectionStartedBy?: string;
   updatedAt?: string;
   contentUpdatedAt?: string;
+  contentUpdateCount?: number;
   latestFollowUp?: LatestFollowUpSummary;
+  followUpCounts?: FollowUpCounts;
   hasRelatedFollowUp?: boolean;
   academicYear: number;
   publishedAt: string;

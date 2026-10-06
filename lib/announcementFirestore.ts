@@ -1,6 +1,6 @@
 import { collection, getDocs } from "firebase/firestore";
 import { ANNOUNCEMENTS_COLLECTION, getFirestoreClient } from "./firestoreClient.ts";
-import { AUDIENCES, normalizeAudiences, type Announcement, type AnnouncementLink, type Attachment, type Audience, type Deadline, type FollowUp, type ImportantEvent, type LatestFollowUpSummary } from "./announcements.ts";
+import { AUDIENCES, normalizeAudiences, type Announcement, type AnnouncementLink, type Attachment, type Audience, type Deadline, type FollowUp, type ImportantEvent, type LatestFollowUpSummary, type FollowUpCounts } from "./announcements.ts";
 import type { Timestamp } from "firebase/firestore";
 import { MAX_ATTACHMENT_NAME_LENGTH, MAX_PDF_BYTES } from "./attachmentFiles.ts";
 import { isDepartment } from "./departments.ts";
@@ -71,6 +71,13 @@ function normalizeLatestFollowUp(value: unknown): LatestFollowUpSummary | undefi
   if (!isRecord(value) || (value.type !== "supplement" && value.type !== "reminder") || !isTimestamp(value.createdAt)) return undefined;
   return { type: value.type, createdAt: value.createdAt.toDate().toISOString() };
 }
+function normalizeFollowUpCounts(value: unknown): FollowUpCounts | undefined {
+  if (!isRecord(value)) return undefined;
+  const keys = ["supplement", "reminder", "related"] as const;
+  return keys.every(key => Number.isInteger(value[key]) && (value[key] as number) >= 0)
+    ? { supplement: value.supplement as number, reminder: value.reminder as number, related: value.related as number }
+    : undefined;
+}
 
 function normalizeContact(value: unknown): AnnouncementContact | undefined {
   if (!isRecord(value)
@@ -105,7 +112,9 @@ export function announcementFromFirestore(id: string, value: unknown): Announcem
     publishedAt: value.publishedAt,
     ...(isNonEmptyString(value.updatedAt) ? { updatedAt: value.updatedAt } : {}),
     ...(isDateTime(value.contentUpdatedAt) ? { contentUpdatedAt: value.contentUpdatedAt } : {}),
+    ...(typeof value.contentUpdateCount === "number" && Number.isInteger(value.contentUpdateCount) && value.contentUpdateCount > 0 ? { contentUpdateCount: value.contentUpdateCount } : {}),
     ...(normalizeLatestFollowUp(value.latestFollowUp) ? { latestFollowUp: normalizeLatestFollowUp(value.latestFollowUp) } : {}),
+    ...(normalizeFollowUpCounts(value.followUpCounts) ? { followUpCounts: normalizeFollowUpCounts(value.followUpCounts) } : {}),
     ...(value.hasRelatedFollowUp === true ? { hasRelatedFollowUp: true } : {}),
     department: value.department,
     title: value.title,

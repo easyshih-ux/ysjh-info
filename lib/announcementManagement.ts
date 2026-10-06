@@ -58,12 +58,12 @@ export function hasAnnouncementContentChanges(original: Announcement, edited: An
   return JSON.stringify(normalizeEditableAnnouncement(original)) !== JSON.stringify(normalizeEditableAnnouncement(edited));
 }
 
-export function createAnnouncementUpdate(edited: Announcement, contentUpdatedAt: string) {
-  return { ...normalizeEditableAnnouncement(edited), updatedAt: contentUpdatedAt, contentUpdatedAt };
+export function createAnnouncementUpdate(edited: Announcement, contentUpdatedAt: string, contentUpdateCount = 1) {
+  return { ...normalizeEditableAnnouncement(edited), updatedAt: contentUpdatedAt, contentUpdatedAt, contentUpdateCount };
 }
 
 export function applyAnnouncementUpdate(original: Announcement, edited: Announcement, updatedAt: string): Announcement {
-  return { ...original, ...createAnnouncementUpdate(edited, updatedAt), contact: normalizeAnnouncementContact(edited.contact), id: original.id, publishedAt: original.publishedAt, attachments: original.attachments, followUps: original.followUps };
+  return { ...original, ...createAnnouncementUpdate(edited, updatedAt, (original.contentUpdateCount ?? 0) + 1), contact: normalizeAnnouncementContact(edited.contact), id: original.id, publishedAt: original.publishedAt, attachments: original.attachments, followUps: original.followUps };
 }
 
 export function createFollowUp(type: FollowUp["type"], message: string, createdAt: string): FollowUp {

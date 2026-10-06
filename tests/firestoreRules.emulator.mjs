@@ -437,6 +437,25 @@ test("latestFollowUp summary 只能由 server 維護，client 不能偽造或改
   await assertSucceeds(updateDoc(doc(database, "announcements/latest"), { title: "正文修正仍可儲存" }));
 });
 
+test("Gate 2 summary 與公告修正 count 只能依合法流程維護", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  const database = userDb("userA");
+  const counts = { supplement: 0, reminder: 0, related: 0 };
+  await assertFails(setDoc(doc(database, "announcements/forgedCount"), { ...announcementData(), contentUpdateCount: 1 }));
+  await assertFails(setDoc(doc(database, "announcements/forgedFollowCounts"), { ...announcementData(), followUpCounts: counts }));
+  await seed("announcements/count", announcementData("原標題", "userA"));
+  const reference = doc(database, "announcements/count");
+  await assertSucceeds(updateDoc(reference, { title: "第一次修正", contentUpdatedAt: "2026-10-06T00:00:00.000Z", updatedAt: "2026-10-06T00:00:00.000Z", contentUpdateCount: 1 }));
+  await assertSucceeds(updateDoc(reference, { title: "第二次修正", contentUpdatedAt: "2026-10-06T01:00:00.000Z", updatedAt: "2026-10-06T01:00:00.000Z", contentUpdateCount: 2 }));
+  await assertFails(updateDoc(reference, { title: "跳號", contentUpdatedAt: "2026-10-06T02:00:00.000Z", updatedAt: "2026-10-06T02:00:00.000Z", contentUpdateCount: 5 }));
+  await assertFails(updateDoc(reference, { contentUpdateCount: 3 }));
+  await assertFails(updateDoc(reference, { contentUpdatedAt: "2026-10-06T03:00:00.000Z", updatedAt: "2026-10-06T03:00:00.000Z", contentUpdateCount: 3 }));
+  await assertFails(updateDoc(reference, { followUpCounts: counts }));
+  await assertFails(updateDoc(reference, { followUpCounts: { supplement: 1, reminder: 0, related: 0 } }));
+  await assertFails(updateDoc(reference, { followUpCounts: deleteField() }));
+  await assertFails(updateDoc(reference, { title: "偽造摘要", followUpCounts: counts }));
+});
+
 test("owner、其他 publisher 與 systemAdmin client 都不能修改 related summary", async () => {
   await seed("authorizedPublishers/userA", profile("publisher", true));
   await seed("authorizedPublishers/userB", { ...profile("publisher", true), defaultDepartment: "教務處" });

@@ -38,8 +38,19 @@ service cloud.firestore {
     function keepsServerManagedSummary() {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
         'hasRelatedFollowUp',
-        'latestFollowUp'
+        'latestFollowUp',
+        'followUpCounts'
       ]);
+    }
+
+    function keepsContentUpdateCount() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return !changed.hasAny(['contentUpdateCount'])
+        || (request.resource.data.contentUpdateCount is int
+          && request.resource.data.contentUpdateCount > 0
+          && request.resource.data.contentUpdateCount == (resource.data.keys().hasAny(['contentUpdateCount']) ? resource.data.contentUpdateCount + 1 : 1)
+          && changed.hasAll(['contentUpdatedAt', 'updatedAt'])
+          && changed.hasAny(['academicYear', 'department', 'title', 'audiences', 'content', 'contact', 'importantEvents', 'deadlines', 'links']));
     }
 
     function isFixedDepartment(value) {
@@ -248,13 +259,14 @@ service cloud.firestore {
       allow create: if isAuthorizedPublisher()
         && request.resource.data.publisherUid == request.auth.uid
         && request.resource.data.publicationStatus == 'published'
-        && !request.resource.data.keys().hasAny(['hasRelatedFollowUp', 'latestFollowUp', 'contentUpdatedAt'])
+        && !request.resource.data.keys().hasAny(['hasRelatedFollowUp', 'latestFollowUp', 'followUpCounts', 'contentUpdatedAt', 'contentUpdateCount'])
         && canCreateAnnouncementDepartment()
         && isValidContact(request.resource.data)
         && isValidAttachments(request.resource.data, announcementId, request.auth.uid);
       allow update: if canManageAnnouncement()
         && keepsLifecycleFields()
         && keepsServerManagedSummary()
+        && keepsContentUpdateCount()
         && keepsLegacyFollowUps()
         && canUpdateAnnouncementDepartment()
         && isValidContact(request.resource.data)

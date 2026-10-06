@@ -36,7 +36,7 @@ test("Firestore rules 公開讀取公告但只允許 UID 授權文件啟用者�
   assert.match(rules, /request\.resource\.data\.publicationStatus == 'published'/);
   assert.match(
     rules,
-    /allow update: if canManageAnnouncement\(\)\s*&& keepsLifecycleFields\(\)\s*&& keepsServerManagedSummary\(\)\s*&& keepsLegacyFollowUps\(\)\s*&& canUpdateAnnouncementDepartment\(\)\s*&& isValidContact\(request\.resource\.data\)\s*&& keepsValidAttachments\(announcementId\);/,
+    /allow update: if canManageAnnouncement\(\)[\s\S]*keepsContentUpdateCount\(\)[\s\S]*keepsValidAttachments\(announcementId\);/,
   );
   assert.match(rules, /function canCreateAnnouncementDepartment\(\)/);
   assert.match(rules, /function canUpdateAnnouncementDepartment\(\)/);
@@ -50,7 +50,7 @@ test("Firestore rules 公開讀取公告但只允許 UID 授權文件啟用者�
   assert.match(rules, /authorizedPublishers\/\$\(request\.auth\.uid\)/);
   assert.match(rules, /\.data\.enabled == true/);
   assert.match(rules, /\.data\.role in \['systemAdmin', 'publisher'\]/);
-  assert.match(rules, /!request\.resource\.data\.keys\(\)\.hasAny\(\['hasRelatedFollowUp', 'latestFollowUp', 'contentUpdatedAt'\]\)/);
+  assert.match(rules, /!request\.resource\.data\.keys\(\)\.hasAny\(\['hasRelatedFollowUp', 'latestFollowUp', 'followUpCounts', 'contentUpdatedAt', 'contentUpdateCount'\]\)/);
   assert.match(rules, /allow list, create, update, delete: if false;/);
   assert.match(rules, /match \/\{document=\*\*\}[\s\S]*allow read, write: if false;/);
 });

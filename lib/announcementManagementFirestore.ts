@@ -18,7 +18,7 @@ export async function updateManagedAnnouncement(original: Announcement, edited: 
   try {
     await updateDoc(
       doc(getFirestoreClient(), ANNOUNCEMENTS_COLLECTION, edited.id),
-      { ...createAnnouncementUpdate(edited, updatedAt), contact: edited.contact ?? deleteField() },
+      { ...createAnnouncementUpdate(edited, updatedAt, (original.contentUpdateCount ?? 0) + 1), contact: edited.contact ?? deleteField() },
     );
     return updatedAt;
   } catch {

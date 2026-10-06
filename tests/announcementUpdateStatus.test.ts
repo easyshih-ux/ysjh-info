@@ -32,7 +32,7 @@ test("人工正文修正、原單位 follow-up 與其他單位補充可同時存
     latestFollowUp: { type: "reminder", createdAt: "2026-10-05T02:00:00.000Z" },
     hasRelatedFollowUp: true,
   });
-  assert.deepEqual(status, { hasContentUpdate: true, latestFollowUp: { type: "reminder", createdAt: "2026-10-05T02:00:00.000Z" }, hasRelatedFollowUp: true });
+  assert.deepEqual(status, { hasContentUpdate: true, contentUpdateCount: undefined, latestFollowUp: { type: "reminder", createdAt: "2026-10-05T02:00:00.000Z" }, followUpCounts: undefined, hasRelatedFollowUp: true });
 });
 
 test("沒有人工正文修正時，follow-up 不會誤亮公告有更新", () => {

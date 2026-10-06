@@ -4,14 +4,15 @@ import test from "node:test";
 
 const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
-test("首頁共用 badge 元件，三種公告更新狀態可獨立呈現", () => {
+test("首頁共用 badge 元件，四種公告更新狀態可獨立呈現", () => {
   const page = source("app/page.tsx");
   const badges = source("components/announcement-update-badges.tsx");
   assert.match(page, /AnnouncementUpdateBadges announcement=\{a\}/);
   assert.match(page, /AnnouncementUpdateBadges announcement=\{item\.announcement\}/);
-  assert.match(badges, /✎ 公告有更新/);
-  assert.match(badges, /⚠ 有/);
-  assert.match(badges, /💬 有其他單位補充/);
+  assert.match(badges, /公告修正/);
+  assert.match(badges, /📌 補充/);
+  assert.match(badges, /⚠ 提醒/);
+  assert.match(badges, /💬 其他單位補充/);
 });
 
 test("首頁 badge 維持單一 announcements 主查詢，不增加 followUps N+1", () => {
