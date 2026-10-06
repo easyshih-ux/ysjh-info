@@ -103,10 +103,10 @@ test("Clipboard 成功與失敗都回傳狀態且不拋出例外", async () => {
 
 test("publish 成功保留正式 announcement snapshot，manage 使用同一摘要元件", () => {
   const publishPage = source("app/publish/page.tsx");
-  const managePage = source("app/manage/page.tsx");
+  const manageDetails = source("app/manage/announcement-details.tsx");
   assert.match(publishPage, /setPublishedAnnouncement\(announcement\)/);
   assert.match(publishPage, /<LineSummaryCard announcement=\{publishedAnnouncement\}/);
-  assert.match(managePage, /<LineSummaryCard announcement=\{item\}/);
+  assert.match(manageDetails, /<LineSummaryCard announcement=\{item\}/);
 });
 
 test("複製為純 client-side，不修改 Firestore 或 updatedAt", () => {

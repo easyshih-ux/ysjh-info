@@ -23,9 +23,10 @@ test("管理列表依 publishedAt 新到舊並支援 department、audience、aca
 test("管理更新可保存 contact 並以 deleteField 真正清除舊值", () => {
   const management = source("lib/announcementManagementFirestore.ts");
   const page = source("app/manage/page.tsx");
+  const details = source("app/manage/announcement-details.tsx");
   assert.match(management, /contact: edited\.contact \?\? deleteField\(\)/);
   assert.match(page, /<ContactEditor item=\{editing\}/);
-  assert.match(page, /formatContactCompact\(item\.contact\)/);
+  assert.match(details, /formatContactCompact\(item\.contact\)/);
 });
 
 test("修正公告 patch 只包含可修改欄位並更新 updatedAt", () => {
@@ -100,8 +101,9 @@ test("管理頁防止重複送出、顯示友善狀態且不暴露 Firebase erro
 
 test("附件管理保持唯讀且不存在 browser 刪除流程", () => {
   const page = source("app/manage/page.tsx");
-  const combined = `${page}\n${source("lib/announcementManagementFirestore.ts")}`;
-  assert.match(page, /公告附件（唯讀）/);
+  const details = source("app/manage/announcement-details.tsx");
+  const combined = `${page}\n${details}\n${source("lib/announcementManagementFirestore.ts")}`;
+  assert.match(details, /公告附件（唯讀）/);
   assert.doesNotMatch(page, /補登 Prototype 圖片|uploadBytes|deleteObject/);
   assert.doesNotMatch(combined, /deleteDoc/);
 });

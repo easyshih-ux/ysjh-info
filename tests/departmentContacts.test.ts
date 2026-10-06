@@ -57,8 +57,8 @@ test("發布頁固定分機唯讀並支援自訂發布單位預填", () => {
 test("公開頁、發布預覽與管理頁都顯示公告保存的聯絡資訊", () => {
   const publicPage = source("app/page.tsx");
   const publishPage = source("app/publish/page.tsx");
-  const managePage = source("app/manage/page.tsx");
+  const manageDetails = source("app/manage/announcement-details.tsx");
   assert.match(publicPage, /<AnnouncementContactLine contact=\{selected\.contact\}/);
   assert.match(publishPage, /<AnnouncementContactLine contact=\{preview\.contact\}/);
-  assert.match(managePage, /formatContactCompact\(item\.contact\)/);
+  assert.match(manageDetails, /formatContactCompact\(item\.contact\)/);
 });

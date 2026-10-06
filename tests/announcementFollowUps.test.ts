@@ -51,7 +51,8 @@ test("首頁維持單次 announcements query，只有開啟詳細內容才 lazy 
 
 test("管理詳細頁 lazy load，新增流程提供登入 publisher snapshot", () => {
   const manage = source("app/manage/page.tsx");
-  assert.match(manage, /readAnnouncementFollowUps\(item\.id\)/);
+  const details = source("app/manage/announcement-details.tsx");
+  assert.match(details, /readAnnouncementFollowUps\(item\.id\)/);
   assert.match(manage, /appendManagedFollowUp\(followTarget\.id, followType, message, publisher\)/);
   assert.match(manage, /新增相關補充/);
 });
@@ -73,10 +74,11 @@ test("related 可解析 updatedAt，並與 legacy supplement reminder 共同排�
 test("related UI 分區、不公開 UID email，首頁仍只在詳細頁 lazy load", () => {
   const home = source("app/page.tsx");
   const manage = source("app/manage/page.tsx");
+  const details = source("app/manage/announcement-details.tsx");
   assert.match(home, /💬 其他單位補充/);
   assert.match(home, /relatedFollowUps\(selected\)/);
   assert.doesNotMatch(home, /authorUid|authorEmail/);
-  assert.match(manage, /value\.authorUid === publisher\.uid/);
-  assert.doesNotMatch(`${home}\n${manage}`, /複製補充通知|createLineRelatedFollowUpSummary/);
+  assert.match(details, /value\.authorUid === publisher\.uid/);
+  assert.doesNotMatch(`${home}\n${manage}\n${details}`, /複製補充通知|createLineRelatedFollowUpSummary/);
   assert.doesNotMatch(source("lib/announcementFirestore.ts"), /followUpsCollection|readAnnouncementFollowUps/);
 });

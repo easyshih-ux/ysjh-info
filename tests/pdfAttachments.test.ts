@@ -48,7 +48,7 @@ test("發布上傳使用 PDF 專用路徑、MIME 與 uploaderUid metadata", () =
 });
 
 test("公開頁與管理頁提供安全的新分頁 PDF 連結", () => {
-  for (const path of ["app/page.tsx", "app/manage/page.tsx"]) {
+  for (const path of ["app/page.tsx", "app/manage/announcement-details.tsx"]) {
     const content = source(path);
     assert.match(content, /target="_blank"/);
     assert.match(content, /rel="noopener noreferrer"/);
