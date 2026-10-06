@@ -50,7 +50,7 @@ test("Firestore rules 公開讀取公告但只允許 UID 授權文件啟用者�
   assert.match(rules, /authorizedPublishers\/\$\(request\.auth\.uid\)/);
   assert.match(rules, /\.data\.enabled == true/);
   assert.match(rules, /\.data\.role in \['systemAdmin', 'publisher'\]/);
-  assert.match(rules, /!request\.resource\.data\.keys\(\)\.hasAny\(\['hasRelatedFollowUp'\]\)/);
+  assert.match(rules, /!request\.resource\.data\.keys\(\)\.hasAny\(\['hasRelatedFollowUp', 'latestFollowUp', 'contentUpdatedAt'\]\)/);
   assert.match(rules, /allow list, create, update, delete: if false;/);
   assert.match(rules, /match \/\{document=\*\*\}[\s\S]*allow read, write: if false;/);
 });

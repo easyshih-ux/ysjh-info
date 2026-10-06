@@ -4,7 +4,7 @@ import { getStorage } from "firebase-admin/storage";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { isDepartment, isFixedDepartment, isPublisherRequestDepartment } from "./departments.js";
-import { syncRelatedFollowUpSummaryChange } from "./followUpSummary.js";
+import { syncFollowUpSummaryChange } from "./followUpSummary.js";
 
 initializeApp();
 
@@ -40,19 +40,19 @@ export const cleanupFailedAnnouncementUpload = onCall(
   request => cleanupFailedAnnouncementUploadHandler(request),
 );
 
-export const syncRelatedFollowUpSummary = onDocumentWritten(
+export const syncFollowUpSummary = onDocumentWritten(
   {
     document: "announcements/{announcementId}/followUps/{followUpId}",
     region: "asia-east1",
   },
-  event => syncRelatedFollowUpSummaryChange({
+  event => syncFollowUpSummaryChange({
     announcementId: event.params.announcementId,
     before: event.data?.before.exists ? event.data.before.data() : undefined,
     after: event.data?.after.exists ? event.data.after.data() : undefined,
   }, db),
 );
 
-export { syncRelatedFollowUpSummaryChange } from "./followUpSummary.js";
+export { syncFollowUpSummaryChange, syncRelatedFollowUpSummaryChange } from "./followUpSummary.js";
 
 export async function manageAnnouncementLifecycleHandler(
   request: { auth?: { uid: string } | null; data: unknown },

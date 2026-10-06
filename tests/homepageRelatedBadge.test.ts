@@ -4,12 +4,14 @@ import test from "node:test";
 
 const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
-test("首頁只在 summary 嚴格為 true 時顯示其他單位補充 badge", () => {
+test("首頁共用 badge 元件，三種公告更新狀態可獨立呈現", () => {
   const page = source("app/page.tsx");
-  assert.match(page, /a\.hasRelatedFollowUp === true/);
-  assert.match(page, /💬 有其他單位補充/);
-  assert.match(page, /className="related-followup-badge"/);
-  assert.match(page, /latestFollowUp \|\| a\.hasRelatedFollowUp === true/);
+  const badges = source("components/announcement-update-badges.tsx");
+  assert.match(page, /AnnouncementUpdateBadges announcement=\{a\}/);
+  assert.match(page, /AnnouncementUpdateBadges announcement=\{item\.announcement\}/);
+  assert.match(badges, /✎ 公告有更新/);
+  assert.match(badges, /⚠ 有/);
+  assert.match(badges, /💬 有其他單位補充/);
 });
 
 test("首頁 badge 維持單一 announcements 主查詢，不增加 followUps N+1", () => {
@@ -22,10 +24,11 @@ test("首頁 badge 維持單一 announcements 主查詢，不增加 followUps N+
   assert.match(page, /readAnnouncementFollowUps\(announcementId\)/);
 });
 
-test("首頁兩種 badge 可並列換行且 related badge 使用藍色系", () => {
+test("首頁三種 badge 可並列換行，含珊瑚橘更新狀態與藍色 related 狀態", () => {
   const styles = source("app/globals.css");
   assert.match(styles, /\.announcement-badges\{[^}]*display:flex[^}]*flex-wrap:wrap[^}]*max-width:100%/);
   assert.match(styles, /\.related-followup-badge\{[^}]*#b9cddd[^}]*#edf5fa[^}]*#315a7c[^}]*overflow-wrap:anywhere/);
+  assert.match(styles, /\.content-update-badge\{[^}]*#e8a18f[^}]*#fff0eb[^}]*#a3452d/);
 });
 
 test("related LINE 單筆 formatter 與兩處複製 UI 已移除，原公告 formatter 保留", () => {

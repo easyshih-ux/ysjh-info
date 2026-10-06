@@ -426,6 +426,17 @@ test("hasRelatedFollowUp 只能由 server 維護，client create 不得偽造", 
   await assertSucceeds(setDoc(doc(userDb("userA"), "announcements/normal"), announcementData()));
 });
 
+test("latestFollowUp summary 只能由 server 維護，client 不能偽造或改寫", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  const database = userDb("userA");
+  await assertFails(setDoc(doc(database, "announcements/forgedLatest"), {
+    ...announcementData(), latestFollowUp: { type: "supplement", createdAt: serverTimestamp() },
+  }));
+  await seed("announcements/latest", { ...announcementData("Latest", "userA"), latestFollowUp: { type: "reminder", createdAt: Timestamp.now() } });
+  await assertFails(updateDoc(doc(database, "announcements/latest"), { latestFollowUp: { type: "supplement", createdAt: serverTimestamp() } }));
+  await assertSucceeds(updateDoc(doc(database, "announcements/latest"), { title: "正文修正仍可儲存" }));
+});
+
 test("owner、其他 publisher 與 systemAdmin client 都不能修改 related summary", async () => {
   await seed("authorizedPublishers/userA", profile("publisher", true));
   await seed("authorizedPublishers/userB", { ...profile("publisher", true), defaultDepartment: "教務處" });

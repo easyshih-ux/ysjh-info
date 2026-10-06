@@ -106,6 +106,12 @@ test("related summary 只有嚴格 true 才解析，缺少或 false 皆不啟用
   assert.equal(announcementFromFirestore("string", firestoreRecord({ hasRelatedFollowUp: "true" }))?.hasRelatedFollowUp, undefined);
 });
 
+test("latestFollowUp summary 僅接受 supplement/reminder 與 Firestore Timestamp", () => {
+  const timestamp = { toDate: () => new Date("2026-10-05T09:00:00.000Z") };
+  assert.deepEqual(announcementFromFirestore("summary", firestoreRecord({ latestFollowUp: { type: "reminder", createdAt: timestamp } }))?.latestFollowUp, { type: "reminder", createdAt: "2026-10-05T09:00:00.000Z" });
+  assert.equal(announcementFromFirestore("invalid", firestoreRecord({ latestFollowUp: { type: "related", createdAt: timestamp } }))?.latestFollowUp, undefined);
+});
+
 test("不合法核心文件會被略過，不影響其他公告", () => {
   assert.equal(announcementFromFirestore("bad", firestoreRecord({ publishedAt: "not-a-date" })), null);
   assert.equal(announcementFromFirestore("bad", firestoreRecord({ department: "其他" })), null);

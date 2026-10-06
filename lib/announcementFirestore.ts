@@ -1,6 +1,7 @@
 import { collection, getDocs } from "firebase/firestore";
 import { ANNOUNCEMENTS_COLLECTION, getFirestoreClient } from "./firestoreClient.ts";
-import { AUDIENCES, normalizeAudiences, type Announcement, type AnnouncementLink, type Attachment, type Audience, type Deadline, type FollowUp, type ImportantEvent } from "./announcements.ts";
+import { AUDIENCES, normalizeAudiences, type Announcement, type AnnouncementLink, type Attachment, type Audience, type Deadline, type FollowUp, type ImportantEvent, type LatestFollowUpSummary } from "./announcements.ts";
+import type { Timestamp } from "firebase/firestore";
 import { MAX_ATTACHMENT_NAME_LENGTH, MAX_PDF_BYTES } from "./attachmentFiles.ts";
 import { isDepartment } from "./departments.ts";
 import { MAX_CONTACT_EXTENSION_LENGTH, type AnnouncementContact } from "./departmentContacts.ts";
@@ -13,6 +14,7 @@ const isNonEmptyString = (value: unknown): value is string => isString(value) &&
 const isDateTime = (value: unknown): value is string => isNonEmptyString(value) && !Number.isNaN(Date.parse(value));
 const isDateOnly = (value: unknown): value is string => isNonEmptyString(value) && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00`));
 const records = (value: unknown) => Array.isArray(value) ? value.filter(isRecord) : [];
+const isTimestamp = (value: unknown): value is Timestamp => isRecord(value) && typeof value.toDate === "function";
 
 function normalizeImportantEvents(value: unknown): ImportantEvent[] {
   return records(value).flatMap(item => isDateOnly(item.date) && isNonEmptyString(item.title)
@@ -65,6 +67,11 @@ function normalizeFollowUps(value: unknown): FollowUp[] {
     : []);
 }
 
+function normalizeLatestFollowUp(value: unknown): LatestFollowUpSummary | undefined {
+  if (!isRecord(value) || (value.type !== "supplement" && value.type !== "reminder") || !isTimestamp(value.createdAt)) return undefined;
+  return { type: value.type, createdAt: value.createdAt.toDate().toISOString() };
+}
+
 function normalizeContact(value: unknown): AnnouncementContact | undefined {
   if (!isRecord(value)
     || !isNonEmptyString(value.department)
@@ -98,6 +105,7 @@ export function announcementFromFirestore(id: string, value: unknown): Announcem
     publishedAt: value.publishedAt,
     ...(isNonEmptyString(value.updatedAt) ? { updatedAt: value.updatedAt } : {}),
     ...(isDateTime(value.contentUpdatedAt) ? { contentUpdatedAt: value.contentUpdatedAt } : {}),
+    ...(normalizeLatestFollowUp(value.latestFollowUp) ? { latestFollowUp: normalizeLatestFollowUp(value.latestFollowUp) } : {}),
     ...(value.hasRelatedFollowUp === true ? { hasRelatedFollowUp: true } : {}),
     department: value.department,
     title: value.title,

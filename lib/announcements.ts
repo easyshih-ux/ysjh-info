@@ -31,6 +31,10 @@ export interface FollowUp {
   department?: string;
   authorDisplayName?: string;
 }
+export interface LatestFollowUpSummary {
+  type: "supplement" | "reminder";
+  createdAt: string;
+}
 export interface AnnouncementLink { id: string; label: string; url: string; type: "website"; isPrimary: boolean }
 export interface Announcement {
   id: string;
@@ -46,6 +50,7 @@ export interface Announcement {
   collectionStartedBy?: string;
   updatedAt?: string;
   contentUpdatedAt?: string;
+  latestFollowUp?: LatestFollowUpSummary;
   hasRelatedFollowUp?: boolean;
   academicYear: number;
   publishedAt: string;

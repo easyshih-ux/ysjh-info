@@ -4,7 +4,7 @@ import type { Firestore } from "firebase-admin/firestore";
 import { syncRelatedFollowUpSummaryChange } from "../src/followUpSummary.ts";
 
 function createStore(options: { parent?: Record<string, unknown>; parentExists?: boolean; remainingRelated?: number } = {}) {
-  const parent = structuredClone(options.parent ?? { title: "公告", contentUpdatedAt: "2026-09-22T10:00:00Z" });
+  const parent = { ...(options.parent ?? { title: "公告", contentUpdatedAt: "2026-09-22T10:00:00Z" }) };
   const writes: Record<string, unknown>[] = [];
   const firestore = {
     collection(name: string) {
@@ -30,7 +30,7 @@ function createStore(options: { parent?: Record<string, unknown>; parentExists?:
               };
             },
             async update(patch: Record<string, unknown>) {
-              writes.push(structuredClone(patch));
+              writes.push(patch);
               Object.assign(parent, patch);
             },
           };
@@ -61,6 +61,15 @@ test("supplement 與 reminder create 都是 no-op", async () => {
     assert.equal(result.updated, false);
     assert.deepEqual(store.writes, []);
   }
+});
+
+test("原單位 follow-up 以最新 createdAt 同步 lightweight summary，不影響正文更新時間", async () => {
+  const createdAt = { toMillis: () => 2000 };
+  const store = createStore({ parent: { contentUpdatedAt: "2026-09-22T10:00:00Z", latestFollowUp: { type: "supplement", createdAt: { toMillis: () => 1000 } } } });
+  const result = await syncRelatedFollowUpSummaryChange({ announcementId: "a", before: undefined, after: { type: "reminder", message: "提醒", createdAt } }, store.firestore);
+  assert.deepEqual(result, { updated: true, latestFollowUp: { type: "reminder", createdAt } });
+  assert.deepEqual(store.writes, [{ latestFollowUp: { type: "reminder", createdAt } }]);
+  assert.equal(store.parent.contentUpdatedAt, "2026-09-22T10:00:00Z");
 });
 
 test("related message update 是 no-op", async () => {
