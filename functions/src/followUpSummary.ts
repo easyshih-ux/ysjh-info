@@ -80,10 +80,3 @@ export async function syncFollowUpSummaryChange(
   await announcementRef.update(patch);
   return { updated: true, ...patch };
 }
-
-export async function syncRelatedFollowUpSummaryChange(
-  change: FollowUpSummaryChange,
-  firestore: Firestore,
-) {
-  return syncFollowUpSummaryChange(change, firestore);
-}

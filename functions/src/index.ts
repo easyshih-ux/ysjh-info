@@ -52,7 +52,7 @@ export const syncFollowUpSummary = onDocumentWritten(
   }, db),
 );
 
-export { syncFollowUpSummaryChange, syncRelatedFollowUpSummaryChange } from "./followUpSummary.js";
+export { syncFollowUpSummaryChange } from "./followUpSummary.js";
 
 export async function manageAnnouncementLifecycleHandler(
   request: { auth?: { uid: string } | null; data: unknown },
