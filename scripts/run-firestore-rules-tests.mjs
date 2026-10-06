@@ -24,7 +24,7 @@ try {
       "firestore,storage",
       "--project",
       "demo-ysjh-info-rules-test",
-      "node --test tests/firestoreRules.emulator.mjs tests/storageRules.emulator.mjs",
+      "node --test --test-concurrency=1 tests/firestoreRules.emulator.mjs tests/storageRules.emulator.mjs",
     ],
     {
       stdio: "inherit",

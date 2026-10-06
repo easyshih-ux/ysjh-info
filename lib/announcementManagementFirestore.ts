@@ -1,7 +1,7 @@
 import { deleteField, doc, updateDoc } from "firebase/firestore";
 import type { Announcement, FollowUp } from "./announcements.ts";
 import { createAnnouncementUpdate, hasAnnouncementContentChanges } from "./announcementManagement.ts";
-import { createAnnouncementFollowUp } from "./announcementFollowUps.ts";
+import { createAnnouncementFollowUp, withdrawAnnouncementFollowUp } from "./announcementFollowUps.ts";
 import { ANNOUNCEMENTS_COLLECTION, getFirestoreClient } from "./firestoreClient.ts";
 import type { AuthorizedPublisherContextValue } from "./publisherAccess.ts";
 
@@ -10,6 +10,11 @@ export class AnnouncementManagementError extends Error {
     super(message);
     this.name = "AnnouncementManagementError";
   }
+}
+
+export async function withdrawManagedFollowUp(announcementId: string, followUpId: string, publisher: Pick<AuthorizedPublisherContextValue, "uid">) {
+  try { return await withdrawAnnouncementFollowUp(announcementId, followUpId, publisher.uid); }
+  catch { throw new AnnouncementManagementError("撤回補充／提醒失敗，請確認權限與網路連線後再試一次。"); }
 }
 
 export async function updateManagedAnnouncement(original: Announcement, edited: Announcement) {

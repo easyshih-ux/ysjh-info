@@ -6,13 +6,15 @@ const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.
 
 test("公告詳細頁先顯示原文，再顯示後續補充", () => {
   const page = source("app/page.tsx");
+  const followUps = source("components/public-announcement-follow-ups.tsx");
   const dates = page.indexOf('className="detail-dates"');
   const content = page.indexOf('className="detail-content"');
-  const originalFollowUp = page.indexOf('className="followup-panel"');
+  const originalFollowUp = page.indexOf("<PublicAnnouncementFollowUps");
   const related = page.indexOf('className="followup-panel related-followups"');
   const contact = page.indexOf('className="announcement-contact"');
   const attachments = page.indexOf('className="attachment-section"');
   assert.ok(dates < content && content < originalFollowUp && originalFollowUp < related && related < contact && contact < attachments);
+  assert.match(followUps, /className="followup-panel"/);
 });
 
 test("重要日期與期限標題強化，不改卡片背景", () => {

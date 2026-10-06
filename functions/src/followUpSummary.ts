@@ -1,4 +1,4 @@
-import type { DocumentReference, Firestore } from "firebase-admin/firestore";
+import { FieldValue, type DocumentReference, type Firestore } from "firebase-admin/firestore";
 
 type FollowUpSnapshotData = Record<string, unknown> | undefined;
 
@@ -26,13 +26,30 @@ function legacyCount(value: unknown, type: FollowUpType) {
   return Array.isArray(value) ? value.filter(item => typeof item === "object" && item !== null && (item as Record<string, unknown>).type === type).length : 0;
 }
 
+function isActive(value: Record<string, unknown>, type: FollowUpType) {
+  return type === "related" || value.status !== "withdrawn";
+}
+
 async function countFollowUps(announcementRef: DocumentReference, legacy: unknown) {
   const types: FollowUpType[] = ["supplement", "reminder", "related"];
   const counts = await Promise.all(types.map(async type => {
     const snapshot = await announcementRef.collection("followUps").where("type", "==", type).get();
-    return [type, snapshot.size + legacyCount(legacy, type)] as const;
+    return [type, (snapshot.docs ? snapshot.docs.filter(item => isActive(item.data(), type)).length : snapshot.size) + legacyCount(legacy, type)] as const;
   }));
   return Object.fromEntries(counts) as FollowUpCounts;
+}
+
+async function latestActiveFollowUp(announcementRef: DocumentReference, legacy: unknown, changed?: FollowUpSnapshotData) {
+  const candidates: { type: "supplement" | "reminder"; createdAt: unknown }[] = [];
+  for (const type of ["supplement", "reminder"] as const) {
+    const snapshot = await announcementRef.collection("followUps").where("type", "==", type).get();
+    (snapshot.docs ?? []).forEach(item => { const data = item.data(); if (isActive(data, type) && timestampMillis(data.createdAt) >= 0) candidates.push({ type, createdAt: data.createdAt }); });
+    if (Array.isArray(legacy)) legacy.forEach(item => {
+      if (typeof item === "object" && item !== null && (item as Record<string, unknown>).type === type && timestampMillis((item as Record<string, unknown>).createdAt) >= 0) candidates.push({ type, createdAt: (item as Record<string, unknown>).createdAt });
+    });
+  }
+  if (changed && (changed.type === "supplement" || changed.type === "reminder") && isActive(changed, changed.type) && timestampMillis(changed.createdAt) >= 0) candidates.push({ type: changed.type, createdAt: changed.createdAt });
+  return candidates.sort((a, b) => timestampMillis(b.createdAt) - timestampMillis(a.createdAt))[0];
 }
 
 export async function syncFollowUpSummaryChange(
@@ -62,12 +79,11 @@ export async function syncFollowUpSummaryChange(
   }
   if (data.hasRelatedFollowUp !== (counts.related > 0)) patch.hasRelatedFollowUp = counts.related > 0;
 
-  const currentFollowUp = change.after;
-  if (isOriginal && currentFollowUp && currentFollowUp.type !== change.before?.type && timestampMillis(currentFollowUp.createdAt) >= 0) {
+  if (wasOriginal || isOriginal) {
+    const latest = await latestActiveFollowUp(announcementRef, data.followUps, change.after);
     const current = data.latestFollowUp as Record<string, unknown> | undefined;
-    if (timestampMillis(currentFollowUp.createdAt) >= timestampMillis(current?.createdAt)) {
-      patch.latestFollowUp = { type: currentFollowUp.type, createdAt: currentFollowUp.createdAt };
-    }
+    if (latest && (current?.type !== latest.type || timestampMillis(current.createdAt) !== timestampMillis(latest.createdAt))) patch.latestFollowUp = latest;
+    if (!latest && current) patch.latestFollowUp = FieldValue.delete();
   }
 
   if (Object.keys(patch).length === 0) {

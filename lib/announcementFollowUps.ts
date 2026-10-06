@@ -39,6 +39,9 @@ export function followUpFromFirestore(id: string, value: unknown): FollowUp | nu
       : {}),
     createdAt: value.createdAt.toDate().toISOString(),
     ...(isTimestamp(value.updatedAt) ? { updatedAt: value.updatedAt.toDate().toISOString() } : {}),
+    ...(value.status === "withdrawn" && isTimestamp(value.withdrawnAt) && typeof value.withdrawnBy === "string" && value.withdrawnBy.trim()
+      ? { status: "withdrawn" as const, withdrawnAt: value.withdrawnAt.toDate().toISOString(), withdrawnBy: value.withdrawnBy }
+      : { status: "active" as const }),
   };
 }
 
@@ -76,6 +79,7 @@ export async function createAnnouncementFollowUp(
     ...(typeof displayName === "string" && displayName.trim() === displayName && displayName
       ? { authorDisplayName: displayName }
       : {}),
+    status: "active",
     createdAt: serverTimestamp(),
   });
   const snapshot = await getDoc(reference);
@@ -95,4 +99,13 @@ export async function updateRelatedFollowUp(announcementId: string, followUpId: 
 
 export async function deleteRelatedFollowUp(announcementId: string, followUpId: string) {
   await deleteDoc(doc(followUpsCollection(announcementId), followUpId));
+}
+
+export async function withdrawAnnouncementFollowUp(announcementId: string, followUpId: string, authorUid: string) {
+  const reference = doc(followUpsCollection(announcementId), followUpId);
+  await updateDoc(reference, { status: "withdrawn", withdrawnAt: serverTimestamp(), withdrawnBy: authorUid });
+  const snapshot = await getDoc(reference);
+  const followUp = followUpFromFirestore(snapshot.id, snapshot.data());
+  if (!followUp) throw new Error("Invalid withdrawn follow-up response");
+  return followUp;
 }

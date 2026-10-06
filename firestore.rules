@@ -214,9 +214,11 @@ service cloud.firestore {
           'authorUid',
           'department',
           'authorDisplayName',
+          'status',
           'createdAt'
         ])
         && request.resource.data.type in ['supplement', 'reminder', 'related']
+        && request.resource.data.status == 'active'
         && request.resource.data.message is string
         && request.resource.data.message.size() > 0
         && request.resource.data.message.size() <= 3000
@@ -254,6 +256,17 @@ service cloud.firestore {
         && (isEnabledSystemAdmin() || resource.data.authorUid == request.auth.uid);
     }
 
+    function canWithdrawOriginalFollowUp() {
+      return isAuthorizedPublisher()
+        && resource.data.type in ['supplement', 'reminder']
+        && (!resource.data.keys().hasAny(['status']) || resource.data.status == 'active')
+        && (isEnabledSystemAdmin() || resource.data.authorUid == request.auth.uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'withdrawnAt', 'withdrawnBy'])
+        && request.resource.data.status == 'withdrawn'
+        && request.resource.data.withdrawnAt == request.time
+        && request.resource.data.withdrawnBy == request.auth.uid;
+    }
+
     match /announcements/{announcementId} {
       allow read: if true;
       allow create: if isAuthorizedPublisher()
@@ -277,7 +290,7 @@ service cloud.firestore {
         allow read: if true;
         allow create: if canCreateAnnouncementFollowUp(announcementId)
           && isValidNewAnnouncementFollowUp();
-        allow update: if canUpdateRelatedFollowUp();
+        allow update: if canUpdateRelatedFollowUp() || canWithdrawOriginalFollowUp();
         allow delete: if canDeleteRelatedFollowUp();
       }
     }

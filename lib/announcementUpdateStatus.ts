@@ -2,12 +2,14 @@ import { type Announcement, type FollowUpCounts, type LatestFollowUpSummary } fr
 
 function legacyCounts(announcement: Announcement): FollowUpCounts | undefined {
   if (!announcement.followUps.length) return undefined;
-  return announcement.followUps.reduce<FollowUpCounts>((counts, value) => ({ ...counts, [value.type]: counts[value.type] + 1 }), { supplement: 0, reminder: 0, related: 0 });
+  return announcement.followUps
+    .filter(value => value.status !== "withdrawn")
+    .reduce<FollowUpCounts>((counts, value) => ({ ...counts, [value.type]: counts[value.type] + 1 }), { supplement: 0, reminder: 0, related: 0 });
 }
 
 function latestLegacyFollowUp(announcement: Announcement): LatestFollowUpSummary | undefined {
   const latest = announcement.followUps
-    .filter(value => value.type === "supplement" || value.type === "reminder")
+    .filter(value => (value.type === "supplement" || value.type === "reminder") && value.status !== "withdrawn")
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
   return latest ? { type: latest.type === "supplement" ? "supplement" : "reminder", createdAt: latest.createdAt } : undefined;
 }

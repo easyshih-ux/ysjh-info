@@ -30,6 +30,9 @@ export interface FollowUp {
   authorUid?: string;
   department?: string;
   authorDisplayName?: string;
+  status?: "active" | "withdrawn";
+  withdrawnAt?: string;
+  withdrawnBy?: string;
 }
 export interface LatestFollowUpSummary {
   type: "supplement" | "reminder";

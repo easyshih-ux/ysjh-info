@@ -23,6 +23,7 @@ test("新 subcollection follow-up 將 Timestamp 正規化為共同 view model", 
     department: "設備組",
     authorDisplayName: "王組長",
     createdAt: "2026-09-22T02:30:00.000Z",
+    status: "active",
   });
 });
 

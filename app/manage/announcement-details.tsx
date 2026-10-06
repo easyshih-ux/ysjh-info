@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { deleteRelatedFollowUp, mergeAnnouncementFollowUps, readAnnouncementFollowUps, updateRelatedFollowUp } from "@/lib/announcementFollowUps";
+import { canWithdrawManagedFollowUp } from "@/lib/announcementFollowUpWithdrawal";
+import { withdrawManagedFollowUp } from "@/lib/announcementManagementFirestore";
 import { formatFileSize } from "@/lib/attachmentFiles";
 import { formatContactCompact } from "@/lib/departmentContacts";
 import { formatFollowUpType, formatImportantEventSchedule, type Announcement, type FollowUp } from "@/lib/announcements";
@@ -29,6 +31,8 @@ export function AnnouncementDetails({
   const [editingRelated, setEditingRelated] = useState<FollowUp | null>(null);
   const [relatedMessage, setRelatedMessage] = useState("");
   const [relatedBusy, setRelatedBusy] = useState(false);
+  const [withdrawingIds, setWithdrawingIds] = useState<string[]>([]);
+  const [withdrawError, setWithdrawError] = useState("");
 
   useEffect(() => {
     if (!item) {
@@ -53,6 +57,8 @@ export function AnnouncementDetails({
 
   const followUps = item ? mergeAnnouncementFollowUps(item.followUps, currentFollowUps) : [];
   const original = followUps.filter(value => value.type !== "related");
+  const activeOriginal = original.filter(value => value.status !== "withdrawn");
+  const withdrawnOriginal = original.filter(value => value.status === "withdrawn");
   const related = followUps.filter(value => value.type === "related");
   const canManageRelated = (value: FollowUp) => publisher.role === "systemAdmin" || value.authorUid === publisher.uid;
 
@@ -76,6 +82,26 @@ export function AnnouncementDetails({
       setCurrentFollowUps(values => values.filter(entry => entry.id !== value.id));
     } finally {
       setRelatedBusy(false);
+    }
+  };
+
+  const withdrawOriginal = async (value: FollowUp) => {
+    if (!item || !value.id || withdrawingIds.includes(value.id) || !canWithdrawManagedFollowUp(value, publisher)) return;
+    const label = value.type === "supplement" ? "補充" : "提醒";
+    const message = value.type === "supplement"
+      ? "確定要撤回這則補充嗎？\n\n撤回後，此則將不再計入首頁的補充數量；撤回紀錄仍會保留。"
+      : "確定要撤回這則提醒嗎？\n\n撤回後，此則將不再計入首頁的提醒次數；撤回紀錄仍會保留。";
+    if (!window.confirm(message)) return;
+
+    setWithdrawingIds(ids => [...ids, value.id!]);
+    setWithdrawError("");
+    try {
+      await withdrawManagedFollowUp(item.id, value.id, publisher);
+      setCurrentFollowUps(await readAnnouncementFollowUps(item.id));
+    } catch {
+      setWithdrawError(`撤回${label}失敗，請確認權限與網路連線後再試一次。`);
+    } finally {
+      setWithdrawingIds(ids => ids.filter(id => id !== value.id));
     }
   };
 
@@ -128,16 +154,34 @@ export function AnnouncementDetails({
               </section>
               <section>
                 <h3>補充／提醒</h3>
+                {withdrawError && <p className={styles.errorNotice} role="alert">{withdrawError}</p>}
                 {followUpsLoading ? <p>補充／提醒載入中…</p> : original.length ? (
-                  <div className={styles.followUps}>
-                    {original.map((followUp, index) => (
+                  <>
+                    {activeOriginal.length > 0 && <div className={styles.followUps}>
+                      {activeOriginal.map((followUp, index) => (
                       <article key={followUp.id ?? `${followUp.createdAt}-${index}`}>
                         <strong>{formatFollowUpType(followUp.type)}</strong>
                         <time>{followUp.department ?? item.department}｜{formatDateTime(followUp.createdAt)}</time>
                         <p>{followUp.message}</p>
+                        {canWithdrawManagedFollowUp(followUp, publisher) && (
+                          <Button variant="ghost" size="sm" disabled={withdrawingIds.includes(followUp.id!)} onClick={() => void withdrawOriginal(followUp)}>
+                            {withdrawingIds.includes(followUp.id!) ? "撤回中…" : "撤回"}
+                          </Button>
+                        )}
                       </article>
-                    ))}
-                  </div>
+                      ))}
+                    </div>}
+                    {withdrawnOriginal.length > 0 && <div className={styles.followUps}>
+                      {withdrawnOriginal.map((followUp, index) => (
+                        <article key={followUp.id ?? `${followUp.createdAt}-${index}`}>
+                          <strong>已撤回｜{formatFollowUpType(followUp.type)}</strong>
+                          <time>{followUp.department ?? item.department}｜建立 {formatDateTime(followUp.createdAt)}</time>
+                          <time>撤回時間｜{formatDateTime(followUp.withdrawnAt!)}</time>
+                          <p>{followUp.message}</p>
+                        </article>
+                      ))}
+                    </div>}
+                  </>
                 ) : <p>無補充或提醒</p>}
               </section>
               <section>

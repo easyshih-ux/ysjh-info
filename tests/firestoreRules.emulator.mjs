@@ -91,6 +91,7 @@ function followUpData(overrides = {}) {
     message: "補充內容",
     authorUid: "userA",
     department: "設備組",
+    status: "active",
     createdAt: serverTimestamp(),
     ...overrides,
   };
@@ -443,17 +444,16 @@ test("Gate 2 summary 與公告修正 count 只能依合法流程維護", async (
   const counts = { supplement: 0, reminder: 0, related: 0 };
   await assertFails(setDoc(doc(database, "announcements/forgedCount"), { ...announcementData(), contentUpdateCount: 1 }));
   await assertFails(setDoc(doc(database, "announcements/forgedFollowCounts"), { ...announcementData(), followUpCounts: counts }));
-  await seed("announcements/count", announcementData("原標題", "userA"));
+  await seed("announcements/count", { ...announcementData("原標題", "userA"), followUpCounts: counts });
   const reference = doc(database, "announcements/count");
   await assertSucceeds(updateDoc(reference, { title: "第一次修正", contentUpdatedAt: "2026-10-06T00:00:00.000Z", updatedAt: "2026-10-06T00:00:00.000Z", contentUpdateCount: 1 }));
   await assertSucceeds(updateDoc(reference, { title: "第二次修正", contentUpdatedAt: "2026-10-06T01:00:00.000Z", updatedAt: "2026-10-06T01:00:00.000Z", contentUpdateCount: 2 }));
   await assertFails(updateDoc(reference, { title: "跳號", contentUpdatedAt: "2026-10-06T02:00:00.000Z", updatedAt: "2026-10-06T02:00:00.000Z", contentUpdateCount: 5 }));
   await assertFails(updateDoc(reference, { contentUpdateCount: 3 }));
   await assertFails(updateDoc(reference, { contentUpdatedAt: "2026-10-06T03:00:00.000Z", updatedAt: "2026-10-06T03:00:00.000Z", contentUpdateCount: 3 }));
-  await assertFails(updateDoc(reference, { followUpCounts: counts }));
   await assertFails(updateDoc(reference, { followUpCounts: { supplement: 1, reminder: 0, related: 0 } }));
   await assertFails(updateDoc(reference, { followUpCounts: deleteField() }));
-  await assertFails(updateDoc(reference, { title: "偽造摘要", followUpCounts: counts }));
+  await assertFails(updateDoc(reference, { title: "偽造摘要", followUpCounts: { supplement: 0, reminder: 1, related: 0 } }));
 });
 
 test("owner、其他 publisher 與 systemAdmin client 都不能修改 related summary", async () => {
@@ -484,7 +484,7 @@ test("47 announcement contact 拒絕非法分機與多餘敏感欄位", async ()
 
 test("48 原 publisher 可新增 supplement 與 reminder", async () => {
   await seed("authorizedPublishers/userA", profile("publisher", true));
-  await seed("announcements/own", announcementData("Own", "userA"));
+  await seed("announcements/own", { ...announcementData("Own", "userA"), latestFollowUp: { type: "supplement", createdAt: Timestamp.fromMillis(1000) } });
   const database = userDb("userA");
   await assertSucceeds(setDoc(doc(database, "announcements/own/followUps/supplement"), followUpData()));
   await assertSucceeds(setDoc(doc(database, "announcements/own/followUps/reminder"), followUpData({ type: "reminder" })));
@@ -590,4 +590,63 @@ test("58 related 權限不放寬原 Announcement update", async () => {
   await seed("authorizedPublishers/userB", profile("publisher", true));
   await seed("announcements/ownedByA", announcementData("A", "userA"));
   await assertFails(updateDoc(doc(userDb("userB"), "announcements/ownedByA"), { title: "B cannot edit A" }));
+});
+
+test("59 Gate 4 原作者可撤回 active 與 legacy 無 status 的 supplement/reminder", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await seed("announcements/own", announcementData("Own", "userA"));
+  const original = (type, status) => ({ type, message: type, authorUid: "userA", department: "設備組", createdAt: Timestamp.fromMillis(1000), ...(status ? { status } : {}) });
+  await seed("announcements/own/followUps/activeSupplement", original("supplement", "active"));
+  await seed("announcements/own/followUps/activeReminder", original("reminder", "active"));
+  await seed("announcements/own/followUps/legacySupplement", original("supplement"));
+  await seed("announcements/own/followUps/legacyReminder", original("reminder"));
+  const database = userDb("userA");
+  for (const id of ["activeSupplement", "activeReminder", "legacySupplement", "legacyReminder"]) {
+    await assertSucceeds(updateDoc(doc(database, `announcements/own/followUps/${id}`), {
+      status: "withdrawn", withdrawnAt: serverTimestamp(), withdrawnBy: "userA",
+    }));
+  }
+});
+
+test("60 Gate 4 systemAdmin 可撤回、非作者與 disabled publisher 不可撤回", async () => {
+  await seed("authorizedPublishers/author", profile("publisher", true));
+  await seed("authorizedPublishers/other", profile("publisher", true));
+  await seed("authorizedPublishers/disabled", profile("publisher", false));
+  await seed("authorizedPublishers/adminA", profile("systemAdmin", true));
+  await seed("announcements/own", announcementData("Own", "author"));
+  const record = { type: "supplement", message: "內容", authorUid: "author", department: "設備組", status: "active", createdAt: Timestamp.fromMillis(1000) };
+  await seed("announcements/own/followUps/admin", record);
+  await seed("announcements/own/followUps/other", record);
+  await seed("announcements/own/followUps/disabled", record);
+  const withdrawal = uid => ({ status: "withdrawn", withdrawnAt: serverTimestamp(), withdrawnBy: uid });
+  await assertSucceeds(updateDoc(doc(userDb("adminA"), "announcements/own/followUps/admin"), withdrawal("adminA")));
+  await assertFails(updateDoc(doc(userDb("other"), "announcements/own/followUps/other"), withdrawal("other")));
+  await assertFails(updateDoc(doc(userDb("disabled"), "announcements/own/followUps/disabled"), withdrawal("disabled")));
+});
+
+test("61 Gate 4 撤回拒絕偽造 metadata、混入欄位、重複撤回與 related 撤回", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await seed("announcements/own", announcementData("Own", "userA"));
+  const original = { type: "supplement", message: "內容", authorUid: "userA", department: "設備組", status: "active", createdAt: Timestamp.fromMillis(1000) };
+  for (const id of ["badTime", "badBy", "mixed", "repeat", "related"]) await seed(`announcements/own/followUps/${id}`, id === "related" ? { ...original, type: "related" } : original);
+  const database = userDb("userA");
+  await assertFails(updateDoc(doc(database, "announcements/own/followUps/badTime"), { status: "withdrawn", withdrawnAt: Timestamp.fromMillis(0), withdrawnBy: "userA" }));
+  await assertFails(updateDoc(doc(database, "announcements/own/followUps/badBy"), { status: "withdrawn", withdrawnAt: serverTimestamp(), withdrawnBy: "other" }));
+  await assertFails(updateDoc(doc(database, "announcements/own/followUps/mixed"), { status: "withdrawn", withdrawnAt: serverTimestamp(), withdrawnBy: "userA", message: "偷改原文" }));
+  await assertSucceeds(updateDoc(doc(database, "announcements/own/followUps/repeat"), { status: "withdrawn", withdrawnAt: serverTimestamp(), withdrawnBy: "userA" }));
+  await assertFails(updateDoc(doc(database, "announcements/own/followUps/repeat"), { status: "withdrawn", withdrawnAt: serverTimestamp(), withdrawnBy: "userA" }));
+  await assertFails(updateDoc(doc(database, "announcements/own/followUps/related"), { status: "withdrawn", withdrawnAt: serverTimestamp(), withdrawnBy: "userA" }));
+});
+
+test("62 Gate 4 create 必為 active 且不可帶 withdrawn metadata，撤回不需 client 寫 parent summary", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await seed("announcements/own", { ...announcementData("Own", "userA"), latestFollowUp: { type: "supplement", createdAt: Timestamp.fromMillis(1000) } });
+  const database = userDb("userA");
+  await assertFails(setDoc(doc(database, "announcements/own/followUps/withdrawnCreate"), followUpData({ status: "withdrawn", withdrawnAt: serverTimestamp(), withdrawnBy: "userA" })));
+  await assertFails(setDoc(doc(database, "announcements/own/followUps/metadataCreate"), followUpData({ withdrawnAt: serverTimestamp(), withdrawnBy: "userA" })));
+  await seed("announcements/own/followUps/active", { type: "reminder", message: "提醒", authorUid: "userA", department: "設備組", status: "active", createdAt: Timestamp.fromMillis(1000) });
+  await assertSucceeds(updateDoc(doc(database, "announcements/own/followUps/active"), { status: "withdrawn", withdrawnAt: serverTimestamp(), withdrawnBy: "userA" }));
+  await assertFails(updateDoc(doc(database, "announcements/own"), { followUpCounts: { supplement: 0, reminder: 0, related: 0 } }));
+  await assertFails(updateDoc(doc(database, "announcements/own"), { latestFollowUp: deleteField() }));
+  await assertFails(updateDoc(doc(database, "announcements/own"), { hasRelatedFollowUp: true }));
 });
