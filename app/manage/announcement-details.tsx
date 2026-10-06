@@ -159,7 +159,10 @@ export function AnnouncementDetails({
                   <>
                     {activeOriginal.length > 0 && <div className={styles.followUps}>
                       {activeOriginal.map((followUp, index) => (
-                      <article key={followUp.id ?? `${followUp.createdAt}-${index}`}>
+                      <article
+                        className={followUp.type === "supplement" ? styles.supplementFollowUp : styles.reminderFollowUp}
+                        key={followUp.id ?? `${followUp.createdAt}-${index}`}
+                      >
                         <strong>{formatFollowUpType(followUp.type)}</strong>
                         <time>{followUp.department ?? item.department}｜{formatDateTime(followUp.createdAt)}</time>
                         <p>{followUp.message}</p>
@@ -173,7 +176,7 @@ export function AnnouncementDetails({
                     </div>}
                     {withdrawnOriginal.length > 0 && <div className={styles.followUps}>
                       {withdrawnOriginal.map((followUp, index) => (
-                        <article key={followUp.id ?? `${followUp.createdAt}-${index}`}>
+                        <article className={styles.withdrawnFollowUp} key={followUp.id ?? `${followUp.createdAt}-${index}`}>
                           <strong>已撤回｜{formatFollowUpType(followUp.type)}</strong>
                           <time>{followUp.department ?? item.department}｜建立 {formatDateTime(followUp.createdAt)}</time>
                           <time>撤回時間｜{formatDateTime(followUp.withdrawnAt!)}</time>
