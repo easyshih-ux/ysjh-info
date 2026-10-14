@@ -11,8 +11,12 @@ export function readAnalyticsConsent(storage: StorageReader): AnalyticsConsent |
     const value = storage.getItem(ANALYTICS_CONSENT_STORAGE_KEY);
     return value === "granted" || value === "denied" ? value : null;
   } catch {
-    return null;
+    return "denied";
   }
+}
+
+export function shouldEnableAnalytics(consent: AnalyticsConsent | null): boolean {
+  return consent !== "denied";
 }
 
 export function writeAnalyticsConsent(storage: StorageWriter, consent: AnalyticsConsent): boolean {

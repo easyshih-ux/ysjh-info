@@ -1,4 +1,4 @@
-import { clearAnalyticsCookies, readAnalyticsConsent } from "./analyticsConsent.ts";
+import { clearAnalyticsCookies, readAnalyticsConsent, shouldEnableAnalytics } from "./analyticsConsent.ts";
 
 export const ANNOUNCEMENT_OPEN_SOURCES = [
   "chasing",
@@ -89,7 +89,7 @@ async function loadFirebaseAnalyticsRuntime(): Promise<AnalyticsRuntime | null> 
     import("./firebaseClient.ts"),
   ]);
   if (!(await isSupported())) return null;
-  if (readAnalyticsConsent(window.localStorage) !== "granted") return null;
+  if (!shouldEnableAnalytics(readAnalyticsConsent(window.localStorage))) return null;
 
   const analytics = getAnalytics(getFirebaseApp());
   return {
@@ -116,7 +116,7 @@ export async function trackAnnouncementOpen(
   source: AnnouncementOpenSource,
 ): Promise<boolean> {
   if (typeof window === "undefined") return false;
-  if (readAnalyticsConsent(window.localStorage) !== "granted") return false;
+  if (!shouldEnableAnalytics(readAnalyticsConsent(window.localStorage))) return false;
   if (!(await publicAnalyticsController.enable())) return false;
   return publicAnalyticsController.logAnnouncementOpen(announcementId, source);
 }

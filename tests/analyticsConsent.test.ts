@@ -6,13 +6,14 @@ import {
   analyticsCookieNames,
   clearAnalyticsCookies,
   readAnalyticsConsent,
+  shouldEnableAnalytics,
   writeAnalyticsConsent,
 } from "../lib/analyticsConsent.ts";
 import { createAnalyticsController } from "../lib/publicAnalytics.ts";
 
 const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
-test("統計同意只接受明確 granted 或 denied，儲存失敗時安全降級", () => {
+test("未設定偏好時啟用統計，既有拒絕與儲存失敗時維持退出", () => {
   const values = new Map<string, string>();
   const storage = {
     getItem: (key: string) => values.get(key) ?? null,
@@ -20,13 +21,16 @@ test("統計同意只接受明確 granted 或 denied，儲存失敗時安全降�
   };
 
   assert.equal(readAnalyticsConsent(storage), null);
+  assert.equal(shouldEnableAnalytics(null), true);
   assert.equal(writeAnalyticsConsent(storage, "granted"), true);
   assert.equal(values.get(ANALYTICS_CONSENT_STORAGE_KEY), "granted");
   assert.equal(readAnalyticsConsent(storage), "granted");
+  assert.equal(shouldEnableAnalytics("granted"), true);
+  assert.equal(shouldEnableAnalytics("denied"), false);
   values.set(ANALYTICS_CONSENT_STORAGE_KEY, "unexpected");
   assert.equal(readAnalyticsConsent(storage), null);
 
-  assert.equal(readAnalyticsConsent({ getItem: () => { throw new Error("blocked"); } }), null);
+  assert.equal(readAnalyticsConsent({ getItem: () => { throw new Error("blocked"); } }), "denied");
   assert.equal(writeAnalyticsConsent({ setItem: () => { throw new Error("blocked"); } }, "denied"), false);
 });
 
@@ -90,15 +94,20 @@ test("Analytics 被阻擋或不支援時不拋錯也不送事件", async () => {
   assert.equal(unsupported.logAnnouncementOpen("a-1", "weekly"), false);
 });
 
-test("未同意與拒絕狀態不初始化，公開首頁提供可隨時變更的入口", () => {
+test("公開首頁不詢問同意、預設啟用，但保留既有拒絕與退出入口", () => {
   const component = source("components/analytics-consent.tsx");
-  assert.match(component, /savedConsent === "granted"/);
-  assert.match(component, /同意統計/);
-  assert.match(component, /暫不同意/);
-  assert.match(component, /撤回同意並停止統計/);
+  const mountEffect = component.match(/useEffect\(\(\) => \{[\s\S]*?\n  }, \[\]\);/)?.[0] ?? "";
+  assert.match(mountEffect, /shouldEnableAnalytics\(savedConsent\)/);
+  assert.doesNotMatch(mountEffect, /writeAnalyticsConsent/);
+  assert.doesNotMatch(component, /同意統計|暫不同意|analytics-consent-banner/);
+  assert.match(component, /退出統計並停止後續追蹤/);
+  assert.match(component, /重新啟用統計/);
   assert.match(component, /統計與隱私設定/);
-  assert.match(component, /不同意不影響網站功能/);
+  assert.match(component, /不傳送姓名、Email、Firebase UID、教師身分選項、公告標題、公告內容或搜尋文字/);
   assert.doesNotMatch(component, /advanced|進階 Consent Mode/i);
+
+  const analytics = source("lib/publicAnalytics.ts");
+  assert.match(analytics, /shouldEnableAnalytics\(readAnalyticsConsent\(window\.localStorage\)\)/);
 });
 
 test("Analytics 僅掛載在公開首頁且管理路由沒有追蹤元件", () => {
