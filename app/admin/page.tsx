@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, ChevronRight, FilePenLine, FilePlus2, Home, Users } from "lucide-react";
+import { ArrowLeft, BarChart3, ChevronRight, FilePenLine, FilePlus2, Home, Users } from "lucide-react";
 import { AdminAuthGuard, useAuthorizedPublisher } from "@/components/admin-auth-guard";
 import { usePublisherRequests } from "@/hooks/use-publisher-requests";
 import styles from "./admin.module.css";
@@ -31,6 +31,7 @@ function AdminDashboard() {
       <nav className={styles.actions} aria-label="行政管理功能">
         <Link href="/publish"><FilePlus2 /><span><strong>＋ 發布新公告</strong><small>新增需要留存、查詢或提醒的重要公務資訊</small></span><ChevronRight /></Link>
         <Link href="/manage"><FilePenLine /><span><strong>管理已發布公告</strong><small>修正公告、補登資訊或新增補充／提醒</small></span><ChevronRight /></Link>
+        {isSystemAdmin && <Link href="/admin/analytics"><BarChart3 /><span><strong>網站使用統計</strong><small>查看訪客、瀏覽與公告開啟的彙總趨勢</small></span><ChevronRight /></Link>}
         {isSystemAdmin && <Link href="/admin/publishers"><Users /><span><strong className={styles.actionTitle}>發布者管理{publisherManagement.status === "ready" && publisherManagement.requests.length > 0 && <span className={styles.pendingBadge}>待審 {publisherManagement.requests.length}</span>}</strong><small>{publisherManagementSummary}</small></span><ChevronRight /></Link>}
         <Link href="/"><Home /><span><strong>查看義學公務資訊站</strong><small>返回老師查看公告的公開資訊站</small></span><ChevronRight /></Link>
       </nav>

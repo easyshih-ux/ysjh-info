@@ -53,6 +53,7 @@ export const syncFollowUpSummary = onDocumentWritten(
 );
 
 export { syncFollowUpSummaryChange } from "./followUpSummary.js";
+export { getAdminUsageStatistics } from "./adminUsageStatistics.js";
 
 export async function manageAnnouncementLifecycleHandler(
   request: { auth?: { uid: string } | null; data: unknown },

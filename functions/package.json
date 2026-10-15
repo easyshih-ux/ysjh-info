@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@google-analytics/data": "7.3.0",
     "firebase-admin": "14.4.0",
     "firebase-functions": "7.4.0"
   },
