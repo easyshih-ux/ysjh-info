@@ -1,4 +1,4 @@
-import { USER_IDENTITIES, type Announcement, type Audience, type UserIdentity } from "./announcements.ts";
+import { USER_IDENTITIES, type Announcement, type Audience, type ImportantEvent, type UserIdentity } from "./announcements.ts";
 import { parseCalendarDate, taipeiDateKey } from "./taipeiDate.ts";
 
 export const ROLE_STORAGE_KEY = "selectedRole";
@@ -112,6 +112,36 @@ export function importantEventDateLabel(date: string, now: Date) {
   if (days === 1) return "明天";
   const value = localDate(date);
   return `${value.getUTCMonth() + 1}/${value.getUTCDate()}（${["日", "一", "二", "三", "四", "五", "六"][value.getUTCDay()]}）`;
+}
+
+export function weeklyEventDisplay(event: ImportantEvent, now: Date) {
+  const { start } = weekBounds(now);
+  const eventStart = localDate(event.date);
+  const eventEnd = localDate(event.endDate || event.date);
+  const isContinuingThisWeek = Boolean(event.endDate) && eventStart < start && eventEnd >= start && eventEnd >= localDate(now);
+  const calendarParts = (date: string) => {
+    const value = localDate(date);
+    return { year: value.getUTCFullYear(), monthDay: `${value.getUTCMonth() + 1}/${value.getUTCDate()}` };
+  };
+
+  if (isContinuingThisWeek) {
+    const startParts = calendarParts(event.date);
+    const endParts = calendarParts(event.endDate!);
+    const period = startParts.year === endParts.year
+      ? `${startParts.monthDay}～${endParts.monthDay}`
+      : `${startParts.year}/${startParts.monthDay}～${endParts.year}/${endParts.monthDay}`;
+    return {
+      dateLabel: "本週持續",
+      contextLabel: "跨週事項",
+      periodLabel: `重要事件：${period}`,
+    };
+  }
+
+  return {
+    dateLabel: importantEventDateLabel(event.date, now),
+    contextLabel: null,
+    periodLabel: null,
+  };
 }
 
 export function deadlineRelativeLabel(date: string, now: Date) {
