@@ -19,11 +19,11 @@ import { PublicAnnouncementFollowUps } from "@/components/public-announcement-fo
 import { activeOriginalFollowUps } from "@/lib/announcementWithdrawnFollowUps";
 import { AnalyticsConsent } from "@/components/analytics-consent";
 import { trackAnnouncementOpen, type AnnouncementOpenSource } from "@/lib/publicAnalytics";
+import { calendarDateKey, formatCalendarDate, taipeiDateKey } from "@/lib/taipeiDate";
+import { useTaipeiNow } from "@/hooks/use-taipei-now";
 
-const weekday = ["日", "一", "二", "三", "四", "五", "六"];
-const fmtDate = (value: string) => { const d = new Date(`${value.slice(0, 10)}T00:00:00`); return `${d.getMonth() + 1}/${d.getDate()}（${weekday[d.getDay()]}）`; };
+const fmtDate = formatCalendarDate;
 const fmtPublished = (value: string) => new Intl.DateTimeFormat("zh-TW", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
-const localDateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 const sortedFollowUps = (announcement: Announcement) => [...announcement.followUps].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 const relatedFollowUps = (announcement: Announcement) => sortedFollowUps(announcement).filter(item => item.type === "related");
 const primaryLink = (announcement: Announcement) => announcement.links.find(link => link.isPrimary);
@@ -38,7 +38,7 @@ export default function Home() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [announcementsLoading, setAnnouncementsLoading] = useState(true);
   const [announcementsError, setAnnouncementsError] = useState(false);
-  const [now] = useState(() => new Date());
+  const now = useTaipeiNow();
   const [selected, setSelected] = useState<Announcement | null>(null);
   const [loadedFollowUps, setLoadedFollowUps] = useState<Record<string, Announcement["followUps"]>>({});
   const [previewAttachment, setPreviewAttachment] = useState<ImageAttachment | null>(null);
@@ -82,7 +82,7 @@ export default function Home() {
   const nextEvents = useMemo(() => nextWeekEvents(regularHomepageAnnouncements, now), [regularHomepageAnnouncements, now]);
   const groupedEvents = useMemo(() => Object.groupBy(events, item => item.date), [events]);
   const deadlines = useMemo(() => upcomingDeadlines(regularHomepageAnnouncements, now), [regularHomepageAnnouncements, now]);
-  const rangeLabel = (bounds: { start: Date; end: Date }) => `${fmtDate(localDateKey(bounds.start))}～${fmtDate(localDateKey(bounds.end))}`;
+  const rangeLabel = (bounds: { start: Date; end: Date }) => `${fmtDate(calendarDateKey(bounds.start))}～${fmtDate(calendarDateKey(bounds.end))}`;
   const weekRange = useMemo(() => rangeLabel(weekBounds(now)), [now]);
   const nextWeekRange = useMemo(() => rangeLabel(nextWeekBounds(now)), [now]);
   const results = useMemo(() => filterAnnouncements(scopedSearchAnnouncements, query, "全部", department), [scopedSearchAnnouncements, query, department]);
@@ -90,7 +90,7 @@ export default function Home() {
   if (identity === undefined) return <main className="identity-screen" aria-busy="true" />;
   if (identity === null) return <><main className="identity-screen"><section className="identity-card"><div className="welcome-mark">義</div><p className="eyebrow-dark">{CURRENT_ACADEMIC_YEAR} 學年度 · 校內公務公告</p><h1>義學公務資訊站</h1><p className="welcome-copy">{newAcademicYear ? "新的學年度開始，請確認您本學年度的身分" : "快速找到與你相關的重要資訊"}</p><h2>請選擇您的身分</h2><IdentityChoices onChoose={chooseIdentity} /><p className="privacy-note">不需要登入，也不會要求姓名或帳號；本站僅彙整匿名使用統計，可隨時由「統計與隱私設定」退出。</p></section></main><AnalyticsConsent /></>;
   return <><main>
-    <header className="site-header"><div className="header-inner"><img className="brand-mark" src="/ysjh-info/icons/icon-192.png" alt="" aria-hidden="true" /><div className="brand-copy"><p className="eyebrow">校內公務公告</p><h1>義學公務資訊站</h1><HomeScreenInstall /></div><div className="date-stamp"><span>今天</span><strong>{fmtDate(localDateKey(now))}</strong></div><Link className="admin-entry" href="/admin"><Settings aria-hidden="true" />行政管理</Link></div></header>
+    <header className="site-header"><div className="header-inner"><img className="brand-mark" src="/ysjh-info/icons/icon-192.png" alt="" aria-hidden="true" /><div className="brand-copy"><p className="eyebrow">校內公務公告</p><h1>義學公務資訊站</h1><HomeScreenInstall /></div><div className="date-stamp"><span>今天</span><strong>{fmtDate(taipeiDateKey(now))}</strong></div><Link className="admin-entry" href="/admin"><Settings aria-hidden="true" />行政管理</Link></div></header>
     <div className="identity-toolbar"><span>{CURRENT_ACADEMIC_YEAR} 學年度 · 目前身分：<strong>{identity === "全部" ? "查看全部" : identity}</strong></span><div><button onClick={() => setSwitchingIdentity(true)}>切換身分</button>{viewMode === "related" ? <button className="mode-button" onClick={() => { setViewMode("all"); setQuery(""); }}>查看全部公告</button> : identity !== "全部" && <button className="mode-button active" onClick={() => { setViewMode("related"); setQuery(""); }}>返回與我相關</button>}</div></div>
     <div className="page-shell">
       {announcementsLoading ? <section className="announcement-state" aria-live="polite">公告載入中…</section> : announcementsError ? <section className="announcement-state error-state" role="alert">目前無法載入公告，請稍後再試。</section> : announcements.length === 0 ? <section className="announcement-state">目前沒有公告。</section> : <>

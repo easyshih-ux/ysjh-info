@@ -1,4 +1,5 @@
 import { USER_IDENTITIES, type Announcement, type Audience, type UserIdentity } from "./announcements.ts";
+import { parseCalendarDate, taipeiDateKey } from "./taipeiDate.ts";
 
 export const ROLE_STORAGE_KEY = "selectedRole";
 export const ACADEMIC_YEAR_STORAGE_KEY = "selectedAcademicYear";
@@ -37,26 +38,25 @@ export function announcementsForIdentity(announcements: Announcement[], identity
 }
 
 export const localDate = (value: string | Date) => {
-  const date = typeof value === "string" ? calendarDate(value) : value;
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  return parseCalendarDate(typeof value === "string" ? value : taipeiDateKey(value));
 };
 
-function calendarDate(value: string) {
-  const [year, month, day] = value.slice(0, 10).split("-").map(Number);
-  return new Date(year, month - 1, day);
-}
-
 export function weekBounds(now: Date) {
-  const day = now.getDay();
-  const start = localDate(now); start.setDate(start.getDate() - day);
-  const end = new Date(start); end.setDate(end.getDate() + 6); end.setHours(23, 59, 59, 999);
+  const start = localDate(now);
+  start.setUTCDate(start.getUTCDate() - start.getUTCDay());
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 6);
+  end.setUTCHours(23, 59, 59, 999);
   return { start, end };
 }
 
 export function nextWeekBounds(now: Date) {
   const current = weekBounds(now);
-  const start = new Date(current.start); start.setDate(start.getDate() + 7);
-  const end = new Date(start); end.setDate(end.getDate() + 6); end.setHours(23, 59, 59, 999);
+  const start = new Date(current.start);
+  start.setUTCDate(start.getUTCDate() + 7);
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 6);
+  end.setUTCHours(23, 59, 59, 999);
   return { start, end };
 }
 
@@ -103,7 +103,7 @@ export function filterAnnouncements(announcements: Announcement[], query: string
 export function daysUntil(date: string, now: Date) {
   const target = localDate(date);
   const today = localDate(now);
-  return Math.round((Date.UTC(target.getFullYear(), target.getMonth(), target.getDate()) - Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())) / 86400000);
+  return Math.round((target.getTime() - today.getTime()) / 86400000);
 }
 
 export function importantEventDateLabel(date: string, now: Date) {
@@ -111,7 +111,7 @@ export function importantEventDateLabel(date: string, now: Date) {
   if (days === 0) return "今天";
   if (days === 1) return "明天";
   const value = localDate(date);
-  return `${value.getMonth() + 1}/${value.getDate()}（${["日", "一", "二", "三", "四", "五", "六"][value.getDay()]}）`;
+  return `${value.getUTCMonth() + 1}/${value.getUTCDate()}（${["日", "一", "二", "三", "四", "五", "六"][value.getUTCDay()]}）`;
 }
 
 export function deadlineRelativeLabel(date: string, now: Date) {
@@ -123,7 +123,7 @@ export function deadlineRelativeLabel(date: string, now: Date) {
 
 export function deadlineDateLabel(date: string) {
   const value = localDate(date);
-  return `${String(value.getMonth() + 1).padStart(2, "0")}/${String(value.getDate()).padStart(2, "0")} 截止`;
+  return `${String(value.getUTCMonth() + 1).padStart(2, "0")}/${String(value.getUTCDate()).padStart(2, "0")} 截止`;
 }
 
 export function deadlineUrgency(date: string, now: Date): "red" | "orange" | "normal" {
