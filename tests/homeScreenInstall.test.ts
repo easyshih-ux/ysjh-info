@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { browserLocalStorage, getInstallGuidance, INSTALL_BANNER_DISMISSED_KEY, INSTALL_STEPS, isIosDevice, isSafariBrowser, isStandaloneDisplay, readInstallBannerDismissed, writeInstallBannerDismissed } from "../lib/pwaInstall.ts";
+import { browserLocalStorage, getInstallGuidance, INSTALL_BANNER_DISMISSED_KEY, INSTALL_STEPS, LINE_INSTALL_STEPS, isIosDevice, isSafariBrowser, isStandaloneDisplay, readInstallBannerDismissed, writeInstallBannerDismissed } from "../lib/pwaInstall.ts";
 import { copyOfficialPublicSiteUrl, OFFICIAL_PUBLIC_SITE_URL } from "../lib/siteUrl.ts";
 
 const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -128,7 +128,8 @@ test("LINE 不觸發原生安裝，Safari 與桌面 fallback 顯示對應說明"
   assert.doesNotMatch(lineBranch, /installPrompt\.prompt/);
   assert.match(component, /INSTALL_STEPS\[guidance\]/);
   assert.match(component, /catch \{\n\s*setGuidance\(environment\);/, "原生提示失敗時改顯示該裝置步驟");
-  assert.match(component, /LINE 內建瀏覽器無法安裝義學公務/);
+  assert.match(component, /LINE_INSTALL_STEPS\.map/);
+  assert.match(component, /"正在複製…" : "複製網址"/);
   assert.match(component, /OFFICIAL_PUBLIC_SITE_URL/);
   assert.doesNotMatch(component, /window\.open|location\.href|intent:/);
 });
@@ -139,7 +140,7 @@ test("LINE 安裝引導重用正式網址與安全 Clipboard fallback", async ()
   assert.equal(copied, OFFICIAL_PUBLIC_SITE_URL);
   assert.equal(await copyOfficialPublicSiteUrl({ writeText: async () => { throw new Error("blocked"); } }), false);
   const component = source("components/home-screen-install.tsx");
-  assert.match(component, /✓ 網址已複製！請開啟 Chrome 或 Safari貼上即可。/);
+  assert.match(component, /<p role="status">✓ 網址已複製<\/p>/);
   assert.match(component, /無法自動複製，請長按上方網址手動複製。/);
   assert.match(component, /<code>\{OFFICIAL_PUBLIC_SITE_URL\}<\/code>/);
   assert.equal(component.match(/https:\/\/easyshih-ux\.github\.io\/ysjh-info\//g)?.length ?? 0, 0);
@@ -148,4 +149,17 @@ test("LINE 安裝引導重用正式網址與安全 Clipboard fallback", async ()
 test("沒有新增 Service Worker 或離線快取", () => {
   const combined = `${source("components/home-screen-install.tsx")}\n${source("app/page.tsx")}`;
   assert.doesNotMatch(combined, /serviceWorker|service-worker|workbox|offline/i);
+});
+
+test("LINE 視窗只顯示三個編號步驟與複製網址，不重複說明；原生安裝可用時直接安裝", () => {
+  assert.deepEqual([...LINE_INSTALL_STEPS], ["點選下方「複製網址」", "開啟 Chrome／Safari，貼上網址", "依瀏覽器提示完成安裝"]);
+  const component = source("components/home-screen-install.tsx");
+  const description = component.slice(component.indexOf("<DialogDescription>"), component.indexOf("</DialogDescription>"));
+  assert.doesNotMatch(description, /line|LINE/, "LINE 不在步驟上方另加說明");
+  assert.doesNotMatch(component, /右上角的選單|openExternalBrowser|LINE_INSTALL_GUIDE/);
+  const lineBlock = component.slice(component.indexOf('guidance === "line" && <div className="install-line-actions">'), component.indexOf("</DialogContent>"));
+  assert.match(lineBlock, /LINE_INSTALL_STEPS\.map/);
+  assert.match(lineBlock, /"複製網址"/);
+  const request = component.slice(component.indexOf("const requestInstall"), component.indexOf("const closeGuidance"));
+  assert.match(request, /if \(installPrompt\) \{\n\s*try \{\n\s*await installPrompt\.prompt\(\);\n\s*await installPrompt\.userChoice;\n\s*setInstallPrompt\(null\);\n\s*\} catch \{\n\s*setGuidance\(environment\);\n\s*\}\n\s*return;/, "原生安裝成功不另顯示說明");
 });

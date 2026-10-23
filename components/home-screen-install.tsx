@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Download } from "lucide-react";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { browserLocalStorage, getInstallGuidance, INSTALL_STEPS, INSTALLED_DISPLAY_MODES, isStandaloneDisplay, readInstallBannerDismissed, writeInstallBannerDismissed, type InstallGuidance } from "@/lib/pwaInstall";
+import { browserLocalStorage, getInstallGuidance, INSTALL_STEPS, LINE_INSTALL_STEPS, INSTALLED_DISPLAY_MODES, isStandaloneDisplay, readInstallBannerDismissed, writeInstallBannerDismissed, type InstallGuidance } from "@/lib/pwaInstall";
 import { copyOfficialPublicSiteUrl, OFFICIAL_PUBLIC_SITE_URL } from "@/lib/siteUrl";
 
 interface BeforeInstallPromptEvent extends Event {
@@ -102,18 +102,17 @@ export function HomeScreenInstall({ variant = "pill" }: { variant?: "pill" | "ba
         <DialogHeader>
           <DialogTitle>安裝義學公務</DialogTitle>
           <DialogDescription>
-            {guidance === "line"
-              ? <>LINE 內建瀏覽器無法安裝義學公務。<br />請點 LINE 畫面右上角的選單（⋮ 或分享圖示），選擇用瀏覽器開啟；也可以複製下方網址，貼到 Chrome 或 Safari 開啟後再安裝。</>
-              : steps ? `${steps.title}：依下列步驟操作即可。` : null}
+            {steps ? `${steps.title}：依下列步驟操作即可。` : null}
           </DialogDescription>
         </DialogHeader>
         {steps && <div className="install-steps"><ol>{steps.steps.map(step => <li key={step}>{step}</li>)}</ol>{steps.note && <p>{steps.note}</p>}<DialogClose asChild><button type="button" className="install-dialog-close" onClick={closeGuidance}>關閉</button></DialogClose></div>}
         {guidance === "line" && <div className="install-line-actions">
+          <div className="install-steps"><ol>{LINE_INSTALL_STEPS.map(step => <li key={step}>{step}</li>)}</ol></div>
           <code>{OFFICIAL_PUBLIC_SITE_URL}</code>
-          {copyStatus === "success" && <p role="status">✓ 網址已複製！請開啟 Chrome 或 Safari貼上即可。</p>}
+          {copyStatus === "success" && <p role="status">✓ 網址已複製</p>}
           {copyStatus === "failure" && <p role="alert">無法自動複製，請長按上方網址手動複製。</p>}
           <div>
-            <button type="button" onClick={copySiteUrl} disabled={copyStatus === "copying"}>{copyStatus === "copying" ? "正在複製…" : "複製網站網址"}</button>
+            <button type="button" onClick={copySiteUrl} disabled={copyStatus === "copying"}>{copyStatus === "copying" ? "正在複製…" : "複製網址"}</button>
             <DialogClose asChild><button type="button" className="install-dialog-close" onClick={closeGuidance}>關閉</button></DialogClose>
           </div>
         </div>}

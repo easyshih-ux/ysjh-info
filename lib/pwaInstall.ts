@@ -44,6 +44,9 @@ export const INSTALL_STEPS: Record<Exclude<InstallGuidance, "line">, { title: st
   browser: { title: "其他瀏覽器", steps: ["開啟瀏覽器選單。", "尋找「安裝」或「加入主畫面」。", "若找不到，請改用 Chrome、Edge 或 Safari 開啟本網站後再安裝。"] },
 };
 
+/** LINE 內建瀏覽器無法安裝：只引導複製網址、改用 Chrome 或 Safari 開啟（不依賴自動外開）。 */
+export const LINE_INSTALL_STEPS = ["點選下方「複製網址」", "開啟 Chrome／Safari，貼上網址", "依瀏覽器提示完成安裝"] as const;
+
 /** 只保存在這個瀏覽器設定檔；github.io 網域由多個網站共用，故加上本站前綴。 */
 export const INSTALL_BANNER_DISMISSED_KEY = "ysjh-info:install-banner-dismissed";
 
