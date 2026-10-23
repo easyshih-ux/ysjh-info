@@ -12,3 +12,4 @@
 .imageAudience{color:#425b73;font-weight:700}.imageAudienceInvalid{color:#8f1d14;font-weight:800}
 .readOnlyImages figure,.readOnlyImages figcaption{min-width:0}.imageName{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.readOnlyImages figcaption span{overflow-wrap:anywhere}
 .readOnlyImages{min-width:0}.readOnlyImages figcaption{grid-template-columns:minmax(0,1fr)}
+.lineNoticeOption{display:grid;gap:6px;border:1px solid #d6e0e7;border-radius:8px;background:#f8fafb;padding:10px 12px}.lineNoticeOption>label,.lineNoticeCheck{display:flex;align-items:center;gap:8px;font-weight:700}.lineNoticeOption small{color:#68788a}

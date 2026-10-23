@@ -17,6 +17,10 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
+  writeBatch,
+  query,
+  where,
+  collectionGroup,
 } from "firebase/firestore";
 
 const TEST_PROJECT_ID = "demo-ysjh-info-rules-test";
@@ -614,6 +618,198 @@ test("47j 最重發布加強版：5 張皆有身分標記的圖片＋2 份 PDF�
     imageAudiences: { "image-1": ["七年級導師"], "image-2": ["八年級導師"], "image-3": ["九年級導師"], "image-4": ["專任教師", "行政"], "image-5": ["七年級導師", "八年級導師", "九年級導師"] },
     attachments: [...images, pdfAttachment("pdf-1"), pdfAttachment("pdf-2")],
   }));
+});
+
+// ===== Wave 4：LINE 通知待辦 =====
+const noticeBase = (type, publisherUid = "userA", createdBy = publisherUid) => ({ type, publisherUid, status: "pending", createdBy, createdAt: serverTimestamp() });
+const heavyAnnouncement = () => ({
+  ...announcementData(),
+  audiences: ["全校教師"],
+  contact: { department: "設備組", extension: "104" },
+  lineNotificationLevel: "schoolwide",
+  audienceNote: "尚未完成雙因子驗證設定的同仁",
+  imageAudiences: { "image-1": ["七年級導師"], "image-2": ["八年級導師"], "image-3": ["九年級導師"], "image-4": ["專任教師", "行政"], "image-5": ["七年級導師", "八年級導師", "九年級導師"] },
+  attachments: [...Array.from({ length: 5 }, (_, index) => ({ id: `image-${index + 1}`, type: "image", url: `https://example.test/image-${index + 1}.webp`, name: `圖片${index + 1}.webp`, caption: "說明" })), pdfAttachment("pdf-1"), pdfAttachment("pdf-2")],
+});
+
+test("L1 首次發布：最大附件公告與 publish 待辦同批寫入必須成功（運算上限關卡）", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  const database = userDb("userA");
+  const batch = writeBatch(database);
+  batch.set(doc(database, "announcements/newA"), heavyAnnouncement());
+  batch.set(doc(database, "announcements/newA/lineNotices/publish"), noticeBase("publish"));
+  await assertSucceeds(batch.commit());
+});
+
+test("L1b systemAdmin 最大附件公告與 publish 待辦同批寫入必須成功", async () => {
+  await seed("authorizedPublishers/adminA", profile("systemAdmin", true));
+  const database = userDb("adminA");
+  const announcement = { ...heavyAnnouncement(), publisherUid: "adminA", attachments: [...heavyAnnouncement().attachments.slice(0, 5), pdfAttachment("pdf-1", "adminA"), pdfAttachment("pdf-2", "adminA")] };
+  const batch = writeBatch(database);
+  batch.set(doc(database, "announcements/newA"), announcement);
+  batch.set(doc(database, "announcements/newA/lineNotices/publish"), noticeBase("publish", "adminA"));
+  await assertSucceeds(batch.commit());
+});
+
+test("L2 publish 待辦只能與新公告同批建立，舊公告不可補建且欄位必須正確", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await seed("announcements/old", announcementData());
+  const database = userDb("userA");
+  await assertFails(setDoc(doc(database, "announcements/old/lineNotices/publish"), noticeBase("publish")));
+  for (const [label, notice, id] of [
+    ["狀態 sent", { ...noticeBase("publish"), status: "sent" }, "publish"],
+    ["多餘欄位", { ...noticeBase("publish"), text: "x" }, "publish"],
+    ["錯誤發布者", noticeBase("publish", "userB"), "publish"],
+    ["錯誤 ID", noticeBase("publish"), "publish-2"],
+  ]) {
+    const batch = writeBatch(database);
+    batch.set(doc(database, `announcements/n-${id}-${label.length}`), announcementData());
+    batch.set(doc(database, `announcements/n-${id}-${label.length}/lineNotices/${id}`), notice);
+    await assertFails(batch.commit(), label);
+  }
+});
+
+test("L3 重要異動：只有同批增加修正次數時可建立 update 待辦，重複建立被拒", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await seed("announcements/upd", { ...announcementData(), contentUpdateCount: 1 });
+  const database = userDb("userA");
+  const notice = (n, text = "期限延後至 11/30") => ({ ...noticeBase("update"), sourceId: n, text });
+  const edit = n => ({ title: `修正 ${n}`, contentUpdatedAt: `2026-10-2${n}T00:00:00.000Z`, updatedAt: `2026-10-2${n}T00:00:00.000Z`, contentUpdateCount: n });
+  await assertFails(setDoc(doc(database, "announcements/upd/lineNotices/update-1"), notice(1)), "未修改時不可補建");
+  let batch = writeBatch(database);
+  batch.update(doc(database, "announcements/upd"), edit(2));
+  batch.set(doc(database, "announcements/upd/lineNotices/update-3"), notice(3));
+  await assertFails(batch.commit(), "ID 與修正次數不符");
+  batch = writeBatch(database);
+  batch.update(doc(database, "announcements/upd"), edit(2));
+  batch.set(doc(database, "announcements/upd/lineNotices/update-2"), notice(2, ""));
+  await assertFails(batch.commit(), "空白文字");
+  batch = writeBatch(database);
+  batch.update(doc(database, "announcements/upd"), edit(2));
+  batch.set(doc(database, "announcements/upd/lineNotices/update-2"), notice(2));
+  await assertSucceeds(batch.commit());
+  await assertFails(setDoc(doc(database, "announcements/upd/lineNotices/update-2"), notice(2)), "重複建立");
+});
+
+test("L4 補充與提醒：同批建立對應待辦；類型不符、其他單位相關補充不可建立", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await seed("authorizedPublishers/userB", { ...profile("publisher", true), defaultDepartment: "教務處" });
+  await seed("announcements/own", { ...announcementData("Own", "userA"), latestFollowUp: { type: "supplement", createdAt: Timestamp.fromMillis(1000) } });
+  const database = userDb("userA");
+  for (const type of ["supplement", "reminder"]) {
+    const batch = writeBatch(database);
+    batch.set(doc(database, `announcements/own/followUps/fu-${type}`), followUpData({ type }));
+    batch.set(doc(database, `announcements/own/lineNotices/followup-fu-${type}`), { ...noticeBase(type), sourceId: `fu-${type}`, text: "請於 11/30 前完成" });
+    await assertSucceeds(batch.commit(), type);
+  }
+  let batch = writeBatch(database);
+  batch.set(doc(database, "announcements/own/followUps/fu-mismatch"), followUpData({ type: "supplement" }));
+  batch.set(doc(database, "announcements/own/lineNotices/followup-fu-mismatch"), { ...noticeBase("reminder"), sourceId: "fu-mismatch", text: "x" });
+  await assertFails(batch.commit(), "類型不符");
+  await assertFails(setDoc(doc(database, "announcements/own/lineNotices/followup-fu-supplement"), { ...noticeBase("supplement"), sourceId: "fu-supplement", text: "x" }), "既有補充不可補建或重複建立");
+  const other = userDb("userB");
+  batch = writeBatch(other);
+  batch.set(doc(other, "announcements/own/followUps/fu-related"), followUpData({ type: "related", authorUid: "userB", department: "教務處" }));
+  batch.set(doc(other, "announcements/own/lineNotices/followup-fu-related"), { ...noticeBase("supplement", "userA", "userB"), sourceId: "fu-related", text: "x" });
+  await assertFails(batch.commit(), "其他單位相關補充");
+});
+
+test("L5 讀取：原發布者與 systemAdmin 可讀，其他發布者與未登入者不可讀；跨公告查詢須限縮", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await seed("authorizedPublishers/userB", profile("publisher", true));
+  await seed("authorizedPublishers/adminA", profile("systemAdmin", true));
+  await seed("announcements/r", announcementData());
+  await seed("announcements/r/lineNotices/publish", { ...noticeBase("publish"), createdAt: Timestamp.now() });
+  await assertSucceeds(getDoc(doc(userDb("userA"), "announcements/r/lineNotices/publish")));
+  await assertSucceeds(getDoc(doc(userDb("adminA"), "announcements/r/lineNotices/publish")));
+  await assertFails(getDoc(doc(userDb("userB"), "announcements/r/lineNotices/publish")));
+  await assertFails(getDoc(doc(anonymousDb(), "announcements/r/lineNotices/publish")));
+  await assertSucceeds(getDocs(query(collectionGroup(userDb("userA"), "lineNotices"), where("publisherUid", "==", "userA"), where("status", "==", "pending"))));
+  await assertFails(getDocs(query(collectionGroup(userDb("userB"), "lineNotices"), where("status", "==", "pending"))));
+  await assertSucceeds(getDocs(query(collectionGroup(userDb("adminA"), "lineNotices"), where("status", "==", "pending"))));
+});
+
+test("L6 確認已發送：只能 pending→sent 一次，不可改回、不可刪除；其他發布者不可確認", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await seed("authorizedPublishers/userB", profile("publisher", true));
+  await seed("authorizedPublishers/adminA", profile("systemAdmin", true));
+  await seed("announcements/c", announcementData());
+  await seed("announcements/c/lineNotices/publish", { ...noticeBase("publish"), createdAt: Timestamp.now() });
+  await seed("announcements/c/lineNotices/update-1", { ...noticeBase("update"), sourceId: 1, text: "x", createdAt: Timestamp.now() });
+  const sent = uid => ({ status: "sent", sentBy: uid, sentAt: serverTimestamp() });
+  const owner = doc(userDb("userA"), "announcements/c/lineNotices/publish");
+  await assertFails(updateDoc(doc(userDb("userB"), "announcements/c/lineNotices/publish"), sent("userB")), "其他發布者");
+  await assertFails(updateDoc(owner, sent("userB")), "冒名確認");
+  await assertFails(updateDoc(owner, { ...sent("userA"), text: "竄改" }), "同時修改其他欄位");
+  await assertSucceeds(updateDoc(owner, sent("userA")));
+  await assertFails(updateDoc(owner, sent("userA")), "重複確認");
+  await assertFails(updateDoc(owner, { status: "pending" }), "改回待發送");
+  await assertFails(deleteDoc(owner), "刪除");
+  await assertSucceeds(updateDoc(doc(userDb("adminA"), "announcements/c/lineNotices/update-1"), sent("adminA")), "systemAdmin 代為確認");
+});
+
+test("L7 催繳：只有催繳中且對應本次開始時間的 chase 待辦可建立，重複建立被拒", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await seed("authorizedPublishers/userB", profile("publisher", true));
+  const startedAt = Timestamp.fromMillis(1761184800000);
+  await seed("announcements/ch", { ...announcementData(), collectionStatus: "chasing", collectionMessage: "請儘速繳交", collectionStartedAt: startedAt });
+  await seed("announcements/idle", announcementData());
+  const database = userDb("userA");
+  const chase = sourceId => ({ ...noticeBase("chase"), sourceId });
+  await assertFails(setDoc(doc(database, "announcements/ch/lineNotices/chase-1"), chase(startedAt)), "ID 不符");
+  await assertFails(setDoc(doc(database, `announcements/ch/lineNotices/chase-${Timestamp.fromMillis(1).toMillis()}`), chase(Timestamp.fromMillis(1))), "開始時間不符");
+  await assertFails(setDoc(doc(database, "announcements/idle/lineNotices/chase-1761184800000"), chase(startedAt)), "未催繳");
+  await assertFails(setDoc(doc(userDb("userB"), "announcements/ch/lineNotices/chase-1761184800000"), { ...chase(startedAt), createdBy: "userB" }), "其他發布者");
+  await assertSucceeds(setDoc(doc(database, "announcements/ch/lineNotices/chase-1761184800000"), chase(startedAt)));
+  await assertFails(setDoc(doc(database, "announcements/ch/lineNotices/chase-1761184800000"), chase(startedAt)), "重複建立");
+});
+
+test("L8 永久刪除中：公告不可修改、不可新增補充或催繳待辦，前端也不能自行加上或移除刪除標記", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await seed("authorizedPublishers/adminA", { ...profile("systemAdmin", true), defaultDepartment: "教務處" });
+  const startedAt = Timestamp.fromMillis(1761184800000);
+  const marker = { deletionStartedAt: Timestamp.fromMillis(1761184900000), deletionStartedBy: "adminA" };
+  await seed("announcements/del", { ...announcementData(), publicationStatus: "withdrawn", collectionStatus: "chasing", collectionMessage: "請儘速繳交", collectionStartedAt: startedAt, ...marker });
+  await seed("announcements/live", announcementData());
+  const database = userDb("userA");
+  await assertFails(updateDoc(doc(database, "announcements/del"), { title: "Updated" }), "刪除中修改");
+  await assertFails(updateDoc(doc(userDb("adminA"), "announcements/del"), { title: "Updated" }), "刪除中管理員修改");
+  await assertFails(setDoc(doc(database, "announcements/del/followUps/s"), followUpData()), "刪除中補充");
+  await assertFails(setDoc(doc(userDb("adminA"), "announcements/del/followUps/a"), followUpData({ authorUid: "adminA", department: "教務處" })), "刪除中管理員補充");
+  await assertFails(setDoc(doc(database, "announcements/del/lineNotices/chase-1761184800000"), { ...noticeBase("chase"), sourceId: startedAt }), "刪除中催繳待辦");
+  await assertFails(updateDoc(doc(database, "announcements/live"), marker), "前端加上刪除標記");
+  await assertSucceeds(updateDoc(doc(database, "announcements/live"), { title: "Updated" }));
+  await assertSucceeds(setDoc(doc(database, "announcements/live/followUps/s"), followUpData()));
+});
+
+test("L9 公告不存在時：不可新增任何 followUps，也不可建立修正、補充、提醒、催繳 LINE 待辦", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await seed("authorizedPublishers/userB", profile("publisher", true));
+  await seed("authorizedPublishers/adminA", { ...profile("systemAdmin", true), defaultDepartment: "教務處" });
+  const startedAt = Timestamp.fromMillis(1761184800000);
+  const database = userDb("userA");
+  const text = "LINE 通知內容";
+  await assertFails(setDoc(doc(database, "announcements/gone/followUps/s"), followUpData()), "補充");
+  await assertFails(setDoc(doc(database, "announcements/gone/followUps/r"), followUpData({ type: "reminder" })), "提醒");
+  await assertFails(setDoc(doc(userDb("userB"), "announcements/gone/followUps/x"), followUpData({ type: "related", authorUid: "userB" })), "相關補充");
+  await assertFails(setDoc(doc(userDb("adminA"), "announcements/gone/followUps/a"), followUpData({ authorUid: "adminA", department: "教務處" })), "管理員補充");
+  await assertFails(setDoc(doc(database, "announcements/gone/lineNotices/update-1"), { ...noticeBase("update"), sourceId: 1, text }), "修正待辦");
+  await assertFails(setDoc(doc(database, "announcements/gone/lineNotices/followup-s"), { ...noticeBase("supplement"), sourceId: "s", text }), "補充待辦");
+  await assertFails(setDoc(doc(database, "announcements/gone/lineNotices/followup-r"), { ...noticeBase("reminder"), sourceId: "r", text }), "提醒待辦");
+  await assertFails(setDoc(doc(database, "announcements/gone/lineNotices/chase-1761184800000"), { ...noticeBase("chase"), sourceId: startedAt }), "催繳待辦");
+  await assertFails(setDoc(doc(userDb("adminA"), "announcements/gone/lineNotices/chase-1761184800000"), { ...noticeBase("chase", "userA", "adminA"), sourceId: startedAt }), "管理員催繳待辦");
+  // 補充與其待辦同批送出也不行（模擬刪除後才到達的批次寫入）。
+  const batch = writeBatch(database);
+  batch.set(doc(database, "announcements/gone/followUps/s2"), followUpData());
+  batch.set(doc(database, "announcements/gone/lineNotices/followup-s2"), { ...noticeBase("supplement"), sourceId: "s2", text });
+  await assertFails(batch.commit(), "補充＋待辦批次");
+  // 對照組：同樣的資料寫到存在的公告可成功，證明上面的拒絕來自公告不存在。
+  await seed("announcements/live", announcementData());
+  const control = writeBatch(database);
+  control.set(doc(database, "announcements/live/followUps/s2"), followUpData());
+  control.set(doc(database, "announcements/live/lineNotices/followup-s2"), { ...noticeBase("supplement"), sourceId: "s2", text });
+  await assertSucceeds(control.commit(), "對照：補充＋待辦");
+  await assertSucceeds(setDoc(doc(userDb("userB"), "announcements/live/followUps/x"), followUpData({ type: "related", authorUid: "userB" })), "對照：相關補充");
 });
 
 test("48 原 publisher 可新增 supplement 與 reminder", async () => {

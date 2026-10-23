@@ -6,7 +6,7 @@ import { ArrowLeft, Edit3, Eye, MessageSquarePlus, Search, Trash2 } from "lucide
 import { AUDIENCES, toggleAudienceSelection, type Announcement, type Audience, type FollowUp } from "@/lib/announcements";
 import { CURRENT_ACADEMIC_YEAR, FRONTEND_ACADEMIC_YEARS } from "@/lib/academicYear";
 import { DEPARTMENTS, MAX_CUSTOM_DEPARTMENT_LENGTH, OTHER_DEPARTMENT_OPTION, isDepartment, type Department } from "@/lib/departments";
-import { announcementPublisherLabel, applyManagedAnnouncementSave, filterManagedAnnouncements, MANAGE_DEPARTMENT_KEY, resolveInitialManageDepartment, validateAnnouncementCore } from "@/lib/announcementManagement";
+import { announcementPublisherLabel, applyManagedAnnouncementSave, hasAnnouncementContentChanges, filterManagedAnnouncements, MANAGE_DEPARTMENT_KEY, resolveInitialManageDepartment, validateAnnouncementCore } from "@/lib/announcementManagement";
 import { AnnouncementManagementError, appendManagedFollowUp, updateManagedAnnouncement } from "@/lib/announcementManagementFirestore";
 import { readManagedAnnouncements } from "@/lib/announcementFirestore";
 import { manageAnnouncementLifecycle, type AnnouncementLifecycleAction } from "@/lib/announcementLifecycle";
@@ -20,6 +20,10 @@ import { Input } from "@/components/ui/input";
 import { DepartmentOptionGroups } from "@/components/department-option-groups";
 import { LineNotificationSettings } from "@/components/line-notification-settings";
 import { ImportantDateReminder } from "@/components/important-date-reminder";
+import { createChaseLineNotice } from "@/lib/lineNoticesFirestore";
+import { createFollowUpNoticeText, createUpdateNoticeText, LINE_NOTICE_DEFAULT_CHECKED, MAX_UPDATE_HIGHLIGHT_LENGTH } from "@/lib/lineNotices";
+import { getPublicSiteUrl } from "@/lib/siteUrl";
+import { taipeiDateKey } from "@/lib/taipeiDate";
 import { imageAudiencesForSave, imageAudienceSelectionsFrom, validateImageAudienceSelections, type ImageAudienceSelections } from "@/lib/imageAudiences";
 import { defaultContactForDepartment, getFixedDepartmentExtension, MAX_CONTACT_EXTENSION_LENGTH, selectContactDepartment } from "@/lib/departmentContacts";
 import { Textarea } from "@/components/ui/textarea";
@@ -42,6 +46,20 @@ export default function ManagePage() {
   const [viewing, setViewing] = useState<Announcement | null>(null);
   const [editing, setEditing] = useState<Announcement | null>(null);
   const [imageSelections, setImageSelections] = useState<ImageAudienceSelections>({});
+  const [updateLineNotice, setUpdateLineNotice] = useState(false);
+  const [updateHighlight, setUpdateHighlight] = useState("");
+  const [followLineNotice, setFollowLineNotice] = useState(false);
+  const [chaseNoticeRetryId, setChaseNoticeRetryId] = useState<string | null>(null);
+  const siteUrl = () => getPublicSiteUrl(typeof window === "undefined" ? undefined : window.location.origin);
+  const openFollow = (item: Announcement, type: FollowUp["type"]) => { setError(""); setMessage(""); setFollowType(type); setFollowLineNotice(type === "reminder" ? LINE_NOTICE_DEFAULT_CHECKED.reminder : type === "supplement" ? LINE_NOTICE_DEFAULT_CHECKED.supplement : false); setFollowTarget(item); };
+  const retryChaseNotice = async (announcementId: string) => {
+    try {
+      await createChaseLineNotice(announcementId, publisher.uid);
+      setChaseNoticeRetryId(null); setError(""); setNotice("催繳已啟動，已加入 LINE 待通知");
+    } catch {
+      setChaseNoticeRetryId(announcementId); setError("催繳已啟動，但 LINE 待通知建立失敗，請稍後再按「重試建立 LINE 待通知」。");
+    }
+  };
   const [followTarget, setFollowTarget] = useState<Announcement | null>(null);
   const [followType, setFollowType] = useState<FollowUp["type"]>("supplement");
   const [message, setMessage] = useState("");
@@ -68,22 +86,36 @@ export default function ManagePage() {
   const manageable = useMemo(() => publisher.role === "systemAdmin" && managementScope === "mine" ? items.filter(item => item.publisherUid === publisher.uid) : items, [items, managementScope, publisher.role, publisher.uid]);
   const visible = useMemo(() => filterManagedAnnouncements(manageable, department, query, audience, academicYear), [manageable, department, query, audience, academicYear]);
 
-  const runLifecycleAction = async (item: Announcement, action: AnnouncementLifecycleAction) => {
+  const [chaseTarget, setChaseTarget] = useState<Announcement | null>(null);
+  const [chaseMessage, setChaseMessage] = useState("");
+  const [chaseLineNotice, setChaseLineNotice] = useState<boolean>(LINE_NOTICE_DEFAULT_CHECKED.chase);
+  const openChase = (item: Announcement) => { setError(""); setChaseMessage(item.collectionMessage || ""); setChaseLineNotice(LINE_NOTICE_DEFAULT_CHECKED.chase); setChaseTarget(item); };
+  const confirmChase = async () => {
+    if (!chaseTarget) return;
+    const target = chaseTarget;
+    setChaseTarget(null);
+    await runLifecycleAction(target, "startChase", { message: chaseMessage, notifyLine: chaseLineNotice });
+  };
+
+  const runLifecycleAction = async (item: Announcement, action: AnnouncementLifecycleAction, chase?: { message: string; notifyLine: boolean }) => {
     if (savingRef.current) return;
     if (action === "delete") {
       if (!window.confirm("永久刪除後無法復原。是否繼續？")) return;
       if (!window.confirm(`再次確認永久刪除「${item.title}」？`)) return;
     }
-    const message = action === "startChase" ? (window.prompt("催繳提醒文字（選填）", item.collectionMessage || "") ?? null) : "";
-    if (message === null) return;
+    // 催繳文字與「需要 LINE 通知」由催繳對話框提供，不再使用瀏覽器輸入框與確認視窗。
+    const message = action === "startChase" ? chase?.message ?? "" : "";
+    const notifyChaseLine = action === "startChase" && chase?.notifyLine === true;
     savingRef.current = true; setSaving(true); setError(""); setNotice("");
     try {
       await manageAnnouncementLifecycle(item.id, action, message);
       setItems(current => action === "delete" ? current.filter(value => value.id !== item.id) : current.map(value => value.id !== item.id ? value : action === "withdraw" ? { ...value, publicationStatus: "withdrawn" } : action === "restore" ? { ...value, publicationStatus: "published", withdrawnAt: undefined, withdrawnBy: undefined } : action === "startChase" ? { ...value, collectionStatus: "chasing", collectionMessage: message } : { ...value, collectionStatus: undefined, collectionMessage: undefined, collectionStartedAt: undefined, collectionStartedBy: undefined }));
-      setNotice(action === "withdraw" ? "公告已下架" : action === "restore" ? "公告已復原" : action === "startChase" ? "催繳已啟動" : action === "stopChase" ? "催繳已結束" : "公告已永久刪除");
+      if (notifyChaseLine) await retryChaseNotice(item.id);
+      if (!notifyChaseLine || action !== "startChase") setNotice(action === "withdraw" ? "公告已下架" : action === "restore" ? "公告已復原" : action === "startChase" ? "催繳已啟動" : action === "stopChase" ? "催繳已結束" : "公告已永久刪除");
     } catch (caught) {
       console.error("announcement lifecycle action failed", caught);
-      setError("公告操作失敗，請確認權限與網路連線後再試。資料尚未變更。");
+      // 永久刪除可能在清理途中失敗：公告會保留為下架狀態，可安全再按一次重試。
+      setError(action === "delete" ? "永久刪除未完成：公告可能已下架並保留，部分附件或補充可能已清除。請再按一次「永久刪除」完成清理。" : "公告操作失敗，請確認權限與網路連線後再試。資料尚未變更。");
     } finally { savingRef.current = false; setSaving(false); }
   };
 
@@ -96,16 +128,20 @@ export default function ManagePage() {
     const imageAudienceError = validateImageAudienceSelections(imageIds, imageSelections, editing.audiences);
     if (imageAudienceError) validation.attachments = imageAudienceError;
     if (Object.keys(validation).length) { setError(Object.values(validation)[0] ?? "請確認公告資料是否完整。"); return; }
+    const original = items.find(item => item.id === editing.id);
+    if (updateLineNotice) {
+      if (!original || !hasAnnouncementContentChanges(original, editing)) { setError("這次沒有修改公告內容，不需要 LINE 異動通知；請取消勾選「這次修改需要 LINE 通知」。"); return; }
+      if (!updateHighlight.trim()) { setError("請填寫異動重點，以產生 LINE 通知。"); return; }
+    }
     const imageAudiences = imageAudiencesForSave(imageIds, imageSelections);
     const { imageAudiences: _previousImageAudiences, ...editedWithoutImageAudiences } = editing;
     const edited: Announcement = { ...editedWithoutImageAudiences, ...(imageAudiences ? { imageAudiences } : {}) };
     savingRef.current = true; setSaving(true); setError("");
     try {
-      const original = items.find(item => item.id === editing.id);
       if (!original) throw new AnnouncementManagementError("找不到要修改的公告，請重新整理後再試一次。");
-      const saved = await updateManagedAnnouncement(original, edited);
+      const saved = await updateManagedAnnouncement(original, edited, updateLineNotice ? { createdBy: publisher.uid, text: createUpdateNoticeText(edited, updateHighlight, siteUrl()) } : undefined);
       if (saved) setItems(current => current.map(item => item.id === edited.id ? applyManagedAnnouncementSave(item, edited, saved.contentUpdatedAt) : item));
-      setEditing(null); setNotice(!saved ? "公告內容沒有變更" : saved.contentUpdatedAt ? "公告已更新" : "LINE 通知或圖片適用身分設定已更新");
+      setEditing(null); setNotice(!saved ? "公告內容沒有變更" : saved.lineNoticeCreated ? "公告已更新，已加入 LINE 待通知" : saved.contentUpdatedAt ? "公告已更新" : "LINE 通知或圖片適用身分設定已更新");
     } catch (caught) {
       setError(caught instanceof AnnouncementManagementError ? caught.message : "公告更新失敗，請稍後再試。");
     } finally { savingRef.current = false; setSaving(false); }
@@ -115,8 +151,9 @@ export default function ManagePage() {
     if (!followTarget || !message.trim() || savingRef.current) return;
     savingRef.current = true; setSaving(true); setError("");
     try {
-      await appendManagedFollowUp(followTarget.id, followType, message, publisher);
-      setFollowTarget(null); setMessage(""); setNotice(followType === "supplement" ? "補充已新增" : followType === "reminder" ? "提醒已新增" : "相關補充已新增");
+      const withLine = followLineNotice && (followType === "supplement" || followType === "reminder") && !!followTarget.publisherUid;
+      await appendManagedFollowUp(followTarget.id, followType, message, publisher, withLine ? { publisherUid: followTarget.publisherUid!, text: createFollowUpNoticeText(followTarget, followType as "supplement" | "reminder", message, siteUrl(), taipeiDateKey(new Date())) } : undefined);
+      setFollowTarget(null); setMessage(""); setNotice(`${followType === "supplement" ? "補充已新增" : followType === "reminder" ? "提醒已新增" : "相關補充已新增"}${withLine ? "，已加入 LINE 待通知" : ""}`);
     } catch (caught) {
       setError(caught instanceof AnnouncementManagementError ? caught.message : "補充／提醒新增失敗，請稍後再試。");
     } finally { savingRef.current = false; setSaving(false); }
@@ -132,12 +169,12 @@ export default function ManagePage() {
         <label>學年度<select value={academicYear} onChange={event => setAcademicYear(Number(event.target.value))}>{FRONTEND_ACADEMIC_YEARS.map(value => <option key={value} value={value}>{value} 學年度</option>)}</select></label>
         <label className={styles.search}><Search /><Input value={query} onChange={event => setQuery(event.target.value)} placeholder="搜尋公告標題、內容或發布單位" /></label>
       </section>
-      {notice && <p className={styles.notice} role="status">{notice}</p>}{error && !editing && !followTarget && <p className={styles.errorNotice} role="alert">{error}</p>}
+      {notice && <p className={styles.notice} role="status">{notice}</p>}{error && !editing && !followTarget && <p className={styles.errorNotice} role="alert">{error}{chaseNoticeRetryId && <> <Button variant="outline" size="sm" onClick={() => void retryChaseNotice(chaseNoticeRetryId)}>重試建立 LINE 待通知</Button></>}</p>}
       {loading ? <p className={styles.empty} aria-live="polite">公告載入中…</p> : loadError ? <p className={`${styles.empty} ${styles.errorNotice}`} role="alert">目前無法載入公告，請稍後再試。</p> : items.length === 0 ? <p className={styles.empty}>目前沒有已發布公告。</p> : <section className={styles.list} aria-label="公告列表">{visible.length === 0 ? <p className={styles.empty}>目前沒有符合的公告。</p> : visible.map(item => <article key={item.id}>
         <div className={styles.meta}><span>{item.academicYear} 學年度</span><span>{item.department}</span><span>{item.publicationStatus === "withdrawn" ? "已下架" : "正常發布"}</span><span>{announcementTimeStates(item, new Date()).deadline}</span>{announcementTimeStates(item, new Date()).activity !== "正常" && <span>{announcementTimeStates(item, new Date()).activity}</span>}{item.collectionStatus === "chasing" && <span>催繳中</span>}<span>發布者：{announcementPublisherLabel(item)}</span><span>發布 {formatDateTime(item.publishedAt)}</span>{item.contentUpdatedAt && <span>更新 {formatDateTime(item.contentUpdatedAt)}</span>}</div>
         <h2>{item.title}</h2><p>{item.audiences.join("、") || "未設定適用對象"}</p>
         <div className={styles.flags}><span>{item.importantEvents.length ? `${item.importantEvents.length} 筆重要事項` : "無重要事項"}</span><span>{item.deadlines.length ? `${item.deadlines.length} 筆截止期限` : "無截止期限"}</span><span>{item.attachments.filter(attachment => attachment.type === "image").length ? `${item.attachments.filter(attachment => attachment.type === "image").length} 張圖片` : "無圖片"}</span><span>{item.attachments.filter(attachment => attachment.type === "pdf").length ? `${item.attachments.filter(attachment => attachment.type === "pdf").length} 份 PDF` : "無 PDF"}</span><span>{item.followUps.length ? `${item.followUps.length} 筆歷史補充／提醒` : "查看補充／提醒"}</span></div>
-        <div className={styles.cardActions}><Button variant="outline" onClick={() => setViewing(item)}><Eye />查看</Button>{(item.publisherUid === publisher.uid || publisher.role === "systemAdmin") ? <><Button variant="outline" onClick={() => { setError(""); setEditing(clone(item)); setImageSelections(imageAudienceSelectionsFrom(item)); }}><Edit3 />修正公告</Button><Button variant="outline" onClick={() => { setError(""); setMessage(""); setFollowType("supplement"); setFollowTarget(item); }}><MessageSquarePlus />新增補充／提醒</Button>{item.publicationStatus === "withdrawn" ? <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "restore")}>復原公告</Button> : <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "withdraw")}>下架公告</Button>}{item.deadlines.length > 0 && (item.collectionStatus === "chasing" ? <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "stopChase")}>結束催繳</Button> : <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "startChase")}>啟動催繳</Button>)}{publisher.role === "systemAdmin" && <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "delete")}><Trash2 />永久刪除</Button>}{publisher.role === "systemAdmin" && item.publisherUid !== publisher.uid && <Button variant="outline" onClick={() => { setError(""); setMessage(""); setFollowType("related"); setFollowTarget(item); }}><MessageSquarePlus />💬 新增相關補充</Button>}</> : <Button variant="outline" onClick={() => { setError(""); setMessage(""); setFollowType("related"); setFollowTarget(item); }}><MessageSquarePlus />💬 新增相關補充</Button>}</div>
+        <div className={styles.cardActions}><Button variant="outline" onClick={() => setViewing(item)}><Eye />查看</Button>{(item.publisherUid === publisher.uid || publisher.role === "systemAdmin") ? <><Button variant="outline" onClick={() => { setError(""); setEditing(clone(item)); setImageSelections(imageAudienceSelectionsFrom(item)); setUpdateLineNotice(LINE_NOTICE_DEFAULT_CHECKED.update); setUpdateHighlight(""); }}><Edit3 />修正公告</Button><Button variant="outline" onClick={() => openFollow(item, "supplement")}><MessageSquarePlus />新增補充／提醒</Button>{item.publicationStatus === "withdrawn" ? <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "restore")}>復原公告</Button> : <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "withdraw")}>下架公告</Button>}{item.deadlines.length > 0 && (item.collectionStatus === "chasing" ? <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "stopChase")}>結束催繳</Button> : <Button variant="outline" disabled={saving} onClick={() => openChase(item)}>啟動催繳</Button>)}{publisher.role === "systemAdmin" && <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "delete")}><Trash2 />永久刪除</Button>}{publisher.role === "systemAdmin" && item.publisherUid !== publisher.uid && <Button variant="outline" onClick={() => openFollow(item, "related")}><MessageSquarePlus />💬 新增相關補充</Button>}</> : <Button variant="outline" onClick={() => openFollow(item, "related")}><MessageSquarePlus />💬 新增相關補充</Button>}</div>
       </article>)}</section>}
     </div>
 
@@ -153,10 +190,12 @@ export default function ManagePage() {
       <EditorExtras item={editing} setItem={setEditing} /><ReadOnlyImages item={editing} imageAudienceEditor={{ selections: imageSelections, onChange: (imageId, next) => setImageSelections(current => ({ ...current, [imageId]: next })) }} />
       {error && <p className={styles.errorNotice} role="alert">{error}</p>}
       <ImportantDateReminder show={needsImportantDateReminder(editing)} />
+      <section className={styles.lineNoticeOption}><label><Checkbox checked={updateLineNotice} onCheckedChange={checked => setUpdateLineNotice(checked === true)} />這次修改需要 LINE 通知</label><small>一般錯字或排版修正不需勾選。</small>{updateLineNotice && <label className={styles.dialogField}>異動重點（會放在 LINE 通知中）<Textarea maxLength={MAX_UPDATE_HIGHLIGHT_LENGTH} value={updateHighlight} onChange={event => setUpdateHighlight(event.target.value)} placeholder="例如：繳交期限延後至 11/30" /></label>}</section>
       <div className={styles.editorActions}><Button variant="outline" onClick={() => setEditing(null)} disabled={saving}>取消</Button><Button className={styles.primaryCta} onClick={saveEdit} disabled={saving}>{saving ? "儲存中…" : "儲存修改"}</Button></div>
     </>}</DialogContent></Dialog>
 
-    <Dialog open={!!followTarget} onOpenChange={open => { if (!open && !saving) { setFollowTarget(null); setError(""); } }}><DialogContent showCloseButton={!saving}><DialogHeader><DialogDescription>{followTarget?.title}</DialogDescription><DialogTitle>{followType === "related" ? "新增相關補充" : "新增補充／提醒"}</DialogTitle></DialogHeader>{followType === "related" ? <p>此補充會顯示於原公告下方，並標示您的發布單位。</p> : <label className={styles.dialogField}>類型<select value={followType} onChange={event => setFollowType(event.target.value as FollowUp["type"])}><option value="supplement">補充</option><option value="reminder">提醒</option></select></label>}<label className={styles.dialogField}>內容<Textarea value={message} onChange={event => setMessage(event.target.value)} placeholder="輸入新增資訊；既有紀錄不會被覆蓋。" /></label>{error && <p className={styles.errorNotice} role="alert">{error}</p>}<Button className={styles.primaryCta} disabled={!message.trim() || saving} onClick={addFollow}>{saving ? "儲存中…" : followType === "related" ? "新增相關補充" : "新增紀錄"}</Button></DialogContent></Dialog>
+    <Dialog open={!!chaseTarget} onOpenChange={open => { if (!open && !saving) setChaseTarget(null); }}><DialogContent showCloseButton={!saving}><DialogHeader><DialogDescription>{chaseTarget?.title}</DialogDescription><DialogTitle>啟動催繳</DialogTitle></DialogHeader><label className={styles.dialogField}>催繳提醒文字（選填）<Textarea value={chaseMessage} onChange={event => setChaseMessage(event.target.value)} placeholder="例如：尚未繳交的班級請於今日完成" /></label><label className={styles.lineNoticeCheck}><Checkbox checked={chaseLineNotice} onCheckedChange={checked => setChaseLineNotice(checked === true)} />這次催繳需要 LINE 通知</label><div className={styles.editorActions}><Button variant="outline" onClick={() => setChaseTarget(null)} disabled={saving}>取消</Button><Button className={styles.primaryCta} onClick={() => void confirmChase()} disabled={saving}>啟動催繳</Button></div></DialogContent></Dialog>
+    <Dialog open={!!followTarget} onOpenChange={open => { if (!open && !saving) { setFollowTarget(null); setError(""); } }}><DialogContent showCloseButton={!saving}><DialogHeader><DialogDescription>{followTarget?.title}</DialogDescription><DialogTitle>{followType === "related" ? "新增相關補充" : "新增補充／提醒"}</DialogTitle></DialogHeader>{followType === "related" ? <p>此補充會顯示於原公告下方，並標示您的發布單位。</p> : <label className={styles.dialogField}>類型<select value={followType} onChange={event => { const type = event.target.value as FollowUp["type"]; setFollowType(type); setFollowLineNotice(type === "reminder" ? LINE_NOTICE_DEFAULT_CHECKED.reminder : LINE_NOTICE_DEFAULT_CHECKED.supplement); }}><option value="supplement">補充</option><option value="reminder">提醒</option></select></label>}{followType !== "related" && <label className={styles.lineNoticeCheck}><Checkbox checked={followLineNotice} onCheckedChange={checked => setFollowLineNotice(checked === true)} />這次{followType === "reminder" ? "提醒" : "補充"}需要 LINE 通知</label>}<label className={styles.dialogField}>內容<Textarea value={message} onChange={event => setMessage(event.target.value)} placeholder="輸入新增資訊；既有紀錄不會被覆蓋。" /></label>{error && <p className={styles.errorNotice} role="alert">{error}</p>}<Button className={styles.primaryCta} disabled={!message.trim() || saving} onClick={addFollow}>{saving ? "儲存中…" : followType === "related" ? "新增相關補充" : "新增紀錄"}</Button></DialogContent></Dialog>
   </main>;
 }
 

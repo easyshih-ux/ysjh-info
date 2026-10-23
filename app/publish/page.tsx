@@ -239,7 +239,7 @@ function PublishForm() {
   };
 
   if (publishedAnnouncement) {
-    return <main className={styles.page}><section className={styles.publishSuccess} role="status"><p>發布完成</p><h1>公告發布成功</h1><span>公告已寫入公務資訊資料庫。</span><LineSummaryCard announcement={publishedAnnouncement} /><Link href="/admin">返回行政管理</Link></section></main>;
+    return <main className={styles.page}><section className={styles.publishSuccess} role="status"><p>發布完成</p><h1>公告發布成功</h1><span>公告已寫入公務資訊資料庫，並已加入「LINE 待通知」。</span><p className={styles.lineNoticeHint}>📨 請複製下方 LINE 訊息貼到群組並送出；送出後到「行政管理」按「我已發送 LINE」，待通知才會解除。</p><LineSummaryCard announcement={publishedAnnouncement} /><Link href="/admin">返回行政管理</Link></section></main>;
   }
 
   return <main className={styles.page}>

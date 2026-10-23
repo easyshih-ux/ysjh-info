@@ -1,4 +1,5 @@
-import { collection, deleteDoc, doc, getDoc, getDocs, orderBy, query, serverTimestamp, setDoc, updateDoc, type Timestamp } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDoc, getDocs, orderBy, query, serverTimestamp, updateDoc, writeBatch, type Timestamp } from "firebase/firestore";
+import { addFollowUpLineNotice } from "./lineNoticesFirestore.ts";
 import type { FollowUp } from "./announcements.ts";
 import { ANNOUNCEMENTS_COLLECTION, getFirestoreClient } from "./firestoreClient.ts";
 
@@ -68,10 +69,12 @@ export async function createAnnouncementFollowUp(
   type: FollowUp["type"],
   message: string,
   author: FollowUpAuthor,
+  lineNotice?: { publisherUid: string; text: string },
 ) {
   const reference = doc(followUpsCollection(announcementId));
   const displayName = author.displayName;
-  await setDoc(reference, {
+  const batch = writeBatch(getFirestoreClient());
+  batch.set(reference, {
     type,
     message: message.trim(),
     authorUid: author.uid,
@@ -82,6 +85,11 @@ export async function createAnnouncementFollowUp(
     status: "active",
     createdAt: serverTimestamp(),
   });
+  // 補充／提醒與 LINE 待辦同批寫入；相關補充（related）不產生待辦。
+  if (lineNotice && (type === "supplement" || type === "reminder")) {
+    addFollowUpLineNotice(batch, getFirestoreClient(), announcementId, reference.id, type, lineNotice.publisherUid, author.uid, lineNotice.text);
+  }
+  await batch.commit();
   const snapshot = await getDoc(reference);
   const followUp = followUpFromFirestore(snapshot.id, snapshot.data());
   if (!followUp) throw new Error("Invalid follow-up response");

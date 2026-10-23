@@ -1,4 +1,5 @@
-import { collection, doc, setDoc } from "firebase/firestore";
+import { collection, doc, writeBatch } from "firebase/firestore";
+import { addPublishLineNotice } from "./lineNoticesFirestore.ts";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import type { Announcement, Attachment, PdfAttachment } from "./announcements.ts";
@@ -98,7 +99,11 @@ export async function publishAnnouncement(
 
     onStage?.("publishing");
     const document = createFirestoreAnnouncement(draft, academicYear, publishedAt, attachments, publisher);
-    await setDoc(announcementReference, document);
+    // 公告與首次發布的 LINE 待辦同批寫入：要嘛一起成功，要嘛一起失敗。
+    const batch = writeBatch(database);
+    batch.set(announcementReference, document);
+    if (publisher) addPublishLineNotice(batch, announcementReference, publisher.uid);
+    await batch.commit();
     return { id: announcementReference.id, ...document } satisfies Announcement;
   } catch (error) {
     console.error("announcement publish failed", {

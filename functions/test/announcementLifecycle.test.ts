@@ -24,6 +24,7 @@ function store(initial: Record<string, Data>) {
 const profile = (role: "publisher" | "systemAdmin", enabled = true) => ({ role, enabled });
 const announcement = (publisherUid = "owner", extra: Data = {}) => ({ publisherUid, publicationStatus: "published", deadlines: [{ date: "2026-09-20", label: "截止" }], ...extra });
 const request = (uid: string, action: string, data: Data = {}) => ({ auth: uid ? { uid } : null, data: { announcementId: "a1", action, ...data } });
+const noSubcollections = async () => {};
 async function denied(promise: Promise<unknown>) { await assert.rejects(promise, error => (error as { code?: string }).code === "permission-denied"); }
 
 test("Storage cleanup 僅使用目標公告 prefix，失敗上傳另核對 uploader UID", () => {
@@ -59,11 +60,11 @@ test("永久刪除僅 systemAdmin", async () => {
   const publisherStore = store({ "authorizedPublishers/owner": profile("publisher"), "announcements/a1": announcement() });
   let cleanupCount = 0;
   const cleanup = async () => { cleanupCount += 1; };
-  await denied(manageAnnouncementLifecycleHandler(request("owner", "delete"), publisherStore.firestore, cleanup));
+  await denied(manageAnnouncementLifecycleHandler(request("owner", "delete"), publisherStore.firestore, cleanup, noSubcollections));
   assert.ok(publisherStore.get("announcements/a1"));
   assert.equal(cleanupCount, 0);
   const adminStore = store({ "authorizedPublishers/admin": profile("systemAdmin"), "announcements/a1": announcement() });
-  await manageAnnouncementLifecycleHandler(request("admin", "delete"), adminStore.firestore, cleanup);
+  await manageAnnouncementLifecycleHandler(request("admin", "delete"), adminStore.firestore, cleanup, noSubcollections);
   assert.equal(adminStore.get("announcements/a1"), undefined);
   assert.equal(cleanupCount, 1);
 });
@@ -71,8 +72,8 @@ test("永久刪除在附件目錄不存在或重試時仍可成功", async () =>
   const value = store({ "authorizedPublishers/admin": profile("systemAdmin"), "announcements/a1": announcement() });
   const cleaned: string[] = [];
   const cleanup = async (announcementId: string) => { cleaned.push(announcementId); };
-  await manageAnnouncementLifecycleHandler(request("admin", "delete"), value.firestore, cleanup);
-  await manageAnnouncementLifecycleHandler(request("admin", "delete"), value.firestore, cleanup);
+  await manageAnnouncementLifecycleHandler(request("admin", "delete"), value.firestore, cleanup, noSubcollections);
+  await manageAnnouncementLifecycleHandler(request("admin", "delete"), value.firestore, cleanup, noSubcollections);
   assert.deepEqual(cleaned, ["a1", "a1"]);
   assert.equal(value.get("announcements/a1"), undefined);
 });
@@ -131,4 +132,58 @@ test("催繳、下架與復原互相獨立", async () => {
   await manageAnnouncementLifecycleHandler(request("owner", "restore"), value.firestore);
   assert.equal(value.get("announcements/a1")?.publicationStatus, "published");
   assert.equal(value.get("announcements/a1")?.collectionStatus, "chasing");
+});
+
+test("永久刪除先下架並標記，再清子集合與 Storage，最後才刪公告文件", async () => {
+  const value = store({ "authorizedPublishers/admin": profile("systemAdmin"), "announcements/a1": announcement() });
+  const events: string[] = [];
+  const snapshot = (label: string) => {
+    const doc = value.get("announcements/a1");
+    events.push(`${label}:${doc?.publicationStatus}:${doc?.deletionStartedAt ? "marked" : "unmarked"}`);
+  };
+  await manageAnnouncementLifecycleHandler(
+    request("admin", "delete"), value.firestore,
+    async () => { snapshot("storage"); },
+    async ref => { assert.equal((ref as unknown as { path: string }).path, "announcements/a1"); snapshot("subcollections"); },
+  );
+  assert.deepEqual(events, [
+    "subcollections:withdrawn:marked", "storage:withdrawn:marked", "subcollections:withdrawn:marked",
+  ]);
+  assert.equal(value.get("announcements/a1"), undefined);
+});
+test("清理中途失敗會保留已下架公告，重試可完成且不重設刪除標記", async () => {
+  const value = store({ "authorizedPublishers/admin": profile("systemAdmin"), "announcements/a1": announcement() });
+  await assert.rejects(
+    manageAnnouncementLifecycleHandler(request("admin", "delete"), value.firestore, async () => { throw new Error("storage down"); }, noSubcollections),
+    error => (error as { code?: string }).code === "internal" && /請再按一次「永久刪除」/.test(String((error as Error).message)),
+  );
+  const kept = value.get("announcements/a1");
+  assert.equal(kept?.publicationStatus, "withdrawn");
+  assert.ok(kept?.deletionStartedAt);
+  await assert.rejects(
+    manageAnnouncementLifecycleHandler(request("admin", "delete"), value.firestore, async () => {}, async () => { throw new Error("firestore down"); }),
+    error => (error as { code?: string }).code === "internal",
+  );
+  assert.ok(value.get("announcements/a1"));
+  await manageAnnouncementLifecycleHandler(request("admin", "delete"), value.firestore, async () => {}, noSubcollections);
+  assert.equal(value.get("announcements/a1"), undefined);
+});
+test("刪除中的公告不可復原、重新上架、啟動或結束催繳", async () => {
+  const value = store({
+    "authorizedPublishers/admin": profile("systemAdmin"),
+    "authorizedPublishers/owner": profile("publisher"),
+    "announcements/a1": announcement("owner", { publicationStatus: "withdrawn", deletionStartedAt: "marked" }),
+  });
+  for (const [uid, action, data] of [["owner", "restore", {}], ["admin", "restore", {}], ["owner", "startChase", { message: "x" }], ["owner", "stopChase", {}], ["owner", "withdraw", {}]] as const) {
+    await assert.rejects(
+      manageAnnouncementLifecycleHandler(request(uid, action, data), value.firestore),
+      error => (error as { code?: string }).code === "failed-precondition",
+    );
+  }
+  assert.equal(value.get("announcements/a1")?.publicationStatus, "withdrawn");
+});
+test("預設子集合清理會列出全部子集合並遞迴刪除", () => {
+  const source = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
+  assert.match(source, /announcementRef\.listCollections\(\)/);
+  assert.match(source, /firestore\.recursiveDelete\(subcollection\)/);
 });

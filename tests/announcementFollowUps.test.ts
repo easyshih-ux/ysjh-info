@@ -54,7 +54,7 @@ test("管理詳細頁 lazy load，新增流程提供登入 publisher snapshot", 
   const manage = source("app/manage/page.tsx");
   const details = source("app/manage/announcement-details.tsx");
   assert.match(details, /readAnnouncementFollowUps\(item\.id\)/);
-  assert.match(manage, /appendManagedFollowUp\(followTarget\.id, followType, message, publisher\)/);
+  assert.match(manage, /appendManagedFollowUp\(followTarget\.id, followType, message, publisher, withLine \?/);
   assert.match(manage, /新增相關補充/);
 });
 

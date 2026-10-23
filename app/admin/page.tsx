@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ArrowLeft, BarChart3, ChevronRight, FilePenLine, FilePlus2, Home, Users } from "lucide-react";
 import { AdminAuthGuard, useAuthorizedPublisher } from "@/components/admin-auth-guard";
 import { usePublisherRequests } from "@/hooks/use-publisher-requests";
+import { LineNoticePanel } from "@/components/line-notice-panel";
 import styles from "./admin.module.css";
 
 export default function AdminPage() {
@@ -28,6 +29,7 @@ function AdminDashboard() {
       <p className={styles.kicker}>ADMINISTRATION</p>
       <h1>行政管理</h1>
       <p className={styles.intro}>選擇要進行的公務資訊工作。</p>
+      <LineNoticePanel publisher={publisher} />
       <nav className={styles.actions} aria-label="行政管理功能">
         <Link href="/publish"><FilePlus2 /><span><strong>＋ 發布新公告</strong><small>新增需要留存、查詢或提醒的重要公務資訊</small></span><ChevronRight /></Link>
         <Link href="/manage"><FilePenLine /><span><strong>管理已發布公告</strong><small>修正公告、補登資訊或新增補充／提醒</small></span><ChevronRight /></Link>

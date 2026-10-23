@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase-admin/app";
-import { FieldValue, getFirestore, type Firestore } from "firebase-admin/firestore";
+import { FieldValue, getFirestore, type DocumentReference, type Firestore } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
@@ -59,6 +59,7 @@ export async function manageAnnouncementLifecycleHandler(
   request: { auth?: { uid: string } | null; data: unknown },
   firestore: Firestore = db,
   cleanupStorage: (announcementId: string) => Promise<void> = deleteAnnouncementStoragePrefix,
+  cleanupSubcollections: (announcementRef: DocumentReference) => Promise<void> = ref => deleteAnnouncementSubcollections(firestore, ref),
 ) {
   const callerUid = requireCallerUid(request.auth?.uid);
   const input = parseAnnouncementLifecycleInput(request.data);
@@ -66,11 +67,31 @@ export async function manageAnnouncementLifecycleHandler(
   const announcementRef = firestore.collection("announcements").doc(input.announcementId);
 
   if (input.action === "delete") {
+    // 先標記刪除中並下架，讓前台不再顯示，也讓 Rules 與其他動作拒絕新的寫入。
     await firestore.runTransaction(async transaction => {
-      const callerSnapshot = await transaction.get(callerRef);
+      const [callerSnapshot, announcementSnapshot] = await Promise.all([
+        transaction.get(callerRef), transaction.get(announcementRef),
+      ]);
       assertSystemAdmin(callerSnapshot.exists, callerSnapshot.data());
+      // 公告已不存在時仍繼續清理，讓舊版刪除留下的子集合與附件也能重試清掉。
+      if (!announcementSnapshot.exists) return;
+      const current = announcementSnapshot.data();
+      const now = FieldValue.serverTimestamp();
+      transaction.update(announcementRef, {
+        publicationStatus: "withdrawn",
+        ...(current?.withdrawnAt ? {} : { withdrawnAt: now, withdrawnBy: callerUid }),
+        ...(current?.deletionStartedAt ? {} : { deletionStartedAt: now, deletionStartedBy: callerUid }),
+      });
     });
-    await cleanupStorage(input.announcementId);
+    try {
+      await cleanupSubcollections(announcementRef);
+      await cleanupStorage(input.announcementId);
+      // 再清一次，收掉標記前已送出、稍晚才寫入的子文件。
+      await cleanupSubcollections(announcementRef);
+    } catch (error) {
+      console.error("announcement-delete-cleanup-failed", input.announcementId, error);
+      throw new HttpsError("internal", "永久刪除未完成：公告已下架並保留，請再按一次「永久刪除」重試。");
+    }
     await firestore.runTransaction(async transaction => {
       const announcementSnapshot = await transaction.get(announcementRef);
       if (announcementSnapshot.exists) transaction.delete(announcementRef);
@@ -91,6 +112,9 @@ export async function manageAnnouncementLifecycleHandler(
     const isSystemAdmin = caller?.role === "systemAdmin";
     if (!isSystemAdmin && announcement?.publisherUid !== callerUid) {
       throw new HttpsError("permission-denied", "只能管理自己發布的公告。");
+    }
+    if (announcement?.deletionStartedAt) {
+      throw new HttpsError("failed-precondition", "公告正在永久刪除中，請由系統管理員再按一次「永久刪除」完成清理。");
     }
     const now = FieldValue.serverTimestamp();
     if (input.action === "withdraw") {
@@ -139,6 +163,13 @@ export async function cleanupFailedAnnouncementUploadHandler(
   }
   await cleanupStorage(announcementId, callerUid);
   return { success: true, cleaned: true };
+}
+
+async function deleteAnnouncementSubcollections(firestore: Firestore, announcementRef: DocumentReference) {
+  // 列出所有子集合，未來新增的公告專屬子集合也會一併清除。
+  for (const subcollection of await announcementRef.listCollections()) {
+    await firestore.recursiveDelete(subcollection);
+  }
 }
 
 async function deleteAnnouncementStoragePrefix(announcementId: string) {

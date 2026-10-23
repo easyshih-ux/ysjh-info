@@ -82,7 +82,7 @@ test("Firestore 修正使用原 ID，follow-up 改寫入安全 subcollection", (
   const firestore = source("lib/announcementManagementFirestore.ts");
   assert.match(firestore, /updateDoc\(/);
   assert.match(firestore, /doc\(getFirestoreClient\(\), ANNOUNCEMENTS_COLLECTION, edited\.id\)/);
-  assert.match(firestore, /createAnnouncementFollowUp\(announcementId, type, message, publisher\)/);
+  assert.match(firestore, /createAnnouncementFollowUp\(announcementId, type, message, publisher, lineNotice\)/);
   assert.doesNotMatch(firestore, /arrayUnion|followUps:\s*arrayUnion/);
   assert.doesNotMatch(firestore, /updatedAt: createdAt|contentUpdatedAt: createdAt/);
   assert.match(firestore, /const contentChanged = hasAnnouncementContentChanges\(original, edited\)/);

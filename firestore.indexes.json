@@ -1,0 +1,22 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "lineNotices",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "publisherUid", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "lineNotices",
+      "fieldPath": "status",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    }
+  ]
+}

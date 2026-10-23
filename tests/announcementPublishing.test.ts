@@ -33,14 +33,15 @@ test("Storage path 與預先產生的 Firestore document ID 一致", () => {
   assert.equal(announcementPdfPath("announcement-123", "publisher-uid", "pdf-456"), "announcements/announcement-123/pdf/publisher-uid/pdf-456.pdf");
 });
 
-test("發布先取得 Firestore ID、上傳圖片後才 setDoc", () => {
+test("發布先取得 Firestore ID、上傳圖片後才批次寫入公告與 LINE 待辦", () => {
   const publishing = source("lib/announcementPublishing.ts");
   assert.match(publishing, /doc\(collection\(database, ANNOUNCEMENTS_COLLECTION\)\)/);
   assert.match(publishing, /announcementReference\.id/);
   assert.match(publishing, /await uploadBytes/);
   assert.match(publishing, /await getDownloadURL/);
-  assert.match(publishing, /await setDoc\(announcementReference, document\)/);
-  assert.ok(publishing.indexOf("await uploadAnnouncementImage") < publishing.indexOf("await setDoc"));
+  assert.match(publishing, /batch\.set\(announcementReference, document\)/);
+  assert.match(publishing, /addPublishLineNotice\(batch, announcementReference, publisher\.uid\)/);
+  assert.ok(publishing.indexOf("await uploadAnnouncementImage") < publishing.indexOf("await batch.commit"));
   assert.doesNotMatch(publishing, /initializeApp\(/);
 });
 
@@ -63,9 +64,9 @@ test("Firestore attachments 使用正式 URL 且不含 blob、File 或 previewUr
   assert.equal("file" in document.attachments[0], false);
 });
 
-test("Storage 上傳失敗時不會執行後面的 Firestore setDoc", () => {
+test("Storage 上傳失敗時不會執行後面的 Firestore 批次寫入", () => {
   const publishing = source("lib/announcementPublishing.ts");
-  assert.ok(publishing.indexOf("await uploadAnnouncementImage") < publishing.indexOf("await setDoc"));
+  assert.ok(publishing.indexOf("await uploadAnnouncementImage") < publishing.indexOf("await batch.commit"));
   assert.match(publishing, /catch \(error\)[\s\S]*throw new AnnouncementPublishError/);
 });
 

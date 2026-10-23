@@ -6,7 +6,7 @@ import { syncFollowUpSummaryChange } from "../src/followUpSummary.ts";
 type FollowUpType = "supplement" | "reminder" | "related";
 type FollowUpRows = Partial<Record<FollowUpType, Record<string, unknown>[]>>;
 
-function createStore(options: { parent?: Record<string, unknown>; parentExists?: boolean; counts?: Partial<Record<FollowUpType, number>>; followUps?: FollowUpRows } = {}) {
+function createStore(options: { parent?: Record<string, unknown>; parentExists?: boolean; counts?: Partial<Record<FollowUpType, number>>; followUps?: FollowUpRows; updateError?: Error } = {}) {
   const parent = { ...(options.parent ?? { title: "公告", contentUpdatedAt: "2026-09-22T10:00:00Z" }) };
   const writes: Record<string, unknown>[] = [];
   const firestore = {
@@ -35,6 +35,7 @@ function createStore(options: { parent?: Record<string, unknown>; parentExists?:
               };
             },
             async update(patch: Record<string, unknown>) {
+              if (options.updateError) throw options.updateError;
               writes.push(patch);
               Object.assign(parent, patch);
               if ("latestFollowUp" in patch && !(patch.latestFollowUp as Record<string, unknown> | undefined)?.type) delete parent.latestFollowUp;
@@ -197,4 +198,28 @@ test("withdraw retry 與亂序事件皆由實際 active 子集合收斂", async 
   const retry = await syncFollowUpSummaryChange(change, store.firestore);
   assert.equal(retry.updated, false);
   assert.equal(store.writes.length, 1);
+});
+
+test("永久刪除清理期間刪除 follow-up：只更新摘要欄位，不動刪除標記與下架狀態", async () => {
+  const store = createStore({ parent: { title: "公告", publicationStatus: "withdrawn", deletionStartedAt: "marked", followUpCounts: { supplement: 1, reminder: 0, related: 0 }, latestFollowUp: { ...supplement, createdAt: timestamp(1000) } } });
+  await syncFollowUpSummaryChange({ announcementId: "a", before: { ...supplement, createdAt: timestamp(1000) }, after: undefined }, store.firestore);
+  for (const patch of store.writes) {
+    assert.ok(Object.keys(patch).every(key => ["followUpCounts", "hasRelatedFollowUp", "latestFollowUp"].includes(key)));
+  }
+  assert.equal(store.parent.deletionStartedAt, "marked");
+  assert.equal(store.parent.publicationStatus, "withdrawn");
+});
+test("公告在讀取後才被刪除：update 失敗只讓本次觸發結束，不會改用 set 重建公告", async () => {
+  const notFound = Object.assign(new Error("NOT_FOUND"), { code: 5 });
+  const store = createStore({ counts: { related: 1 }, updateError: notFound });
+  await assert.rejects(syncFollowUpSummaryChange({ announcementId: "a", before: undefined, after: related }, store.firestore), error => error === notFound);
+  assert.deepEqual(store.writes, []);
+});
+test("syncFollowUpSummary 只用 update 寫回公告，且未啟用自動重試", async () => {
+  const { readFileSync } = await import("node:fs");
+  const summary = readFileSync(new URL("../src/followUpSummary.ts", import.meta.url), "utf8");
+  const index = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(summary, /\.(set|create)\(/);
+  assert.match(summary, /announcementRef\.update\(patch\)/);
+  assert.doesNotMatch(index, /retry:\s*true/);
 });

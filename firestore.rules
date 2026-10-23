@@ -31,7 +31,9 @@ service cloud.firestore {
         'collectionStatus',
         'collectionMessage',
         'collectionStartedAt',
-        'collectionStartedBy'
+        'collectionStartedBy',
+        'deletionStartedAt',
+        'deletionStartedBy'
       ]);
     }
 
@@ -187,6 +189,72 @@ service cloud.firestore {
           && data.imageAudiences.size() <= 5);
     }
 
+    // ===== LINE 通知待辦（announcements/{announcementId}/lineNotices/{noticeId}）=====
+    // 只限原發布者或 systemAdmin；教師端不可讀。複製不等於已發送，只能由行政人員確認。
+    function isLineNoticeManager(publisherUid) {
+      return isAuthorizedPublisher()
+        && (isEnabledSystemAdmin() || publisherUid == request.auth.uid);
+    }
+
+    function isValidLineNoticeText(data) {
+      return data.text is string
+        && data.text.size() > 0
+        && data.text.size() <= 3000;
+    }
+
+    // 與公告、修正或補充在同一次批次寫入中建立；以 getAfter 確認來源在本次寫入中產生。
+    function isValidNewLineNotice(announcementId, noticeId) {
+      let data = request.resource.data;
+      let announcementPath = /databases/$(database)/documents/announcements/$(announcementId);
+      let after = getAfter(announcementPath).data;
+      return data.status == 'pending'
+        && data.createdBy == request.auth.uid
+        && data.createdAt == request.time
+        && data.publisherUid == after.publisherUid
+        && (
+          (noticeId == 'publish'
+            && data.type == 'publish'
+            && data.keys().hasOnly(['type', 'publisherUid', 'status', 'createdBy', 'createdAt'])
+            && !exists(announcementPath)
+            && after.publisherUid == request.auth.uid)
+          || (data.type == 'update'
+            && data.keys().hasOnly(['type', 'sourceId', 'publisherUid', 'status', 'text', 'createdBy', 'createdAt'])
+            && data.sourceId is int
+            && noticeId == 'update-' + string(data.sourceId)
+            && isLineNoticeManager(after.publisherUid)
+            && after.contentUpdateCount == data.sourceId
+            && get(announcementPath).data.get('contentUpdateCount', 0) != data.sourceId
+            && isValidLineNoticeText(data))
+          || (data.type in ['supplement', 'reminder']
+            && data.keys().hasOnly(['type', 'sourceId', 'publisherUid', 'status', 'text', 'createdBy', 'createdAt'])
+            && data.sourceId is string
+            && noticeId == 'followup-' + data.sourceId
+            && isLineNoticeManager(after.publisherUid)
+            && !exists(/databases/$(database)/documents/announcements/$(announcementId)/followUps/$(data.sourceId))
+            && getAfter(/databases/$(database)/documents/announcements/$(announcementId)/followUps/$(data.sourceId)).data.type == data.type
+            && getAfter(/databases/$(database)/documents/announcements/$(announcementId)/followUps/$(data.sourceId)).data.authorUid == request.auth.uid
+            && isValidLineNoticeText(data))
+          // 催繳由 Functions 啟動；前端在啟動成功後以固定 ID 建立（可重試、不重複）。
+          || (data.type == 'chase'
+            && data.keys().hasOnly(['type', 'sourceId', 'publisherUid', 'status', 'createdBy', 'createdAt'])
+            && data.sourceId is timestamp
+            && noticeId == 'chase-' + string(data.sourceId.toMillis())
+            && isLineNoticeManager(after.publisherUid)
+            && !('deletionStartedAt' in after)
+            && after.collectionStatus == 'chasing'
+            && after.collectionStartedAt == data.sourceId)
+        );
+    }
+
+    function canConfirmLineNoticeSent() {
+      return isLineNoticeManager(resource.data.publisherUid)
+        && resource.data.status == 'pending'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'sentBy', 'sentAt'])
+        && request.resource.data.status == 'sent'
+        && request.resource.data.sentBy == request.auth.uid
+        && request.resource.data.sentAt == request.time;
+    }
+
     function isOwnVerifiedPublisherRequest(publisherUid) {
       return request.auth != null
         && request.auth.uid == publisherUid
@@ -222,8 +290,10 @@ service cloud.firestore {
     }
 
     function canCreateAnnouncementFollowUp(announcementId) {
-      let ownerUid = get(/databases/$(database)/documents/announcements/$(announcementId)).data.publisherUid;
+      let announcement = get(/databases/$(database)/documents/announcements/$(announcementId)).data;
+      let ownerUid = announcement.publisherUid;
       return isAuthorizedPublisher()
+        && !('deletionStartedAt' in announcement)
         && ((request.resource.data.type in ['supplement', 'reminder']
             && (isEnabledSystemAdmin() || ownerUid == request.auth.uid))
           || (request.resource.data.type == 'related'
@@ -309,7 +379,9 @@ service cloud.firestore {
         && isValidLineNotificationSettings(request.resource.data)
         && isValidImageAudiences(request.resource.data)
         && isValidAttachments(request.resource.data, announcementId, request.auth.uid);
+      // 永久刪除進行中（Functions 已標記）時不再接受前端修改。
       allow update: if canManageAnnouncement()
+        && !('deletionStartedAt' in resource.data)
         && keepsLifecycleFields()
         && keepsServerManagedSummary()
         && keepsContentUpdateCount()
@@ -321,6 +393,13 @@ service cloud.firestore {
         && keepsValidAttachments(announcementId);
       allow delete: if false;
 
+      match /lineNotices/{noticeId} {
+        allow get, list: if isLineNoticeManager(resource.data.publisherUid);
+        allow create: if isValidNewLineNotice(announcementId, noticeId);
+        allow update: if canConfirmLineNoticeSent();
+        allow delete: if false;
+      }
+
       match /followUps/{followUpId} {
         allow read: if true;
         allow create: if canCreateAnnouncementFollowUp(announcementId)
@@ -328,6 +407,11 @@ service cloud.firestore {
         allow update: if canUpdateRelatedFollowUp() || canWithdrawOriginalFollowUp();
         allow delete: if canDeleteRelatedFollowUp();
       }
+    }
+
+    // 行政管理首頁跨公告查詢待通知（collection group）；查詢須以 publisherUid 或 systemAdmin 身分限縮。
+    match /{path=**}/lineNotices/{noticeId} {
+      allow read: if isLineNoticeManager(resource.data.publisherUid);
     }
 
     match /authorizedPublishers/{publisherUid} {
