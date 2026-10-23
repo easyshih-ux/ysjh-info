@@ -1,16 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Announcement, FollowUp } from "@/lib/announcements";
 import { readManagedAnnouncements } from "@/lib/announcementFirestore";
 import { readAnnouncementFollowUps } from "@/lib/announcementFollowUps";
-import { copyLineAnnouncement } from "@/lib/lineAnnouncementSummary";
-import { LINE_NOTICE_TYPE_LABELS, lineNoticeText, pendingLineNotices, type LineNotice } from "@/lib/lineNotices";
-import { confirmLineNoticeSent, readPendingLineNotices } from "@/lib/lineNoticesFirestore";
+import { lineNoticeText, pendingLineNotices, type LineNotice } from "@/lib/lineNotices";
+import { readPendingLineNotices } from "@/lib/lineNoticesFirestore";
 import { getPublicSiteUrl } from "@/lib/siteUrl";
 import { taipeiDateKey } from "@/lib/taipeiDate";
 import type { AuthorizedPublisherContextValue } from "@/lib/publisherAccess";
-import { Button } from "@/components/ui/button";
+import { LineNoticeCard } from "@/components/line-notice-card";
 import styles from "./line-notice-panel.module.css";
 
 type Row = { notice: LineNotice; announcement: Announcement; text: string };
@@ -19,8 +18,14 @@ type Row = { notice: LineNotice; announcement: Announcement; text: string };
 export function LineNoticePanel({ publisher }: { publisher: Pick<AuthorizedPublisherContextValue, "uid" | "role"> }) {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [loadError, setLoadError] = useState(false);
-  const [status, setStatus] = useState<Record<string, string>>({});
-  const [busy, setBusy] = useState<string | null>(null);
+
+  // 從「稍後再發／前往 LINE 待通知」連過來時，捲到這個區塊。
+  const scrolledRef = useRef(false);
+  useEffect(() => {
+    if (scrolledRef.current || !rows || window.location.hash !== "#line-notices") return;
+    scrolledRef.current = true;
+    document.getElementById("line-notices")?.scrollIntoView({ block: "start" });
+  }, [rows]);
 
   useEffect(() => {
     let active = true;
@@ -40,31 +45,18 @@ export function LineNoticePanel({ publisher }: { publisher: Pick<AuthorizedPubli
   }, [publisher.uid, publisher.role]);
 
   const key = (notice: LineNotice) => `${notice.announcementId}/${notice.id}`;
-  const copy = async (row: Row) => {
-    const ok = await copyLineAnnouncement(row.text);
-    setStatus(current => ({ ...current, [key(row.notice)]: ok ? "已複製。請到 LINE 群組貼上並送出，完成後按「我已發送 LINE」。" : "複製失敗，請手動選取上方文字複製。" }));
-  };
-  const confirmSent = async (row: Row) => {
-    if (busy) return;
-    setBusy(key(row.notice));
-    try {
-      await confirmLineNoticeSent(row.notice, publisher.uid);
-      setRows(current => current?.filter(item => key(item.notice) !== key(row.notice)) ?? null);
-    } catch {
-      setStatus(current => ({ ...current, [key(row.notice)]: "確認失敗，可能已由其他行政人員確認，請重新整理後再試。" }));
-    } finally { setBusy(null); }
-  };
+  const remove = (row: Row) => setRows(current => current?.filter(item => key(item.notice) !== key(row.notice)) ?? null);
 
-  if (loadError) return <section className={styles.panel} aria-labelledby="line-notice-title"><h2 id="line-notice-title">📨 LINE 待通知</h2><p className={styles.error} role="alert">待通知清單暫時無法載入，請稍後再試。</p></section>;
-  if (!rows || rows.length === 0) return null;
-  return <section className={styles.panel} aria-labelledby="line-notice-title">
-    <h2 id="line-notice-title">📨 LINE 待通知（{rows.length}）</h2>
-    <p className={styles.hint}>複製後請到 LINE 群組貼上並送出；送出後再按「我已發送 LINE」。</p>
-    {rows.map(row => <article key={key(row.notice)} className={styles.item}>
-      <div className={styles.meta}><span className={styles.type}>{LINE_NOTICE_TYPE_LABELS[row.notice.type]}</span><strong>{row.announcement.title}</strong></div>
-      <pre tabIndex={0}>{row.text}</pre>
-      <div className={styles.actions}><Button type="button" variant="outline" onClick={() => void copy(row)}>複製 LINE</Button><Button type="button" onClick={() => void confirmSent(row)} disabled={busy === key(row.notice)}>{busy === key(row.notice) ? "確認中…" : "我已發送 LINE"}</Button></div>
-      {status[key(row.notice)] && <p className={styles.status} role="status">{status[key(row.notice)]}</p>}
-    </article>)}
+  // 即使沒有待辦也顯示區塊，讓行政人員知道「LINE 待通知」在這裡。
+  return <section id="line-notices" className={styles.panel} aria-labelledby="line-notice-title">
+    <h2 id="line-notice-title">📨 LINE 待通知{rows && rows.length > 0 ? `（${rows.length}）` : ""}</h2>
+    {loadError ? <p className={styles.error} role="alert">待通知清單暫時無法載入，請稍後再試。</p>
+      : !rows ? <p className={styles.empty}>讀取中…</p>
+      : rows.length === 0 ? <p className={styles.empty}>目前沒有待發送的 LINE 通知。</p>
+      : <>
+        <p className={styles.hint}>複製後請到 LINE 群組貼上並送出；送出後再按「我已發送 LINE」。</p>
+        {rows.map(row => <LineNoticeCard key={key(row.notice)} uid={publisher.uid} onSent={() => remove(row)}
+          notice={{ announcementId: row.notice.announcementId, id: row.notice.id, type: row.notice.type, title: row.announcement.title, text: row.text }} />)}
+      </>}
   </section>;
 }

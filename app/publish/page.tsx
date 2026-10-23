@@ -16,7 +16,11 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AdminAuthGuard, useAuthorizedPublisher } from "@/components/admin-auth-guard";
-import { LineSummaryCard } from "@/components/line-summary-card";
+import { LineNoticeCard, LineNoticeLaterLink } from "@/components/line-notice-card";
+import { createLineAnnouncementSummary } from "@/lib/lineAnnouncementSummary";
+import { lineNoticeIds } from "@/lib/lineNotices";
+import { getPublicSiteUrl } from "@/lib/siteUrl";
+import { taipeiDateKey } from "@/lib/taipeiDate";
 import { LineNotificationSettings } from "@/components/line-notification-settings";
 import { ImportantDateReminder } from "@/components/important-date-reminder";
 import { ImageAudiencePicker } from "@/components/image-audience-picker";
@@ -45,6 +49,7 @@ function PublishForm() {
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState("");
   const [publishedAnnouncement, setPublishedAnnouncement] = useState<Announcement | null>(null);
+  const [publishLineState, setPublishLineState] = useState<"pending" | "sent" | "later">("pending");
   const [imageNotice, setImageNotice] = useState("");
   const [pdfNotice, setPdfNotice] = useState("");
   const [attachmentPrivacyConfirmed, setAttachmentPrivacyConfirmed] = useState(false);
@@ -239,7 +244,15 @@ function PublishForm() {
   };
 
   if (publishedAnnouncement) {
-    return <main className={styles.page}><section className={styles.publishSuccess} role="status"><p>發布完成</p><h1>公告發布成功</h1><span>公告已寫入公務資訊資料庫，並已加入「LINE 待通知」。</span><p className={styles.lineNoticeHint}>📨 請複製下方 LINE 訊息貼到群組並送出；送出後到「行政管理」按「我已發送 LINE」，待通知才會解除。</p><LineSummaryCard announcement={publishedAnnouncement} /><Link href="/admin">返回行政管理</Link></section></main>;
+    // 首次發布的 LINE 待辦與公告同批建立；與行政管理首頁使用同一張 LINE 通知卡與相同文字。
+    const publishText = createLineAnnouncementSummary(publishedAnnouncement, getPublicSiteUrl(typeof window === "undefined" ? undefined : window.location.origin), Number(taipeiDateKey(new Date()).slice(0, 4)));
+    return <main className={styles.page}><section className={styles.publishSuccess} role="status"><p>發布完成</p><h1>公告發布成功</h1><span>公告已寫入公務資訊資料庫，並已加入「LINE 待通知」。</span>
+      {publishLineState === "later"
+        ? <p className={styles.lineNoticeHint}>📨 LINE 待通知已保留，可稍後到行政管理首頁處理。 <LineNoticeLaterLink /></p>
+        : <><p className={styles.lineNoticeHint}>📨 請複製下方 LINE 訊息貼到群組並送出，送出後按「我已發送 LINE」；若稍後再發，待通知會保留在行政管理首頁。</p>
+          <LineNoticeCard notice={{ announcementId: publishedAnnouncement.id, id: lineNoticeIds.publish(), type: "publish", title: publishedAnnouncement.title, text: publishText }} uid={publisher.uid}
+            onSent={() => setPublishLineState("sent")} onLater={publishLineState === "sent" ? undefined : () => setPublishLineState("later")} /></>}
+      <Link href="/admin">返回行政管理</Link></section></main>;
   }
 
   return <main className={styles.page}>

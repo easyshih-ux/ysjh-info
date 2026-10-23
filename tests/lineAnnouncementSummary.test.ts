@@ -152,7 +152,8 @@ test("publish 成功保留正式 announcement snapshot，manage 使用同一摘�
   const publishPage = source("app/publish/page.tsx");
   const manageDetails = source("app/manage/announcement-details.tsx");
   assert.match(publishPage, /setPublishedAnnouncement\(announcement\)/);
-  assert.match(publishPage, /<LineSummaryCard announcement=\{publishedAnnouncement\}/);
+  assert.match(publishPage, /createLineAnnouncementSummary\(publishedAnnouncement, /);
+  assert.match(publishPage, /<LineNoticeCard notice=\{\{ announcementId: publishedAnnouncement\.id, id: lineNoticeIds\.publish\(\), type: "publish"/);
   assert.match(manageDetails, /<LineSummaryCard announcement=\{item\}/);
 });
 

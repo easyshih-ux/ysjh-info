@@ -29,7 +29,7 @@ export function addFollowUpLineNotice(batch: WriteBatch, database: Firestore, an
 
 /**
  * 催繳：催繳由 Functions 啟動，成功後以固定 ID 建立待辦；失敗可安全重試，不會重複。
- * 回傳 false 表示公告目前不在催繳中。
+ * 回傳待辦 ID；回傳 false 表示公告目前不在催繳中。
  */
 export async function createChaseLineNotice(announcementId: string, createdBy: string) {
   const database = getFirestoreClient();
@@ -37,11 +37,12 @@ export async function createChaseLineNotice(announcementId: string, createdBy: s
   const data = snapshot.data();
   const startedAt = data?.collectionStartedAt as Timestamp | undefined;
   if (data?.collectionStatus !== "chasing" || !startedAt || typeof startedAt.toMillis !== "function" || typeof data.publisherUid !== "string") return false;
-  const reference = lineNoticeReference(database, announcementId, lineNoticeIds.chase(startedAt.toMillis()));
+  const noticeId = lineNoticeIds.chase(startedAt.toMillis());
+  const reference = lineNoticeReference(database, announcementId, noticeId);
   const existing = await getDoc(reference).catch(() => null);
-  if (existing?.exists()) return true;
+  if (existing?.exists()) return noticeId;
   await setDoc(reference, { type: "chase", sourceId: startedAt, publisherUid: data.publisherUid, status: "pending", createdBy, createdAt: serverTimestamp() });
-  return true;
+  return noticeId;
 }
 
 /** 行政管理首頁：一般發布者只查自己公告的待辦；systemAdmin 查全部。 */

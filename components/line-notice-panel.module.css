@@ -10,3 +10,8 @@
 .status{margin:0;color:#256343;font-size:13px;font-weight:700}
 .error{margin:0;color:#9a3434;font-weight:700}
 @media(max-width:560px){.actions{display:grid}.actions button{width:100%}}
+/* 全站 button{color:inherit} 會蓋過深藍按鈕的白字，這裡明確指定前景與背景。 */
+.actions .confirm{border:1px solid #173b63;background:#173b63;color:#fff}
+.actions .confirm:hover,.actions .confirm:focus-visible{background:#24527f;color:#fff}
+.empty{margin:0;color:#6b5a2e;font-size:14px}
+.laterLink{color:#174f80;font-weight:800;text-decoration:underline;text-underline-offset:3px}

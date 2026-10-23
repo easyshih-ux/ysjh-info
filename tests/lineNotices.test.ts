@@ -81,15 +81,66 @@ test("寫入接線：首次發布與公告同批；異動僅在實質修改且�
   assert.match(manage, /retryChaseNotice/);
 });
 
-test("管理首頁待通知：複製不等於已發送，「我已發送 LINE」只需一次確認", () => {
+test("管理首頁待通知：沿用共用 LINE 通知卡，沒有待辦也顯示空狀態與錨點", () => {
   const panel = source("components/line-notice-panel.tsx");
   assert.match(source("app/admin/page.tsx"), /<LineNoticePanel publisher=\{publisher\} \/>/);
-  assert.match(panel, /我已發送 LINE/);
-  assert.match(panel, /confirmLineNoticeSent\(row\.notice, publisher\.uid\)/);
-  assert.doesNotMatch(panel, /window\.confirm/);
-  const copyHandler = panel.slice(panel.indexOf("const copy"), panel.indexOf("const confirmSent"));
-  assert.doesNotMatch(copyHandler, /confirmLineNoticeSent/);
+  assert.match(panel, /<LineNoticeCard key=\{key\(row\.notice\)\} uid=\{publisher\.uid\} onSent=\{\(\) => remove\(row\)\}/);
+  assert.match(panel, /<section id="line-notices"/);
+  assert.match(panel, /目前沒有待發送的 LINE 通知。/);
+  assert.match(panel, /待通知清單暫時無法載入/);
+  assert.doesNotMatch(panel, /if \(!rows \|\| rows\.length === 0\) return null/);
+  assert.match(source("components/line-notice-card.tsx"), /LINE_NOTICE_PANEL_HREF = "\/admin#line-notices"/);
   assert.match(source("lib/lineNoticesFirestore.ts"), /where\("publisherUid", "==", publisher\.uid\), where\("status", "==", "pending"\)/);
+});
+
+test("LINE 通知卡：複製不標記已發送；我已發送只確認一次；失敗保留待辦；稍後再發才顯示", () => {
+  const card = source("components/line-notice-card.tsx");
+  const copyHandler = card.slice(card.indexOf("const copy"), card.indexOf("const confirmSent"));
+  assert.match(copyHandler, /copyLineAnnouncement\(notice\.text\)/);
+  assert.doesNotMatch(copyHandler, /confirmLineNoticeSent|setSent|onSent/);
+  const confirmHandler = card.slice(card.indexOf("const confirmSent"), card.indexOf("return <article"));
+  assert.match(confirmHandler, /if \(busyRef\.current \|\| sent\) return;/, "連點或已發送後不重複確認");
+  assert.match(confirmHandler, /await confirmLineNoticeSent\(notice, uid\);\n\s*setSent\(true\)/, "成功才標記已發送");
+  assert.match(confirmHandler, /catch \{\n\s*setStatus\("確認失敗[^"]*待通知仍保留在行政管理首頁。"\)/, "失敗不標記已發送");
+  assert.doesNotMatch(card, /window\.confirm/);
+  assert.match(card, /\{!sent && <div className=\{styles\.actions\}>/, "已發送後隱藏按鈕");
+  assert.match(card, /\{onLater && <Button type="button" variant="outline" onClick=\{onLater\}/);
+  const laterHandler = card.slice(card.indexOf("{onLater &&"), card.indexOf("稍後再發"));
+  assert.doesNotMatch(laterHandler, /confirmLineNoticeSent/, "稍後再發不改變待辦");
+});
+
+test("「我已發送 LINE」深藍底白字，不受全站 button{color:inherit} 影響", () => {
+  assert.match(source("components/line-notice-card.tsx"), /className=\{styles\.confirm\}/);
+  assert.match(source("components/line-notice-panel.module.css"), /\.actions \.confirm\{border:1px solid #173b63;background:#173b63;color:#fff\}/);
+});
+
+test("建立待辦成功後立即顯示通知卡；未勾選、儲存失敗時不顯示", () => {
+  const manage = source("app/manage/page.tsx");
+  const saveEdit = manage.slice(manage.indexOf("const saveEdit"), manage.indexOf("const addFollow"));
+  assert.match(saveEdit, /const saved = await updateManagedAnnouncement[\s\S]*if \(saved\?\.lineNoticeId\) setLineCard\(\{ announcementId: edited\.id, id: saved\.lineNoticeId, type: "update"/);
+  assert.doesNotMatch(saveEdit.slice(saveEdit.indexOf("} catch")), /setLineCard/);
+  const addFollow = manage.slice(manage.indexOf("const addFollow"), manage.indexOf("return <main"));
+  assert.match(addFollow, /const created = await appendManagedFollowUp[\s\S]*if \(withLine && created\.id\) setLineCard\(\{ announcementId: followTarget\.id, id: lineNoticeIds\.followUp\(created\.id\)/);
+  assert.doesNotMatch(addFollow.slice(addFollow.indexOf("} catch")), /setLineCard/);
+  const retry = manage.slice(manage.indexOf("const retryChaseNotice"), manage.indexOf("const [followTarget"));
+  assert.match(retry, /const noticeId = await createChaseLineNotice[\s\S]*if \(noticeId && item\)[\s\S]*setLineCard\(\{ announcementId, id: noticeId, type: "chase"/);
+  assert.doesNotMatch(retry.slice(retry.indexOf("} catch")), /setLineCard/);
+  assert.match(manage, /if \(notifyChaseLine\) await retryChaseNotice\(item\.id, \{ item, message \}\)/, "未勾選催繳 LINE 不建立也不顯示");
+  // 寫入函式：只有同批建立待辦時才回傳 ID；催繳回傳固定 ID。
+  const management = source("lib/announcementManagementFirestore.ts");
+  assert.match(management, /return \{ contentUpdatedAt, lineNoticeCreated: true, lineNoticeId: lineNoticeIds\.update\(nextContentUpdateCount\) \};\n\s*\}\n\s*await updateDoc[^\n]*\n\s*return \{ contentUpdatedAt \};/);
+  assert.match(source("lib/lineNoticesFirestore.ts"), /if \(existing\?\.exists\(\)\) return noticeId;[\s\S]*return noticeId;/);
+});
+
+test("通知卡對話框：已發送、稍後再發或關閉都保留正確狀態，並提供前往 LINE 待通知入口", () => {
+  const manage = source("app/manage/page.tsx");
+  assert.match(manage, /onSent=\{\(\) => \{ setLineCard\(null\); setNotice\("已記錄為已發送 LINE。"\); \}\}/);
+  assert.match(manage, /onLater=\{\(\) => \{ setLineCard\(null\); setNotice\("LINE 待通知已保留，可稍後到行政管理首頁的 LINE 待通知處理。"\); \}\}/);
+  assert.match(manage, /onOpenChange=\{open => \{ if \(!open\) \{ setLineCard\(null\); setNotice\("LINE 待通知已保留/, "直接關閉視同稍後再發");
+  assert.match(manage, /notice\.includes\("LINE 待通知"\) && <> <LineNoticeLaterLink \/><\/>/);
+  const publish = source("app/publish/page.tsx");
+  assert.match(publish, /onSent=\{\(\) => setPublishLineState\("sent"\)\}/);
+  assert.match(publish, /publishLineState === "later"\n\s*\? <p className=\{styles\.lineNoticeHint\}>📨 LINE 待通知已保留，可稍後到行政管理首頁處理。 <LineNoticeLaterLink \/><\/p>/);
 });
 
 test("催繳對話框：文字與「需要 LINE 通知」勾選框（預設勾選）在同一畫面，不使用瀏覽器輸入框或確認視窗", () => {
@@ -100,5 +151,4 @@ test("催繳對話框：文字與「需要 LINE 通知」勾選框（預設勾�
   assert.match(manage, /onClick=\{\(\) => openChase\(item\)\}/);
   assert.doesNotMatch(manage, /window\.prompt/);
   assert.doesNotMatch(manage, /加入「LINE 待通知」嗎/);
-  assert.match(manage, /if \(notifyChaseLine\) await retryChaseNotice\(item\.id\)/);
 });

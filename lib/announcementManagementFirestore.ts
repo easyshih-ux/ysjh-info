@@ -1,5 +1,6 @@
 import { deleteField, doc, updateDoc, writeBatch } from "firebase/firestore";
 import { addUpdateLineNotice } from "./lineNoticesFirestore.ts";
+import { lineNoticeIds } from "./lineNotices.ts";
 import type { Announcement, FollowUp } from "./announcements.ts";
 import { createAnnouncementUpdate, hasAnnouncementContentChanges, hasImageAudienceChanges, hasLineSettingChanges, normalizeLineSettings } from "./announcementManagement.ts";
 import { createAnnouncementFollowUp, withdrawAnnouncementFollowUp } from "./announcementFollowUps.ts";
@@ -26,7 +27,7 @@ export async function updateManagedAnnouncement(
   original: Announcement,
   edited: Announcement,
   lineNotice?: { createdBy: string; text: string },
-): Promise<{ contentUpdatedAt: string | null; lineNoticeCreated?: boolean } | null> {
+): Promise<{ contentUpdatedAt: string | null; lineNoticeCreated?: boolean; lineNoticeId?: string } | null> {
   const contentChanged = hasAnnouncementContentChanges(original, edited);
   const lineSettingsChanged = hasLineSettingChanges(original, edited);
   const imageAudiencesChanged = hasImageAudienceChanges(original, edited);
@@ -47,7 +48,7 @@ export async function updateManagedAnnouncement(
       batch.update(doc(database, ANNOUNCEMENTS_COLLECTION, edited.id), patch);
       addUpdateLineNotice(batch, database, edited.id, original.publisherUid, lineNotice.createdBy, nextContentUpdateCount, lineNotice.text);
       await batch.commit();
-      return { contentUpdatedAt, lineNoticeCreated: true };
+      return { contentUpdatedAt, lineNoticeCreated: true, lineNoticeId: lineNoticeIds.update(nextContentUpdateCount) };
     }
     await updateDoc(doc(getFirestoreClient(), ANNOUNCEMENTS_COLLECTION, edited.id), patch);
     return { contentUpdatedAt };

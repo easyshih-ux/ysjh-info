@@ -21,7 +21,8 @@ import { DepartmentOptionGroups } from "@/components/department-option-groups";
 import { LineNotificationSettings } from "@/components/line-notification-settings";
 import { ImportantDateReminder } from "@/components/important-date-reminder";
 import { createChaseLineNotice } from "@/lib/lineNoticesFirestore";
-import { createFollowUpNoticeText, createUpdateNoticeText, LINE_NOTICE_DEFAULT_CHECKED, MAX_UPDATE_HIGHLIGHT_LENGTH } from "@/lib/lineNotices";
+import { createChaseNoticeText, createFollowUpNoticeText, createUpdateNoticeText, LINE_NOTICE_DEFAULT_CHECKED, lineNoticeIds, MAX_UPDATE_HIGHLIGHT_LENGTH } from "@/lib/lineNotices";
+import { LineNoticeCard, LineNoticeLaterLink, type CreatedLineNotice } from "@/components/line-notice-card";
 import { getPublicSiteUrl } from "@/lib/siteUrl";
 import { taipeiDateKey } from "@/lib/taipeiDate";
 import { imageAudiencesForSave, imageAudienceSelectionsFrom, validateImageAudienceSelections, type ImageAudienceSelections } from "@/lib/imageAudiences";
@@ -50,12 +51,19 @@ export default function ManagePage() {
   const [updateHighlight, setUpdateHighlight] = useState("");
   const [followLineNotice, setFollowLineNotice] = useState(false);
   const [chaseNoticeRetryId, setChaseNoticeRetryId] = useState<string | null>(null);
+  // 建立 LINE 待辦成功後立即顯示的通知卡；未勾選或儲存失敗時不會設定。
+  const [lineCard, setLineCard] = useState<CreatedLineNotice | null>(null);
   const siteUrl = () => getPublicSiteUrl(typeof window === "undefined" ? undefined : window.location.origin);
   const openFollow = (item: Announcement, type: FollowUp["type"]) => { setError(""); setMessage(""); setFollowType(type); setFollowLineNotice(type === "reminder" ? LINE_NOTICE_DEFAULT_CHECKED.reminder : type === "supplement" ? LINE_NOTICE_DEFAULT_CHECKED.supplement : false); setFollowTarget(item); };
-  const retryChaseNotice = async (announcementId: string) => {
+  const retryChaseNotice = async (announcementId: string, chase?: { item: Announcement; message: string }) => {
     try {
-      await createChaseLineNotice(announcementId, publisher.uid);
+      const noticeId = await createChaseLineNotice(announcementId, publisher.uid);
       setChaseNoticeRetryId(null); setError(""); setNotice("催繳已啟動，已加入 LINE 待通知");
+      const item = chase?.item ?? items.find(value => value.id === announcementId);
+      if (noticeId && item) {
+        const chasing: Announcement = { ...item, collectionStatus: "chasing", collectionMessage: chase ? chase.message : item.collectionMessage };
+        setLineCard({ announcementId, id: noticeId, type: "chase", title: item.title, text: createChaseNoticeText(chasing, siteUrl(), taipeiDateKey(new Date())) });
+      }
     } catch {
       setChaseNoticeRetryId(announcementId); setError("催繳已啟動，但 LINE 待通知建立失敗，請稍後再按「重試建立 LINE 待通知」。");
     }
@@ -110,7 +118,7 @@ export default function ManagePage() {
     try {
       await manageAnnouncementLifecycle(item.id, action, message);
       setItems(current => action === "delete" ? current.filter(value => value.id !== item.id) : current.map(value => value.id !== item.id ? value : action === "withdraw" ? { ...value, publicationStatus: "withdrawn" } : action === "restore" ? { ...value, publicationStatus: "published", withdrawnAt: undefined, withdrawnBy: undefined } : action === "startChase" ? { ...value, collectionStatus: "chasing", collectionMessage: message } : { ...value, collectionStatus: undefined, collectionMessage: undefined, collectionStartedAt: undefined, collectionStartedBy: undefined }));
-      if (notifyChaseLine) await retryChaseNotice(item.id);
+      if (notifyChaseLine) await retryChaseNotice(item.id, { item, message });
       if (!notifyChaseLine || action !== "startChase") setNotice(action === "withdraw" ? "公告已下架" : action === "restore" ? "公告已復原" : action === "startChase" ? "催繳已啟動" : action === "stopChase" ? "催繳已結束" : "公告已永久刪除");
     } catch (caught) {
       console.error("announcement lifecycle action failed", caught);
@@ -139,9 +147,11 @@ export default function ManagePage() {
     savingRef.current = true; setSaving(true); setError("");
     try {
       if (!original) throw new AnnouncementManagementError("找不到要修改的公告，請重新整理後再試一次。");
-      const saved = await updateManagedAnnouncement(original, edited, updateLineNotice ? { createdBy: publisher.uid, text: createUpdateNoticeText(edited, updateHighlight, siteUrl()) } : undefined);
+      const updateText = updateLineNotice ? createUpdateNoticeText(edited, updateHighlight, siteUrl()) : "";
+      const saved = await updateManagedAnnouncement(original, edited, updateLineNotice ? { createdBy: publisher.uid, text: updateText } : undefined);
       if (saved) setItems(current => current.map(item => item.id === edited.id ? applyManagedAnnouncementSave(item, edited, saved.contentUpdatedAt) : item));
       setEditing(null); setNotice(!saved ? "公告內容沒有變更" : saved.lineNoticeCreated ? "公告已更新，已加入 LINE 待通知" : saved.contentUpdatedAt ? "公告已更新" : "LINE 通知或圖片適用身分設定已更新");
+      if (saved?.lineNoticeId) setLineCard({ announcementId: edited.id, id: saved.lineNoticeId, type: "update", title: edited.title, text: updateText });
     } catch (caught) {
       setError(caught instanceof AnnouncementManagementError ? caught.message : "公告更新失敗，請稍後再試。");
     } finally { savingRef.current = false; setSaving(false); }
@@ -152,8 +162,10 @@ export default function ManagePage() {
     savingRef.current = true; setSaving(true); setError("");
     try {
       const withLine = followLineNotice && (followType === "supplement" || followType === "reminder") && !!followTarget.publisherUid;
-      await appendManagedFollowUp(followTarget.id, followType, message, publisher, withLine ? { publisherUid: followTarget.publisherUid!, text: createFollowUpNoticeText(followTarget, followType as "supplement" | "reminder", message, siteUrl(), taipeiDateKey(new Date())) } : undefined);
+      const followText = withLine ? createFollowUpNoticeText(followTarget, followType as "supplement" | "reminder", message, siteUrl(), taipeiDateKey(new Date())) : "";
+      const created = await appendManagedFollowUp(followTarget.id, followType, message, publisher, withLine ? { publisherUid: followTarget.publisherUid!, text: followText } : undefined);
       setFollowTarget(null); setMessage(""); setNotice(`${followType === "supplement" ? "補充已新增" : followType === "reminder" ? "提醒已新增" : "相關補充已新增"}${withLine ? "，已加入 LINE 待通知" : ""}`);
+      if (withLine && created.id) setLineCard({ announcementId: followTarget.id, id: lineNoticeIds.followUp(created.id), type: followType as "supplement" | "reminder", title: followTarget.title, text: followText });
     } catch (caught) {
       setError(caught instanceof AnnouncementManagementError ? caught.message : "補充／提醒新增失敗，請稍後再試。");
     } finally { savingRef.current = false; setSaving(false); }
@@ -169,7 +181,7 @@ export default function ManagePage() {
         <label>學年度<select value={academicYear} onChange={event => setAcademicYear(Number(event.target.value))}>{FRONTEND_ACADEMIC_YEARS.map(value => <option key={value} value={value}>{value} 學年度</option>)}</select></label>
         <label className={styles.search}><Search /><Input value={query} onChange={event => setQuery(event.target.value)} placeholder="搜尋公告標題、內容或發布單位" /></label>
       </section>
-      {notice && <p className={styles.notice} role="status">{notice}</p>}{error && !editing && !followTarget && <p className={styles.errorNotice} role="alert">{error}{chaseNoticeRetryId && <> <Button variant="outline" size="sm" onClick={() => void retryChaseNotice(chaseNoticeRetryId)}>重試建立 LINE 待通知</Button></>}</p>}
+      {notice && <p className={styles.notice} role="status">{notice}{notice.includes("LINE 待通知") && <> <LineNoticeLaterLink /></>}</p>}{error && !editing && !followTarget && <p className={styles.errorNotice} role="alert">{error}{chaseNoticeRetryId && <> <Button variant="outline" size="sm" onClick={() => void retryChaseNotice(chaseNoticeRetryId)}>重試建立 LINE 待通知</Button></>}</p>}
       {loading ? <p className={styles.empty} aria-live="polite">公告載入中…</p> : loadError ? <p className={`${styles.empty} ${styles.errorNotice}`} role="alert">目前無法載入公告，請稍後再試。</p> : items.length === 0 ? <p className={styles.empty}>目前沒有已發布公告。</p> : <section className={styles.list} aria-label="公告列表">{visible.length === 0 ? <p className={styles.empty}>目前沒有符合的公告。</p> : visible.map(item => <article key={item.id}>
         <div className={styles.meta}><span>{item.academicYear} 學年度</span><span>{item.department}</span><span>{item.publicationStatus === "withdrawn" ? "已下架" : "正常發布"}</span><span>{announcementTimeStates(item, new Date()).deadline}</span>{announcementTimeStates(item, new Date()).activity !== "正常" && <span>{announcementTimeStates(item, new Date()).activity}</span>}{item.collectionStatus === "chasing" && <span>催繳中</span>}<span>發布者：{announcementPublisherLabel(item)}</span><span>發布 {formatDateTime(item.publishedAt)}</span>{item.contentUpdatedAt && <span>更新 {formatDateTime(item.contentUpdatedAt)}</span>}</div>
         <h2>{item.title}</h2><p>{item.audiences.join("、") || "未設定適用對象"}</p>
@@ -196,6 +208,11 @@ export default function ManagePage() {
 
     <Dialog open={!!chaseTarget} onOpenChange={open => { if (!open && !saving) setChaseTarget(null); }}><DialogContent showCloseButton={!saving}><DialogHeader><DialogDescription>{chaseTarget?.title}</DialogDescription><DialogTitle>啟動催繳</DialogTitle></DialogHeader><label className={styles.dialogField}>催繳提醒文字（選填）<Textarea value={chaseMessage} onChange={event => setChaseMessage(event.target.value)} placeholder="例如：尚未繳交的班級請於今日完成" /></label><label className={styles.lineNoticeCheck}><Checkbox checked={chaseLineNotice} onCheckedChange={checked => setChaseLineNotice(checked === true)} />這次催繳需要 LINE 通知</label><div className={styles.editorActions}><Button variant="outline" onClick={() => setChaseTarget(null)} disabled={saving}>取消</Button><Button className={styles.primaryCta} onClick={() => void confirmChase()} disabled={saving}>啟動催繳</Button></div></DialogContent></Dialog>
     <Dialog open={!!followTarget} onOpenChange={open => { if (!open && !saving) { setFollowTarget(null); setError(""); } }}><DialogContent showCloseButton={!saving}><DialogHeader><DialogDescription>{followTarget?.title}</DialogDescription><DialogTitle>{followType === "related" ? "新增相關補充" : "新增補充／提醒"}</DialogTitle></DialogHeader>{followType === "related" ? <p>此補充會顯示於原公告下方，並標示您的發布單位。</p> : <label className={styles.dialogField}>類型<select value={followType} onChange={event => { const type = event.target.value as FollowUp["type"]; setFollowType(type); setFollowLineNotice(type === "reminder" ? LINE_NOTICE_DEFAULT_CHECKED.reminder : LINE_NOTICE_DEFAULT_CHECKED.supplement); }}><option value="supplement">補充</option><option value="reminder">提醒</option></select></label>}{followType !== "related" && <label className={styles.lineNoticeCheck}><Checkbox checked={followLineNotice} onCheckedChange={checked => setFollowLineNotice(checked === true)} />這次{followType === "reminder" ? "提醒" : "補充"}需要 LINE 通知</label>}<label className={styles.dialogField}>內容<Textarea value={message} onChange={event => setMessage(event.target.value)} placeholder="輸入新增資訊；既有紀錄不會被覆蓋。" /></label>{error && <p className={styles.errorNotice} role="alert">{error}</p>}<Button className={styles.primaryCta} disabled={!message.trim() || saving} onClick={addFollow}>{saving ? "儲存中…" : followType === "related" ? "新增相關補充" : "新增紀錄"}</Button></DialogContent></Dialog>
+    <Dialog open={!!lineCard} onOpenChange={open => { if (!open) { setLineCard(null); setNotice("LINE 待通知已保留，可稍後到行政管理首頁的 LINE 待通知處理。"); } }}><DialogContent><DialogHeader><DialogTitle>📨 LINE 通知</DialogTitle><DialogDescription>已加入 LINE 待通知。複製後到 LINE 群組送出，再按「我已發送 LINE」；稍後再發會保留在行政管理首頁。</DialogDescription></DialogHeader>
+      {lineCard && <LineNoticeCard key={`${lineCard.announcementId}/${lineCard.id}`} notice={lineCard} uid={publisher.uid}
+        onSent={() => { setLineCard(null); setNotice("已記錄為已發送 LINE。"); }}
+        onLater={() => { setLineCard(null); setNotice("LINE 待通知已保留，可稍後到行政管理首頁的 LINE 待通知處理。"); }} />}
+    </DialogContent></Dialog>
   </main>;
 }
 
