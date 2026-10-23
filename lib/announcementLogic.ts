@@ -79,7 +79,7 @@ export function nextWeekEvents(announcements: Announcement[], now: Date) {
     .sort((a, b) => a.date.localeCompare(b.date) || (a.time || "99:99").localeCompare(b.time || "99:99"));
 }
 
-/** 首頁「重要公告・請留意」：沿用 LINE V2 的全校必讀／重要必讀等級。 */
+/** 首頁「重要公告・請留意」：沿用 LINE V2 的全校必讀／重要必讀等級，且沒有設定活動日期與繳交期限。 */
 export const IMPORTANT_NOTICE_LEVELS: readonly LineNotificationLevel[] = ["schoolwide", "required"];
 /** 發布當日起算 7 個台北日曆天（含發布當天）；修改公告不延長。 */
 export const IMPORTANT_NOTICE_DAYS = 7;
@@ -91,11 +91,21 @@ export function importantNoticeDayIndex(announcement: Pick<Announcement, "publis
   return 0 - daysUntil(taipeiDateKey(published), now) || 0;
 }
 
+/**
+ * 是否「沒有設定活動日期與繳交期限」：只看 importantEvents／deadlines 欄位
+ * （讀取時已由 announcementFromFirestore 過濾掉不完整的項目），不看發布日期或標題文字。
+ * 有日期的公告由本週／下週重要事項、即將截止等區塊呈現。
+ */
+export function hasNoScheduledDates(announcement: Pick<Announcement, "importantEvents" | "deadlines">) {
+  return announcement.importantEvents.length === 0 && announcement.deadlines.length === 0;
+}
+
 export function isImportantNoticeActive(announcement: Announcement, now: Date) {
   const level = resolveLineNotificationLevel(announcement.lineNotificationLevel);
   const dayIndex = importantNoticeDayIndex(announcement, now);
   return announcement.publicationStatus !== "withdrawn"
     && IMPORTANT_NOTICE_LEVELS.includes(level)
+    && hasNoScheduledDates(announcement)
     && dayIndex !== null
     && dayIndex >= 0
     && dayIndex < IMPORTANT_NOTICE_DAYS;

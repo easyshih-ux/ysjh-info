@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { mockAnnouncements } from "../data/mockAnnouncements.ts";
-import { announcementsForIdentity, importantNoticeAnnouncements, importantNoticeDayIndex, isImportantNoticeActive, IMPORTANT_NOTICE_DAYS, IMPORTANT_NOTICE_PREVIEW_LIMIT, visibleImportantNotices } from "../lib/announcementLogic.ts";
+import { announcementsForIdentity, chasingAnnouncements, hasNoScheduledDates, importantNoticeAnnouncements, upcomingDeadlines, weeklyEvents, importantNoticeDayIndex, isImportantNoticeActive, IMPORTANT_NOTICE_DAYS, IMPORTANT_NOTICE_PREVIEW_LIMIT, visibleImportantNotices } from "../lib/announcementLogic.ts";
 import type { Announcement, LineNotificationLevel } from "../lib/announcements.ts";
 import { ACTIVITY_KEYWORDS, needsImportantDateReminder } from "../lib/publishDraft.ts";
 import { ANNOUNCEMENT_OPEN_SOURCES } from "../lib/publicAnalytics.ts";
@@ -33,6 +33,46 @@ test("只有全校必讀與重要必讀進入重要公告，舊公告與其他�
     notice("legacy", undefined, "2026-10-23T08:00:00"),
   ];
   assert.deepEqual(importantNoticeAnnouncements(items, now).map(item => item.id), ["schoolwide", "required"]);
+});
+
+test("只有全校必讀／重要必讀且沒有活動日期、沒有繳交期限的公告進入重要公告區", () => {
+  const now = taipei("2026-10-23T09:00:00");
+  const event = { date: "2026-10-30", title: "說明會" };
+  const deadline = { date: "2026-10-31", label: "繳交" };
+  const items = [
+    notice("schoolwide-plain", "schoolwide", "2026-10-23T08:00:00"),
+    notice("required-plain", "required", "2026-10-23T08:00:00"),
+    notice("schoolwide-event", "schoolwide", "2026-10-23T08:00:00", { importantEvents: [event] }),
+    notice("schoolwide-range", "schoolwide", "2026-10-23T08:00:00", { importantEvents: [{ date: "2026-10-01", endDate: "2026-12-31", title: "持續活動" }] }),
+    notice("required-deadline", "required", "2026-10-23T08:00:00", { deadlines: [deadline] }),
+    notice("required-past-deadline", "required", "2026-10-23T08:00:00", { deadlines: [{ date: "2026-10-01", label: "已過期限" }] }),
+    notice("required-both", "required", "2026-10-23T08:00:00", { importantEvents: [event], deadlines: [deadline] }),
+    notice("task-plain", "task", "2026-10-23T08:00:00"),
+    notice("general-plain", "general", "2026-10-23T08:00:00"),
+    notice("legacy-plain", undefined, "2026-10-23T08:00:00"),
+    notice("title-date", "required", "2026-10-23T08:00:00", { title: "10/30（五）研習通知" }),
+  ];
+  assert.deepEqual(importantNoticeAnnouncements(items, now).map(item => item.id), ["schoolwide-plain", "required-plain", "title-date"]);
+  assert.equal(hasNoScheduledDates(notice("x", "required", "2026-10-23T08:00:00")), true, "發布日期不算活動日期");
+  assert.equal(hasNoScheduledDates(notice("x", "required", "2026-10-23T08:00:00", { title: "11/2 截止" })), true, "不依標題日期文字判斷");
+  assert.equal(hasNoScheduledDates(notice("x", "required", "2026-10-23T08:00:00", { deadlines: [deadline] })), false);
+  const original = items.find(item => item.id === "required-deadline")!;
+  assert.deepEqual(original.deadlines, [deadline], "不修改原始資料");
+});
+
+test("其他首頁區塊不受重要公告規則影響：本週事項、即將截止、催繳仍取全部公告", () => {
+  const page = source("app/page.tsx");
+  assert.match(page, /weeklyEvents\(regularHomepageAnnouncements, now\)/);
+  assert.match(page, /nextWeekEvents\(regularHomepageAnnouncements, now\)/);
+  assert.match(page, /upcomingDeadlines\(regularHomepageAnnouncements, now\)/);
+  // 有日期的全校必讀公告雖不進重要公告區，仍由本週事項、即將截止、催繳呈現。
+  const now = taipei("2026-10-21T09:00:00");
+  const withEvent = notice("ev", "schoolwide", "2026-10-20T08:00:00", { importantEvents: [{ date: "2026-10-22", title: "全校集會" }] });
+  const withDeadline = notice("dl", "required", "2026-10-20T08:00:00", { deadlines: [{ date: "2026-10-23", label: "填報" }], collectionStatus: "chasing" });
+  assert.deepEqual(importantNoticeAnnouncements([withEvent, withDeadline], now), []);
+  assert.ok(weeklyEvents([withEvent], now).some(item => item.announcement.id === "ev"));
+  assert.ok(upcomingDeadlines([withDeadline], now).some(item => item.announcement.id === "dl"));
+  assert.deepEqual(chasingAnnouncements([withDeadline]).map(item => item.id), ["dl"]);
 });
 
 test("曝光為發布當日起 7 個台北日曆天，第 8 天退出", () => {
