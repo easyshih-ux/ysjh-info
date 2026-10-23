@@ -159,8 +159,8 @@ test("首頁區塊：無資料不顯示、使用既有篩選與排除、展開�
 
 test("重要公告不改變 LINE V2 複製格式", () => {
   const summary = createLineAnnouncementSummary(notice("x", "required", "2026-10-23T08:00:00", { department: "資訊組", contact: undefined, links: [] }), "https://easyshih-ux.github.io/ysjh-info/", 2026);
-  assert.equal(summary.split("\n")[0], "🔴【重要必讀】");
-  assert.match(summary, /🔗 完整公告及操作說明：\nhttps:\/\/easyshih-ux\.github\.io\/ysjh-info\/\?announcement=x$/);
+  assert.equal(summary.split("\n")[0], `🔴【重要必讀】${mockAnnouncements[0].title}`);
+  assert.match(summary, /🔗 完整公告：\nhttps:\/\/easyshih-ux\.github\.io\/ysjh-info\/\?announcement=x$/);
 });
 
 test("漏填提醒：關鍵字加日期、標題含活動才提醒；已填重要日期或只有期限不提醒", () => {

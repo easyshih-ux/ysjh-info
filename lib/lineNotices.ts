@@ -1,7 +1,5 @@
-import type { Announcement, FollowUp } from "./announcements.ts";
-import { createAnnouncementDirectUrl } from "./announcementDeepLink.ts";
-import { formatDepartmentFullName } from "./departments.ts";
-import { createLineAnnouncementSummary, formatLineDate } from "./lineAnnouncementSummary.ts";
+import type { Announcement, Deadline, FollowUp } from "./announcements.ts";
+import { createLineAnnouncementSummary, lineDeadlineSection, lineImportantEventSection, lineNoticeFooter, lineNoticeHeading } from "./lineAnnouncementSummary.ts";
 
 /**
  * LINE 通知待辦：announcements/{announcementId}/lineNotices/{noticeId}
@@ -46,49 +44,51 @@ export const lineNoticeIds = {
   chase: (collectionStartedAtMillis: number) => `chase-${collectionStartedAtMillis}`,
 };
 
-/** 第一行為「通知類型＋公告標題」，第二行緊接發布單位；與內文之間保留一個空行。 */
-function noticeHeader(label: string, announcement: Pick<Announcement, "department" | "title">) {
-  return [`${label}${announcement.title.trim()}\n📢 ${formatDepartmentFullName(announcement.department)}公告`];
+type NoticeAnnouncement = Pick<Announcement, "id" | "department" | "title" | "audiences" | "audienceNote" | "contact" | "importantEvents" | "deadlines">;
+
+/**
+ * 後續通知沿用首次發布的版型：類型＋標題、單位、對象 → 本次重點 → 📅 重要日期 → ⏰ 截止期限
+ * → 閱讀提醒、聯絡資訊、連結。日期與期限沿用首次發布的格式化函式，有設定才顯示。
+ */
+function noticeText(label: string, announcement: NoticeAnnouncement, body: string[], siteUrl: string, currentYear: number, deadlines: readonly Deadline[] = announcement.deadlines) {
+  return [
+    lineNoticeHeading(label, announcement),
+    ...body,
+    ...lineImportantEventSection(announcement.importantEvents, currentYear),
+    ...lineDeadlineSection(deadlines, currentYear),
+    ...lineNoticeFooter(announcement, siteUrl),
+  ].join("\n\n");
 }
 
-function noticeLink(siteUrl: string, announcementId: string) {
-  return `🔗 完整公告：\n${createAnnouncementDirectUrl(siteUrl, announcementId)}`;
-}
-
-function upcomingDeadlineLines(announcement: Pick<Announcement, "deadlines">, today: string, currentYear: number) {
+/** 提醒與催繳只列尚未截止的期限（依時間排序），已過期的期限不再提醒。 */
+function upcomingDeadlines(announcement: Pick<Announcement, "deadlines">, today: string) {
   return announcement.deadlines
     .filter(item => item.date >= today)
-    .sort((a, b) => `${a.date} ${a.time ?? ""}`.localeCompare(`${b.date} ${b.time ?? ""}`))
-    .map(item => `${formatLineDate(item.date, item.time, currentYear)} ${item.label.trim()}`);
+    .sort((a, b) => `${a.date} ${a.time ?? ""}`.localeCompare(`${b.date} ${b.time ?? ""}`));
 }
 
-function deadlineSection(lines: string[]) {
-  if (lines.length === 0) return [];
-  return [lines.length === 1 ? `⏰ 截止｜${lines[0]}` : `⏰ 截止\n${lines.map(line => `・${line}`).join("\n")}`];
+/** 重要異動：呈現異動重點，不重複整篇公告。 */
+export function createUpdateNoticeText(announcement: NoticeAnnouncement, highlight: string, siteUrl: string, currentYear = new Date().getFullYear()) {
+  return noticeText("🔄【公告更新】", announcement, [`✏️ 異動重點｜${highlight.trim()}`], siteUrl, currentYear);
 }
 
-/** 重要異動：只呈現異動重點與連結，不重複整篇公告。 */
-export function createUpdateNoticeText(announcement: Pick<Announcement, "id" | "department" | "title">, highlight: string, siteUrl: string) {
-  return [...noticeHeader("🔄【公告更新】", announcement), `✏️ 異動重點｜${highlight.trim()}`, noticeLink(siteUrl, announcement.id)].join("\n\n");
-}
-
-/** 補充或提醒：只呈現這次的補充／提醒內容；提醒另附尚未截止的期限。 */
+/** 補充或提醒：呈現這次的補充／提醒內容；提醒只列尚未截止的期限。 */
 export function createFollowUpNoticeText(
-  announcement: Pick<Announcement, "id" | "department" | "title" | "deadlines">,
+  announcement: NoticeAnnouncement,
   type: "supplement" | "reminder",
   message: string,
   siteUrl: string,
   today: string,
   currentYear = Number(today.slice(0, 4)),
 ) {
-  const body = type === "supplement" ? [`💬 補充｜${message.trim()}`] : [`🔔 ${message.trim()}`, ...deadlineSection(upcomingDeadlineLines(announcement, today, currentYear))];
-  return [...noticeHeader(type === "supplement" ? "📌【公告補充】" : "⚠️【提醒】", announcement), ...body, noticeLink(siteUrl, announcement.id)].join("\n\n");
+  if (type === "supplement") return noticeText("📌【公告補充】", announcement, [`💬 補充｜${message.trim()}`], siteUrl, currentYear);
+  return noticeText("⚠️【提醒】", announcement, [`🔔 ${message.trim()}`], siteUrl, currentYear, upcomingDeadlines(announcement, today));
 }
 
 /** 催繳：顯示時依目前催繳文字與尚未截止的期限產生。 */
-export function createChaseNoticeText(announcement: Pick<Announcement, "id" | "department" | "title" | "deadlines" | "collectionMessage">, siteUrl: string, today: string, currentYear = Number(today.slice(0, 4))) {
+export function createChaseNoticeText(announcement: NoticeAnnouncement & Pick<Announcement, "collectionMessage">, siteUrl: string, today: string, currentYear = Number(today.slice(0, 4))) {
   const message = announcement.collectionMessage?.trim();
-  return [...noticeHeader("🚨【催繳】", announcement), ...(message ? [`🔔 ${message}`] : []), ...deadlineSection(upcomingDeadlineLines(announcement, today, currentYear)), noticeLink(siteUrl, announcement.id)].join("\n\n");
+  return noticeText("🚨【催繳】", announcement, message ? [`🔔 ${message}`] : [], siteUrl, currentYear, upcomingDeadlines(announcement, today));
 }
 
 /** 首次發布沿用 LINE V2（依最新內容產生）；催繳依目前狀態產生；其他類型使用建立時的文字快照。 */

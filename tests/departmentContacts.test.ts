@@ -43,7 +43,7 @@ test("網站與 LINE 的聯絡文案由集中 formatter 產生", () => {
   assert.equal(formatContactCompact(contact), "☎ 業務聯絡｜設備組｜分機 104");
   assert.equal(formatContactSentence(contact), "☎ 如有任何疑問，請洽設備組，分機 104。");
   assert.match(source("components/announcement-contact.tsx"), /formatContactCompact/);
-  assert.equal(formatContactInquiry(contact), "☎ 洽詢｜設備組，分機 104");
+  assert.equal(formatContactInquiry(contact), "☎ 如有任何疑問，請洽設備組，分機 104");
   assert.match(source("lib/lineAnnouncementSummary.ts"), /formatContactInquiry/);
 });
 

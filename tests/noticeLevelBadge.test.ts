@@ -42,8 +42,8 @@ test("手機版可自然換行：標籤不換行、標題文字照常折行；�
   for (const level of ["schoolwide", "required", "task", "general"]) assert.match(css, new RegExp(`\\.notice-level-${level}\\{`));
 });
 
-test("LINE 文字不重複加入等級：補充等通知維持原格式", () => {
-  const text = createFollowUpNoticeText({ id: "a1", department: "設備組", title: "標題", deadlines: [] }, "supplement", "內容", "https://example.test/", "2026-10-23");
+test("LINE 文字不重複加入等級：補充等通知第一行維持類型＋標題", () => {
+  const text = createFollowUpNoticeText({ id: "a1", department: "設備組", title: "標題", audiences: ["全校教師"], importantEvents: [], deadlines: [] }, "supplement", "內容", "https://example.test/", "2026-10-23");
   assert.ok(text.startsWith("📌【公告補充】標題\n"));
   for (const label of Object.values(LINE_NOTIFICATION_LEVEL_LABELS)) assert.ok(!text.includes(label));
 });

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { mockAnnouncements } from "../data/mockAnnouncements.ts";
+import { LINE_READ_REMINDER } from "../lib/lineAnnouncementSummary.ts";
 import type { Announcement, FollowUp } from "../lib/announcements.ts";
 import { createChaseNoticeText, createFollowUpNoticeText, createUpdateNoticeText, LINE_NOTICE_DEFAULT_CHECKED, lineNoticeFromFirestore, lineNoticeIds, lineNoticeText, pendingLineNotices, type LineNotice } from "../lib/lineNotices.ts";
 
@@ -22,12 +23,12 @@ test("預設勾選：重要異動與一般補充不勾，提醒與催繳勾選",
 });
 
 test("各類通知文字只呈現本次重點並附直達連結，不重複整篇公告", () => {
-  const a = item();
+  const a = item({ audiences: ["全校教師"], audienceNote: undefined, importantEvents: [], contact: { department: "資訊組", extension: "103" } });
   const update = createUpdateNoticeText(a, " 期限延後至 11/30 ", site);
-  assert.equal(update, "🔄【公告更新】雙因子驗證設定\n📢 教務處資訊組公告\n\n✏️ 異動重點｜期限延後至 11/30\n\n🔗 完整公告：\nhttps://easyshih-ux.github.io/ysjh-info/?announcement=a1");
+  assert.equal(update, "🔄【公告更新】雙因子驗證設定\n📢 教務處資訊組公告\n👥 對象｜全校教師\n\n✏️ 異動重點｜期限延後至 11/30\n\n⏰ 截止\n・11/30 12:00 完成設定\n・10/1 已過期\n\n⚠️ LINE 僅供通知，並非完整公告！請相關同仁務必點擊下方連結，詳閱公告內容，以免遺漏重要資訊及待辦事項。\n\n☎ 如有任何疑問，請洽資訊組，分機 103\n\n🔗 完整公告：\nhttps://easyshih-ux.github.io/ysjh-info/?announcement=a1");
   const supplement = createFollowUpNoticeText(a, "supplement", "操作說明已更新", site, "2026-10-23");
   assert.match(supplement, /^📌【公告補充】[\s\S]*💬 補充｜操作說明已更新/);
-  assert.doesNotMatch(supplement, /⏰/);
+  assert.match(supplement, /💬 補充｜操作說明已更新\n\n⏰ 截止\n・11\/30 12:00 完成設定\n・10\/1 已過期/, "補充保留全部截止期限");
   const reminder = createFollowUpNoticeText(a, "reminder", "尚未完成的同仁請儘速設定", site, "2026-10-23");
   assert.match(reminder, /^⚠️【提醒】[\s\S]*🔔 尚未完成的同仁請儘速設定\n\n⏰ 截止｜11\/30 12:00 完成設定/);
   assert.doesNotMatch(reminder, /已過期/);
@@ -36,29 +37,34 @@ test("各類通知文字只呈現本次重點並附直達連結，不重複整�
   for (const text of [update, supplement, reminder, chase]) assert.ok(!text.includes(a.content));
 });
 
-test("四種通知第一行為類型＋標題、第二行為發布單位，不重複標題也沒有多餘空行", () => {
-  const a = item({ title: "  速印費送單請送目前的執行版本 ", department: "設備組", collectionMessage: "請於今日完成" });
-  const header = "\n📢 教務處設備組公告\n\n";
+test("四種後續通知：類型＋標題、單位、對象，保留本次重點，結尾為閱讀提醒、聯絡資訊與連結", () => {
+  const a = item({ title: "  速印費送單請送目前的執行版本 ", department: "設備組", audiences: ["七年級導師"], audienceNote: "需要送印的老師", importantEvents: [], deadlines: [{ date: "2026-11-30", time: "12:00", label: "完成設定" }], contact: { department: "設備組", extension: "104" }, collectionMessage: "請於今日完成" });
+  const header = "\n📢 教務處設備組公告\n👥 對象｜需要送印的老師\n\n";
+  const footer = `\n\n${LINE_READ_REMINDER}\n\n☎ 如有任何疑問，請洽設備組，分機 104\n\n🔗 完整公告：\n${site}?announcement=a1`;
   const texts = {
     supplement: createFollowUpNoticeText(a, "supplement", "改用新版表單", site, "2026-10-23"),
     reminder: createFollowUpNoticeText(a, "reminder", "尚未送單請儘速處理", site, "2026-10-23"),
     update: createUpdateNoticeText(a, "送單期限延後", site),
     chase: createChaseNoticeText(a, site, "2026-10-23"),
   };
-  assert.equal(texts.supplement, `📌【公告補充】速印費送單請送目前的執行版本${header}💬 補充｜改用新版表單\n\n🔗 完整公告：\n${site}?announcement=a1`);
-  assert.equal(texts.reminder, `⚠️【提醒】速印費送單請送目前的執行版本${header}🔔 尚未送單請儘速處理\n\n⏰ 截止｜11/30 12:00 完成設定\n\n🔗 完整公告：\n${site}?announcement=a1`);
-  assert.equal(texts.update, `🔄【公告更新】速印費送單請送目前的執行版本${header}✏️ 異動重點｜送單期限延後\n\n🔗 完整公告：\n${site}?announcement=a1`);
-  assert.equal(texts.chase, `🚨【催繳】速印費送單請送目前的執行版本${header}🔔 請於今日完成\n\n⏰ 截止｜11/30 12:00 完成設定\n\n🔗 完整公告：\n${site}?announcement=a1`);
+  assert.equal(texts.supplement, `📌【公告補充】速印費送單請送目前的執行版本${header}💬 補充｜改用新版表單\n\n⏰ 截止｜11/30 12:00 完成設定${footer}`);
+  assert.equal(texts.reminder, `⚠️【提醒】速印費送單請送目前的執行版本${header}🔔 尚未送單請儘速處理\n\n⏰ 截止｜11/30 12:00 完成設定${footer}`);
+  assert.equal(texts.update, `🔄【公告更新】速印費送單請送目前的執行版本${header}✏️ 異動重點｜送單期限延後\n\n⏰ 截止｜11/30 12:00 完成設定${footer}`);
+  assert.equal(texts.chase, `🚨【催繳】速印費送單請送目前的執行版本${header}🔔 請於今日完成\n\n⏰ 截止｜11/30 12:00 完成設定${footer}`);
+  const noContact = createFollowUpNoticeText({ ...a, contact: undefined }, "supplement", "x", site, "2026-10-23");
+  assert.doesNotMatch(noContact, /☎/, "沒有聯絡資料時不輸出洽詢");
   for (const text of Object.values(texts)) {
     assert.equal(text.split("速印費送單請送目前的執行版本").length, 2, "標題只出現一次");
     assert.doesNotMatch(text, /\n{3,}|^\s|\s$/);
+    assert.doesNotMatch(text, /\*\*|__|^#/m, "純文字，沒有 Markdown 符號");
+    for (const label of ["🚨【全校必讀】", "🔴【重要必讀】", "🟠【待辦事項】", "🔵【一般公告】"]) assert.ok(!text.includes(label), "後續通知不重複加入等級");
   }
 });
 
 test("首次發布沿用 LINE V2 並依最新內容產生；其他類型使用建立時的快照", () => {
   const a = item({ lineNotificationLevel: "required" });
-  assert.match(lineNoticeText(notice(), a, site, "2026-10-23"), /^🔴【重要必讀】/);
-  assert.match(lineNoticeText(notice(), { ...a, title: "修正後標題" }, site, "2026-10-23"), /📌 修正後標題/);
+  assert.match(lineNoticeText(notice(), a, site, "2026-10-23"), /^🔴【重要必讀】雙因子驗證設定\n/);
+  assert.match(lineNoticeText(notice(), { ...a, title: "修正後標題" }, site, "2026-10-23"), /^🔴【重要必讀】修正後標題\n/);
   assert.equal(lineNoticeText(notice({ id: "update-2", type: "update", text: "快照文字" }), { ...a, title: "後來又改" }, site, "2026-10-23"), "快照文字");
 });
 
@@ -170,4 +176,60 @@ test("催繳對話框：文字與「需要 LINE 通知」勾選框（預設勾�
   assert.match(manage, /onClick=\{\(\) => openChase\(item\)\}/);
   assert.doesNotMatch(manage, /window\.prompt/);
   assert.doesNotMatch(manage, /加入「LINE 待通知」嗎/);
+});
+
+test("重要日期與截止期限：首次發布與四種後續通知都保留，順序為對象 → 本次重點 → 📅 → ⏰ → 提醒", () => {
+  const base = item({ title: "研習通知", department: "設備組", audiences: ["全校教師"], audienceNote: undefined, contact: { department: "設備組", extension: "104" }, collectionMessage: "請儘速完成", links: [], lineNotificationLevel: "task" });
+  const events = [{ date: "2026-11-02", time: "13:30", endTime: "16:00", title: "教師研習" }, { date: "2026-11-05", endDate: "2026-11-06", title: "成果展" }, { date: "2026-11-10", title: "說明會" }];
+  const deadlines = [{ date: "2026-11-20", time: "12:00", label: "繳交心得" }];
+  const cases = {
+    both: { importantEvents: [events[0]], deadlines },
+    eventsOnly: { importantEvents: [events[0]], deadlines: [] },
+    deadlinesOnly: { importantEvents: [], deadlines },
+    none: { importantEvents: [], deadlines: [] },
+    multiple: { importantEvents: events, deadlines: [] },
+  };
+  const build = (a: Announcement) => ({
+    publish: lineNoticeText(notice(), a, site, "2026-10-23"),
+    update: createUpdateNoticeText(a, "地點更改", site, 2026),
+    supplement: createFollowUpNoticeText(a, "supplement", "請攜帶筆電", site, "2026-10-23"),
+    reminder: createFollowUpNoticeText(a, "reminder", "記得出席", site, "2026-10-23"),
+    chase: createChaseNoticeText(a, site, "2026-10-23"),
+  });
+  const oneEvent = "📅 日期｜11/2 13:30－16:00 教師研習";
+  const oneDeadline = "⏰ 截止｜11/20 12:00 繳交心得";
+  for (const [name, overrides] of Object.entries(cases)) {
+    for (const [kind, text] of Object.entries(build({ ...base, ...overrides }))) {
+      const label = `${name}/${kind}`;
+      const sections = text.split("\n\n");
+      const eventIndex = sections.findIndex(part => part.startsWith("📅"));
+      const deadlineIndex = sections.findIndex(part => part.startsWith("⏰"));
+      const reminderIndex = sections.indexOf(LINE_READ_REMINDER);
+      assert.ok(reminderIndex > 0, label);
+      if (name === "both") { assert.equal(sections[eventIndex], oneEvent, label); assert.equal(sections[deadlineIndex], oneDeadline, label); assert.ok(eventIndex < deadlineIndex && deadlineIndex < reminderIndex, label); }
+      if (name === "eventsOnly") { assert.equal(sections[eventIndex], oneEvent, label); assert.equal(deadlineIndex, -1, label); assert.ok(eventIndex < reminderIndex, label); }
+      if (name === "deadlinesOnly") { assert.equal(eventIndex, -1, label); assert.equal(sections[deadlineIndex], oneDeadline, label); assert.ok(deadlineIndex < reminderIndex, label); }
+      if (name === "none") { assert.equal(eventIndex, -1, label); assert.equal(deadlineIndex, -1, label); assert.doesNotMatch(text, /📅|⏰|重要日期|截止/, label); }
+      if (name === "multiple") assert.equal(sections[eventIndex], "📅 重要日期\n・11/2 13:30－16:00 教師研習\n・11/5 ～ 11/6 成果展\n・11/10 說明會", label);
+      assert.ok(sections[0].startsWith(kind === "publish" ? "🟠【待辦事項】研習通知\n" : "") , label);
+      assert.doesNotMatch(text, /\n{3,}/, label);
+      assert.ok(!text.includes(base.content), label);
+    }
+  }
+  // 本次重點位於日期之前；日期與期限各自獨立，不互相取代。
+  const both = build({ ...base, ...cases.both });
+  assert.ok(both.update.indexOf("✏️ 異動重點｜地點更改") < both.update.indexOf("📅"));
+  assert.ok(both.reminder.indexOf("🔔 記得出席") < both.reminder.indexOf("📅"));
+  assert.ok(!both.publish.includes("📅 日期｜11/20"), "期限不會被當成重要日期");
+});
+
+test("提醒與催繳只列尚未截止的期限；首次發布、修改、補充列出全部期限", () => {
+  const a = item({ importantEvents: [], deadlines: [{ date: "2026-10-01", label: "已過期" }, { date: "2026-11-30", label: "未到期" }] });
+  for (const text of [createFollowUpNoticeText(a, "reminder", "r", site, "2026-10-23"), createChaseNoticeText(a, site, "2026-10-23")]) {
+    assert.match(text, /⏰ 截止｜11\/30 未到期/);
+    assert.doesNotMatch(text, /已過期/);
+  }
+  for (const text of [lineNoticeText(notice(), a, site, "2026-10-23"), createUpdateNoticeText(a, "x", site, 2026), createFollowUpNoticeText(a, "supplement", "s", site, "2026-10-23")]) {
+    assert.match(text, /⏰ 截止\n・10\/1 已過期\n・11\/30 未到期/);
+  }
 });

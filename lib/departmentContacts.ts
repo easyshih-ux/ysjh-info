@@ -88,5 +88,5 @@ export function formatContactSentence(contact: AnnouncementContact) {
 }
 
 export function formatContactInquiry(contact: AnnouncementContact) {
-  return `☎ 洽詢｜${contact.department}，分機 ${contact.extension}`;
+  return `☎ 如有任何疑問，請洽${contact.department}，分機 ${contact.extension}`;
 }
