@@ -2,9 +2,9 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BellRing, CalendarDays, ChevronRight, Clock3, FileText, ImageIcon, Search, Settings, ZoomIn } from "lucide-react";
-import { USER_IDENTITIES, formatImportantEventSchedule, formatLatestFollowUpLabel, type Announcement, type ImageAttachment, type PdfAttachment, type Audience, type UserIdentity } from "@/lib/announcements";
+import { LINE_NOTIFICATION_LEVEL_LABELS, USER_IDENTITIES, formatImportantEventSchedule, resolveLineNotificationLevel, formatLatestFollowUpLabel, type Announcement, type ImageAttachment, type PdfAttachment, type Audience, type UserIdentity } from "@/lib/announcements";
 import { formatFileSize } from "@/lib/attachmentFiles";
-import { announcementsForIdentity, chasingAnnouncements, daysUntil, deadlineDateLabel, deadlineRelativeLabel, deadlineUrgency, filterAnnouncements, importantEventDateLabel, needsAcademicYearConfirmation, nextWeekBounds, nextWeekEvents, readSavedIdentity, saveIdentity, type SavedIdentity, upcomingDeadlines, weekBounds, weeklyEventDisplay, weeklyEvents } from "@/lib/announcementLogic";
+import { announcementsForIdentity, chasingAnnouncements, importantNoticeAnnouncements, visibleImportantNotices, daysUntil, deadlineDateLabel, deadlineRelativeLabel, deadlineUrgency, filterAnnouncements, importantEventDateLabel, needsAcademicYearConfirmation, nextWeekBounds, nextWeekEvents, readSavedIdentity, saveIdentity, type SavedIdentity, upcomingDeadlines, weekBounds, weeklyEventDisplay, weeklyEvents } from "@/lib/announcementLogic";
 import { announcementsForAcademicYear, CURRENT_ACADEMIC_YEAR, FRONTEND_ACADEMIC_YEARS } from "@/lib/academicYear";
 import { readPublicAnnouncements } from "@/lib/announcementFirestore";
 import { readAnnouncementIdFromSearch, resolveAnnouncementDeepLink, withAnnouncementQuery } from "@/lib/announcementDeepLink";
@@ -144,6 +144,14 @@ export default function Home() {
   const nextEvents = useMemo(() => nextWeekEvents(regularHomepageAnnouncements, now), [regularHomepageAnnouncements, now]);
   const groupedEvents = useMemo(() => Object.groupBy(events, item => item.date), [events]);
   const deadlines = useMemo(() => upcomingDeadlines(regularHomepageAnnouncements, now), [regularHomepageAnnouncements, now]);
+  const importantNotices = useMemo(() => importantNoticeAnnouncements(homepageAnnouncements, now, [
+    ...chasing.map(item => item.id),
+    ...events.map(item => item.announcement.id),
+    ...nextEvents.map(item => item.announcement.id),
+    ...deadlines.map(item => item.announcement.id),
+  ]), [homepageAnnouncements, now, chasing, events, nextEvents, deadlines]);
+  const [importantExpanded, setImportantExpanded] = useState(false);
+  const importantView = visibleImportantNotices(importantNotices, importantExpanded);
   const rangeLabel = (bounds: { start: Date; end: Date }) => `${fmtDate(calendarDateKey(bounds.start))}～${fmtDate(calendarDateKey(bounds.end))}`;
   const weekRange = useMemo(() => rangeLabel(weekBounds(now)), [now]);
   const nextWeekRange = useMemo(() => rangeLabel(nextWeekBounds(now)), [now]);
@@ -158,6 +166,7 @@ export default function Home() {
       {deepLinkNotice && <section className="announcement-state deeplink-notice" role="status"><p>{deepLinkNotice}</p><button type="button" onClick={() => setDeepLinkNotice(null)}>知道了</button></section>}
       {announcementsLoading ? <section className="announcement-state" aria-live="polite">公告載入中…</section> : announcementsError ? <section className="announcement-state error-state" role="alert">目前無法載入公告，請稍後再試。</section> : announcements.length === 0 ? <section className="announcement-state">目前沒有公告。</section> : <>
       {chasing.length > 0 && <section className="section chase-section" aria-labelledby="chase-title"><div className="section-heading"><div><p className="section-kicker">COLLECTION REMINDER</p><h2 id="chase-title">🚨 催繳中</h2></div></div><div className="announcement-list">{chasing.map(item => <article className="announcement-card chase-card" key={item.id}><span className="chase-badge">催繳中</span><h3>{item.title}</h3>{item.deadlines.map((deadline, index) => <p key={index}>{deadlineDateLabel(deadline.date)} {deadline.time || ""}</p>)}{item.collectionMessage && <p>{item.collectionMessage}</p>}<DepartmentBadge department={item.department} /><button className="text-button" onClick={() => openAnnouncement(item, "chasing")}>查看完整公告 <ChevronRight aria-hidden="true" /></button></article>)}</div></section>}
+      {importantView.total > 0 && <section className="section important-section" aria-labelledby="important-title"><div className="section-heading"><div><p className="section-kicker">MUST READ</p><h2 id="important-title">📣 重要公告・請留意</h2></div><span className="count">共 {importantView.total} 則</span></div><div className="announcement-list" id="important-notice-list">{importantView.visible.map(item => { const level = resolveLineNotificationLevel(item.lineNotificationLevel); return <article className={`announcement-card important-card important-${level}`} key={item.id}><div className="announcement-meta"><span className="important-level">{LINE_NOTIFICATION_LEVEL_LABELS[level]}</span><span>{fmtPublished(item.publishedAt)}</span><DepartmentBadge department={item.department} /></div><h3>{item.title}</h3><AudienceTags values={item.audiences} /><AnnouncementUpdateBadges announcement={item} /><button className="text-button" onClick={() => openAnnouncement(item, "important")}>查看完整公告 <ChevronRight aria-hidden="true" /></button></article>; })}</div>{importantView.canExpand && <button type="button" className="important-toggle" aria-expanded={importantExpanded} aria-controls="important-notice-list" onClick={() => setImportantExpanded(value => !value)}>{importantExpanded ? "收合重要公告" : `查看全部重要公告（${importantView.total}）`}</button>}</section>}
       <section className={`section section-primary priority-section priority-weekly ${events.length === 0 ? "weekly-empty" : ""}`} aria-labelledby="weekly-title"><div className="section-heading"><div><p className="section-kicker">WEEKLY FOCUS</p><h2 id="weekly-title">📌 本週重要事項</h2></div><span className="range">{weekRange}</span></div>{events.length === 0 ? <p className="weekly-empty-message">本週暫無其他重要事項</p> : <div className="event-board">
         {Object.entries(groupedEvents).map(([date, items]) => {
           const days = daysUntil(date, now);

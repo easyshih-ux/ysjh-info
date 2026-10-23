@@ -24,7 +24,7 @@ export function LineNotificationSettings({
   const selected = resolveLineNotificationLevel(level);
   const showSchoolwideReminder = needsSchoolwideAudienceReminder(selected, audiences);
   return <section className={styles.settings} aria-labelledby={`${idPrefix}-line-settings-title`}>
-    <div className={styles.heading}><h3 id={`${idPrefix}-line-settings-title`}>LINE 通知設定</h3><p>只影響複製到 LINE 的通知樣式，不會改變公告的接收對象。</p></div>
+    <div className={styles.heading}><h3 id={`${idPrefix}-line-settings-title`}>LINE 通知設定</h3><p>不改變公告接收對象。全校必讀、重要必讀於首頁提醒 7 天。</p></div>
     <fieldset className={styles.levels}>
       <legend>通知等級</legend>
       <div className={styles.levelGrid}>{LINE_NOTIFICATION_LEVELS.map(value => <label key={value} className={`${styles.level} ${styles[value]} ${selected === value ? styles.selected : ""}`}><input type="radio" name={`${idPrefix}-line-level`} value={value} checked={selected === value} onChange={() => onLevelChange(value)} /><span><strong>{LINE_NOTIFICATION_LEVEL_LABELS[value]}</strong><small>{LINE_NOTIFICATION_LEVEL_DESCRIPTIONS[value]}</small></span></label>)}</div>

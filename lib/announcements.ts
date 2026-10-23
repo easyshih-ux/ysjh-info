@@ -105,7 +105,7 @@ export interface Announcement {
   department: Department;
   title: string;
   audiences: Audience[];
-  /** 僅影響 LINE 通知呈現，不影響公告接收身分。 */
+  /** 影響 LINE 通知呈現；全校必讀／重要必讀另會在首頁「重要公告・請留意」顯示 7 天。不影響公告接收身分。 */
   lineNotificationLevel?: LineNotificationLevel;
   /** 實際辦理對象（選填），僅供 LINE 通知顯示，不影響 audiences 篩選。 */
   audienceNote?: string;

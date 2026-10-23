@@ -2,6 +2,7 @@ import { clearAnalyticsCookies, readAnalyticsConsent, shouldEnableAnalytics } fr
 
 export const ANNOUNCEMENT_OPEN_SOURCES = [
   "chasing",
+  "important",
   "weekly",
   "next_week",
   "deadline",

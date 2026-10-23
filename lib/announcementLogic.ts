@@ -1,4 +1,4 @@
-import { USER_IDENTITIES, type Announcement, type Audience, type ImportantEvent, type UserIdentity } from "./announcements.ts";
+import { USER_IDENTITIES, resolveLineNotificationLevel, type Announcement, type Audience, type ImportantEvent, type LineNotificationLevel, type UserIdentity } from "./announcements.ts";
 import { parseCalendarDate, taipeiDateKey } from "./taipeiDate.ts";
 
 export const ROLE_STORAGE_KEY = "selectedRole";
@@ -77,6 +77,46 @@ export function nextWeekEvents(announcements: Announcement[], now: Date) {
   return announcements.flatMap(a => a.importantEvents.map(event => ({ ...event, announcement: a })))
     .filter(item => { const eventStart = localDate(item.date); return eventStart >= start && eventStart <= end; })
     .sort((a, b) => a.date.localeCompare(b.date) || (a.time || "99:99").localeCompare(b.time || "99:99"));
+}
+
+/** 首頁「重要公告・請留意」：沿用 LINE V2 的全校必讀／重要必讀等級。 */
+export const IMPORTANT_NOTICE_LEVELS: readonly LineNotificationLevel[] = ["schoolwide", "required"];
+/** 發布當日起算 7 個台北日曆天（含發布當天）；修改公告不延長。 */
+export const IMPORTANT_NOTICE_DAYS = 7;
+export const IMPORTANT_NOTICE_PREVIEW_LIMIT = 3;
+
+export function importantNoticeDayIndex(announcement: Pick<Announcement, "publishedAt">, now: Date) {
+  const published = new Date(announcement.publishedAt);
+  if (Number.isNaN(published.getTime())) return null;
+  return 0 - daysUntil(taipeiDateKey(published), now) || 0;
+}
+
+export function isImportantNoticeActive(announcement: Announcement, now: Date) {
+  const level = resolveLineNotificationLevel(announcement.lineNotificationLevel);
+  const dayIndex = importantNoticeDayIndex(announcement, now);
+  return announcement.publicationStatus !== "withdrawn"
+    && IMPORTANT_NOTICE_LEVELS.includes(level)
+    && dayIndex !== null
+    && dayIndex >= 0
+    && dayIndex < IMPORTANT_NOTICE_DAYS;
+}
+
+/**
+ * announcements 應為首頁已依身分、檢視模式與學年度篩選後的公告；
+ * excludedIds 為已出現在催繳、本週、下週、即將截止的公告，避免重複顯示。
+ */
+export function importantNoticeAnnouncements(announcements: readonly Announcement[], now: Date, excludedIds: Iterable<string> = []) {
+  const excluded = new Set(excludedIds);
+  const rank = (item: Announcement) => resolveLineNotificationLevel(item.lineNotificationLevel) === "schoolwide" ? 0 : 1;
+  return announcements
+    .filter(item => !excluded.has(item.id) && isImportantNoticeActive(item, now))
+    .sort((a, b) => rank(a) - rank(b) || b.publishedAt.localeCompare(a.publishedAt));
+}
+
+/** 預設顯示前 3 則；展開時顯示全部符合資格的重要公告。 */
+export function visibleImportantNotices<T>(items: readonly T[], expanded: boolean) {
+  const visible = expanded ? [...items] : items.slice(0, IMPORTANT_NOTICE_PREVIEW_LIMIT);
+  return { visible, total: items.length, canExpand: items.length > IMPORTANT_NOTICE_PREVIEW_LIMIT };
 }
 
 export function chasingAnnouncements(announcements: Announcement[]) {

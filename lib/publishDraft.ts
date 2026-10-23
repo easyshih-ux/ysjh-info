@@ -161,3 +161,23 @@ export function normalizeOptionalHttpUrl(value: string): { value: string; error?
 function isLikelyDomain(value: string) {
   return /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}(?::\d{1,5})?(?:[/?#][^\s]*)?$/i.test(value);
 }
+
+/** 漏填重要日期提醒（不阻擋發布或儲存）。 */
+export const ACTIVITY_KEYWORDS = ["會議", "研習", "說明會", "講座", "典禮", "演練", "活動", "座談", "工作坊", "公播", "校外教學", "參訪", "競賽"] as const;
+
+const DATE_IN_TEXT = /(?:\d{4}[-/／.]\d{1,2}[-/／.]\d{1,2})|(?:\d{1,2}\s*[/／]\s*\d{1,2})|(?:\d{1,2}\s*月\s*\d{1,2}\s*[日號]?)/;
+
+function hasActivityKeyword(text: string) {
+  return ACTIVITY_KEYWORDS.some(keyword => text.includes(keyword));
+}
+
+/**
+ * 已填重要日期時不提醒；標題提到活動類關鍵字時提醒；
+ * 標題或內容同時出現活動類關鍵字與日期時提醒。只有繳交期限、沒有活動內容時不提醒。
+ */
+export function needsImportantDateReminder(item: { title: string; content: string; importantEvents: readonly ImportantEvent[] }) {
+  if (item.importantEvents.some(isImportantEventUsed)) return false;
+  if (hasActivityKeyword(item.title)) return true;
+  const text = `${item.title}\n${item.content}`;
+  return hasActivityKeyword(text) && DATE_IN_TEXT.test(text);
+}
