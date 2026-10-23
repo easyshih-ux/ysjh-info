@@ -578,6 +578,44 @@ test("47g 修改公告時附件驗證最佳化仍拒絕竄改", async () => {
   await assertSucceeds(updateDoc(adminReference, { attachments: [image(1), image(2)] }));
 });
 
+test("47h imageAudiences 合法對照表可建立與修改，舊公告沒有欄位仍相容", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  const database = userDb("userA");
+  await assertSucceeds(setDoc(doc(database, "announcements/noTags"), announcementData()));
+  await assertSucceeds(setDoc(doc(database, "announcements/tagged"), { ...announcementData(), imageAudiences: { "image-1": ["七年級導師"], "image-2": ["八年級導師", "九年級導師"] } }));
+  await assertSucceeds(setDoc(doc(database, "announcements/fiveTags"), { ...announcementData(), imageAudiences: Object.fromEntries([1, 2, 3, 4, 5].map(n => [`image-${n}`, ["七年級導師"]])) }));
+  await seed("announcements/editTags", announcementData());
+  const reference = doc(database, "announcements/editTags");
+  await assertSucceeds(updateDoc(reference, { imageAudiences: { "image-1": ["專任教師"] } }));
+  await assertSucceeds(updateDoc(reference, { imageAudiences: deleteField() }));
+});
+
+test("47i imageAudiences 拒絕非對照表與超過 5 筆", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  const database = userDb("userA");
+  await assertFails(setDoc(doc(database, "announcements/listTags"), { ...announcementData(), imageAudiences: ["七年級導師"] }));
+  await assertFails(setDoc(doc(database, "announcements/stringTags"), { ...announcementData(), imageAudiences: "七年級導師" }));
+  await assertFails(setDoc(doc(database, "announcements/sixTags"), { ...announcementData(), imageAudiences: Object.fromEntries([1, 2, 3, 4, 5, 6].map(n => [`image-${n}`, ["七年級導師"]])) }));
+  await seed("announcements/editBad", announcementData());
+  const reference = doc(database, "announcements/editBad");
+  await assertFails(updateDoc(reference, { imageAudiences: "七年級導師" }));
+  await assertFails(updateDoc(reference, { imageAudiences: Object.fromEntries([1, 2, 3, 4, 5, 6].map(n => [`image-${n}`, ["七年級導師"]])) }));
+});
+
+test("47j 最重發布加強版：5 張皆有身分標記的圖片＋2 份 PDF＋聯絡＋通知等級＋實際辦理對象必須成功", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  const images = Array.from({ length: 5 }, (_, index) => ({ id: `image-${index + 1}`, type: "image", url: `https://example.test/image-${index + 1}.webp`, name: `圖片${index + 1}.webp`, caption: "說明" }));
+  await assertSucceeds(setDoc(doc(userDb("userA"), "announcements/newA"), {
+    ...announcementData(),
+    audiences: ["全校教師"],
+    contact: { department: "設備組", extension: "104" },
+    lineNotificationLevel: "schoolwide",
+    audienceNote: "尚未完成雙因子驗證設定的同仁",
+    imageAudiences: { "image-1": ["七年級導師"], "image-2": ["八年級導師"], "image-3": ["九年級導師"], "image-4": ["專任教師", "行政"], "image-5": ["七年級導師", "八年級導師", "九年級導師"] },
+    attachments: [...images, pdfAttachment("pdf-1"), pdfAttachment("pdf-2")],
+  }));
+});
+
 test("48 原 publisher 可新增 supplement 與 reminder", async () => {
   await seed("authorizedPublishers/userA", profile("publisher", true));
   await seed("announcements/own", { ...announcementData("Own", "userA"), latestFollowUp: { type: "supplement", createdAt: Timestamp.fromMillis(1000) } });

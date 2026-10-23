@@ -4,6 +4,7 @@ import { AUDIENCES, isLineNotificationLevel, MAX_AUDIENCE_NOTE_LENGTH, normalize
 import type { Timestamp } from "firebase/firestore";
 import { MAX_ATTACHMENT_NAME_LENGTH, MAX_PDF_BYTES } from "./attachmentFiles.ts";
 import { isDepartment } from "./departments.ts";
+import { parseStoredImageAudiences } from "./imageAudiences.ts";
 import { MAX_CONTACT_EXTENSION_LENGTH, type AnnouncementContact } from "./departmentContacts.ts";
 
 type UnknownRecord = Record<string, unknown>;
@@ -126,6 +127,7 @@ export function announcementFromFirestore(id: string, value: unknown): Announcem
     audiences: normalizeAudiences(audiences),
     ...(isLineNotificationLevel(value.lineNotificationLevel) ? { lineNotificationLevel: value.lineNotificationLevel } : {}),
     ...(normalizeStoredAudienceNote(value.audienceNote) ? { audienceNote: normalizeStoredAudienceNote(value.audienceNote) } : {}),
+    ...(parseStoredImageAudiences(value.imageAudiences) ? { imageAudiences: parseStoredImageAudiences(value.imageAudiences) } : {}),
     content: value.content,
     ...(normalizeContact(value.contact) ? { contact: normalizeContact(value.contact) } : {}),
     importantEvents: normalizeImportantEvents(value.importantEvents),

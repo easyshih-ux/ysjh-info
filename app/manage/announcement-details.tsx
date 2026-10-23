@@ -11,7 +11,9 @@ import { canWithdrawManagedFollowUp } from "@/lib/announcementFollowUpWithdrawal
 import { withdrawManagedFollowUp } from "@/lib/announcementManagementFirestore";
 import { formatFileSize } from "@/lib/attachmentFiles";
 import { formatContactCompact } from "@/lib/departmentContacts";
-import { formatFollowUpType, formatImportantEventSchedule, type Announcement, type FollowUp } from "@/lib/announcements";
+import { formatFollowUpType, formatImportantEventSchedule, type Announcement, type FollowUp, type UserIdentity } from "@/lib/announcements";
+import { ImageAudiencePicker } from "@/components/image-audience-picker";
+import { allowedImageIdentities, formatImageAudienceLabel, imageAudienceStatus, type ImageAudienceSelections } from "@/lib/imageAudiences";
 import type { AuthorizedPublisherContextValue } from "@/lib/publisherAccess";
 import styles from "./manage.module.css";
 
@@ -242,8 +244,8 @@ function DetailList({ title, empty, values }: { title: string; empty: string; va
   return <section><h3>{title}</h3>{values.length ? <ul>{values.map((value, index) => <li key={`${value}-${index}`}>{value}</li>)}</ul> : <p>{empty}</p>}</section>;
 }
 
-export function ReadOnlyImages({ item }: { item: Announcement }) {
+export function ReadOnlyImages({ item, imageAudienceEditor }: { item: Announcement; imageAudienceEditor?: { selections: ImageAudienceSelections; onChange: (imageId: string, next: UserIdentity[]) => void } }) {
   const images = item.attachments.filter(attachment => attachment.type === "image");
   const pdfs = item.attachments.filter(attachment => attachment.type === "pdf");
-  return <>{item.contact && <section className={styles.contactDisplay}><h3>業務聯絡資訊</h3><p>{formatContactCompact(item.contact)}</p></section>}<section className={styles.readOnlyImages}><h3>公告附件（唯讀）</h3>{images.length ? <div>{images.map(attachment => <figure key={attachment.id}><img src={attachment.url} alt={attachment.caption || attachment.name} /><figcaption><strong>{attachment.name}</strong>{attachment.caption && <span>{attachment.caption}</span>}</figcaption></figure>)}</div> : <p>無公告圖片</p>}{pdfs.length ? <div className={styles.pdfAttachments}>{pdfs.map(attachment => <a key={attachment.id} href={attachment.url} target="_blank" rel="noopener noreferrer"><FileText /><span><strong>{attachment.name}</strong><small>PDF・{formatFileSize(attachment.sizeBytes)}</small></span>開啟文件 ↗</a>)}</div> : <p>無 PDF 文件</p>}</section></>;
+  return <>{item.contact && <section className={styles.contactDisplay}><h3>業務聯絡資訊</h3><p>{formatContactCompact(item.contact)}</p></section>}<section className={styles.readOnlyImages}><h3>公告附件（唯讀）</h3>{images.length ? <div>{images.map(attachment => <figure key={attachment.id}><img src={attachment.url} alt={attachment.caption || attachment.name} /><figcaption><strong className={styles.imageName} title={attachment.name}>{attachment.name}</strong>{attachment.caption && <span>{attachment.caption}</span>}{imageAudienceEditor ? <ImageAudiencePicker imageId={attachment.id} allowed={allowedImageIdentities(item.audiences)} selected={imageAudienceEditor.selections[attachment.id]} onChange={next => imageAudienceEditor.onChange(attachment.id, next)} /> : <span className={imageAudienceStatus(item, attachment.id).kind === "invalid" ? styles.imageAudienceInvalid : styles.imageAudience}>適用身分：{formatImageAudienceLabel(imageAudienceStatus(item, attachment.id))}{imageAudienceStatus(item, attachment.id).kind === "invalid" && "，請重新設定"}</span>}</figcaption></figure>)}</div> : <p>無公告圖片</p>}{pdfs.length ? <div className={styles.pdfAttachments}>{pdfs.map(attachment => <a key={attachment.id} href={attachment.url} target="_blank" rel="noopener noreferrer"><FileText /><span><strong>{attachment.name}</strong><small>PDF・{formatFileSize(attachment.sizeBytes)}</small></span>開啟文件 ↗</a>)}</div> : <p>無 PDF 文件</p>}</section></>;
 }

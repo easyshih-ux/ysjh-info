@@ -82,6 +82,9 @@ export function needsSchoolwideAudienceReminder(level: LineNotificationLevel | u
   return level === "schoolwide" && !(audiences.length === 1 && audiences[0] === "全校教師");
 }
 
+/** 讀取後的圖片身分對照：字串清單保留原值，其餘格式記為 null（異常）。 */
+export type StoredImageAudiences = Record<string, string[] | null>;
+
 export interface Announcement {
   id: string;
   publisherUid?: string;
@@ -109,6 +112,11 @@ export interface Announcement {
   lineNotificationLevel?: LineNotificationLevel;
   /** 實際辦理對象（選填），僅供 LINE 通知顯示，不影響 audiences 篩選。 */
   audienceNote?: string;
+  /**
+   * 圖片 ID → 適用身分（選填）。沒有該圖片 ID 為共用；值為 null 表示格式異常。
+   * 只影響教師端圖片顯示，不影響公告接收對象；PDF 不使用。
+   */
+  imageAudiences?: StoredImageAudiences;
   content: string;
   contact?: AnnouncementContact;
   importantEvents: ImportantEvent[];

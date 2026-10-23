@@ -1,6 +1,7 @@
 import { isImportantEventUsed, normalizeAudienceNote, normalizeAudiences, normalizeImportantEvent, resolveLineNotificationLevel, type Announcement, type Audience, type FollowUp } from "./announcements.ts";
 import { validateBasicDraft } from "./publishDraft.ts";
 import { normalizeAnnouncementContact } from "./departmentContacts.ts";
+import { sameImageAudiences } from "./imageAudiences.ts";
 
 export const MANAGE_DEPARTMENT_KEY = "manageDepartment";
 
@@ -76,10 +77,15 @@ export function hasLineSettingChanges(original: Announcement, edited: Announceme
   return JSON.stringify(normalizeLineSettings(original)) !== JSON.stringify(normalizeLineSettings(edited));
 }
 
+/** 圖片適用身分標記只影響教師端圖片顯示，不計入公告原文更新。 */
+export function hasImageAudienceChanges(original: Announcement, edited: Announcement) {
+  return !sameImageAudiences(original.imageAudiences, edited.imageAudiences);
+}
+
 export function applyManagedAnnouncementSave(original: Announcement, edited: Announcement, contentUpdatedAt: string | null): Announcement {
   const base = contentUpdatedAt ? applyAnnouncementUpdate(original, edited, contentUpdatedAt) : original;
-  const { audienceNote: _previousNote, ...rest } = base;
-  return { ...rest, ...normalizeLineSettings(edited) };
+  const { audienceNote: _previousNote, imageAudiences: _previousImageAudiences, ...rest } = base;
+  return { ...rest, ...normalizeLineSettings(edited), ...(edited.imageAudiences ? { imageAudiences: edited.imageAudiences } : {}) };
 }
 
 export function createFollowUp(type: FollowUp["type"], message: string, createdAt: string): FollowUp {

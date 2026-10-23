@@ -2,6 +2,8 @@ import { isImportantEventUsed, isLineNotificationLevel, normalizeAudienceNote, n
 import { isDepartment, type Department } from "./departments.ts";
 import { isSupportedPdf, MAX_PDF_BYTES, MAX_PUBLISH_PDFS } from "./attachmentFiles.ts";
 import { normalizeAnnouncementContact, validateAnnouncementContact, type AnnouncementContact } from "./departmentContacts.ts";
+import { imageAudiencesForSave, validateImageAudienceSelections } from "./imageAudiences.ts";
+import type { UserIdentity } from "./announcements.ts";
 
 export interface BasicAnnouncementDraft {
   department: Department | "";
@@ -12,6 +14,8 @@ export interface BasicAnnouncementDraft {
   content: string;
   contact?: AnnouncementContact;
   attachments: PublishImageAttachment[];
+  /** 圖片 ID → 已勾選的適用身分；未列出或空清單為共用。 */
+  imageAudienceSelections?: Record<string, UserIdentity[]>;
   pdfAttachments?: PublishPdfAttachment[];
   importantEvents: ImportantEvent[];
   deadlines: Deadline[];
@@ -73,6 +77,7 @@ export function publishDraftToAnnouncement(draft: BasicAnnouncementDraft, id: st
     audiences: normalizeAudiences(draft.audiences),
     lineNotificationLevel: resolveLineNotificationLevel(draft.lineNotificationLevel),
     ...(normalizeAudienceNote(draft.audienceNote) ? { audienceNote: normalizeAudienceNote(draft.audienceNote) } : {}),
+    ...(imageAudiencesForSave(draft.attachments.map(item => item.id), draft.imageAudienceSelections ?? {}) ? { imageAudiences: imageAudiencesForSave(draft.attachments.map(item => item.id), draft.imageAudienceSelections ?? {}) } : {}),
     content: draft.content,
     ...(normalizeAnnouncementContact(draft.contact) ? { contact: normalizeAnnouncementContact(draft.contact) } : {}),
     importantEvents: draft.importantEvents.filter(isImportantEventUsed).map(normalizeImportantEvent),
@@ -127,6 +132,8 @@ export function validateBasicDraft(draft: BasicAnnouncementDraft): DraftErrors {
   if (enteredLinks.some(item => !item.label.trim() || !item.url.trim())) errors.links = "相關連結需要完整名稱與網址";
   else if (enteredLinks.some(item => normalizeOptionalHttpUrl(item.url).error)) errors.links = "「相關連結」網址格式不正確";
   if (draft.links.filter(item => item.isPrimary).length > 1) errors.links = "相關網址最多只能設定一個主要連結";
+  const imageAudienceError = validateImageAudienceSelections(draft.attachments.map(item => item.id), draft.imageAudienceSelections ?? {}, draft.audiences);
+  if (imageAudienceError) errors.imageAudienceSelections = imageAudienceError;
   if (draft.attachments.length > MAX_PUBLISH_IMAGES) errors.attachments = "每則公告最多 5 張圖片";
   else if (draft.attachments.some(item => item.file && (!isSupportedImage(item.file) || item.file.size > MAX_ORIGINAL_IMAGE_BYTES))) errors.attachments = "圖片格式不正確或單張原始圖片超過 10 MB";
   const pdfAttachments = draft.pdfAttachments ?? [];

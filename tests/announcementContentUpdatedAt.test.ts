@@ -25,6 +25,6 @@ test("無實質變更不寫 Firestore，成功原文編輯才同步 contentUpdat
   const management = source("lib/announcementManagementFirestore.ts");
   const model = source("lib/announcementManagement.ts");
   assert.match(management, /const contentChanged = hasAnnouncementContentChanges\(original, edited\)/);
-  assert.match(management, /if \(!contentChanged && !lineSettingsChanged\) return null/);
+  assert.match(management, /if \(!contentChanged && !lineSettingsChanged && !imageAudiencesChanged\) return null/);
   assert.match(model, /updatedAt: contentUpdatedAt, contentUpdatedAt/);
 });

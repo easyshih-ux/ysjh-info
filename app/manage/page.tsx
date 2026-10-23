@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { DepartmentOptionGroups } from "@/components/department-option-groups";
 import { LineNotificationSettings } from "@/components/line-notification-settings";
 import { ImportantDateReminder } from "@/components/important-date-reminder";
+import { imageAudiencesForSave, imageAudienceSelectionsFrom, validateImageAudienceSelections, type ImageAudienceSelections } from "@/lib/imageAudiences";
 import { defaultContactForDepartment, getFixedDepartmentExtension, MAX_CONTACT_EXTENSION_LENGTH, selectContactDepartment } from "@/lib/departmentContacts";
 import { Textarea } from "@/components/ui/textarea";
 import { announcementTimeStates } from "@/lib/announcementLogic";
@@ -40,6 +41,7 @@ export default function ManagePage() {
   const [query, setQuery] = useState("");
   const [viewing, setViewing] = useState<Announcement | null>(null);
   const [editing, setEditing] = useState<Announcement | null>(null);
+  const [imageSelections, setImageSelections] = useState<ImageAudienceSelections>({});
   const [followTarget, setFollowTarget] = useState<Announcement | null>(null);
   const [followType, setFollowType] = useState<FollowUp["type"]>("supplement");
   const [message, setMessage] = useState("");
@@ -90,14 +92,20 @@ export default function ManagePage() {
     const validation = validateAnnouncementCore(editing);
     const departmentAuthorityError = validatePublisherDepartment(editing.department, publisher);
     if (departmentAuthorityError) validation.department = departmentAuthorityError;
+    const imageIds = editing.attachments.filter(attachment => attachment.type === "image").map(attachment => attachment.id);
+    const imageAudienceError = validateImageAudienceSelections(imageIds, imageSelections, editing.audiences);
+    if (imageAudienceError) validation.attachments = imageAudienceError;
     if (Object.keys(validation).length) { setError(Object.values(validation)[0] ?? "請確認公告資料是否完整。"); return; }
+    const imageAudiences = imageAudiencesForSave(imageIds, imageSelections);
+    const { imageAudiences: _previousImageAudiences, ...editedWithoutImageAudiences } = editing;
+    const edited: Announcement = { ...editedWithoutImageAudiences, ...(imageAudiences ? { imageAudiences } : {}) };
     savingRef.current = true; setSaving(true); setError("");
     try {
       const original = items.find(item => item.id === editing.id);
       if (!original) throw new AnnouncementManagementError("找不到要修改的公告，請重新整理後再試一次。");
-      const saved = await updateManagedAnnouncement(original, editing);
-      if (saved) setItems(current => current.map(item => item.id === editing.id ? applyManagedAnnouncementSave(item, editing, saved.contentUpdatedAt) : item));
-      setEditing(null); setNotice(!saved ? "公告內容沒有變更" : saved.contentUpdatedAt ? "公告已更新" : "LINE 通知設定已更新");
+      const saved = await updateManagedAnnouncement(original, edited);
+      if (saved) setItems(current => current.map(item => item.id === edited.id ? applyManagedAnnouncementSave(item, edited, saved.contentUpdatedAt) : item));
+      setEditing(null); setNotice(!saved ? "公告內容沒有變更" : saved.contentUpdatedAt ? "公告已更新" : "LINE 通知或圖片適用身分設定已更新");
     } catch (caught) {
       setError(caught instanceof AnnouncementManagementError ? caught.message : "公告更新失敗，請稍後再試。");
     } finally { savingRef.current = false; setSaving(false); }
@@ -129,7 +137,7 @@ export default function ManagePage() {
         <div className={styles.meta}><span>{item.academicYear} 學年度</span><span>{item.department}</span><span>{item.publicationStatus === "withdrawn" ? "已下架" : "正常發布"}</span><span>{announcementTimeStates(item, new Date()).deadline}</span>{announcementTimeStates(item, new Date()).activity !== "正常" && <span>{announcementTimeStates(item, new Date()).activity}</span>}{item.collectionStatus === "chasing" && <span>催繳中</span>}<span>發布者：{announcementPublisherLabel(item)}</span><span>發布 {formatDateTime(item.publishedAt)}</span>{item.contentUpdatedAt && <span>更新 {formatDateTime(item.contentUpdatedAt)}</span>}</div>
         <h2>{item.title}</h2><p>{item.audiences.join("、") || "未設定適用對象"}</p>
         <div className={styles.flags}><span>{item.importantEvents.length ? `${item.importantEvents.length} 筆重要事項` : "無重要事項"}</span><span>{item.deadlines.length ? `${item.deadlines.length} 筆截止期限` : "無截止期限"}</span><span>{item.attachments.filter(attachment => attachment.type === "image").length ? `${item.attachments.filter(attachment => attachment.type === "image").length} 張圖片` : "無圖片"}</span><span>{item.attachments.filter(attachment => attachment.type === "pdf").length ? `${item.attachments.filter(attachment => attachment.type === "pdf").length} 份 PDF` : "無 PDF"}</span><span>{item.followUps.length ? `${item.followUps.length} 筆歷史補充／提醒` : "查看補充／提醒"}</span></div>
-        <div className={styles.cardActions}><Button variant="outline" onClick={() => setViewing(item)}><Eye />查看</Button>{(item.publisherUid === publisher.uid || publisher.role === "systemAdmin") ? <><Button variant="outline" onClick={() => { setError(""); setEditing(clone(item)); }}><Edit3 />修正公告</Button><Button variant="outline" onClick={() => { setError(""); setMessage(""); setFollowType("supplement"); setFollowTarget(item); }}><MessageSquarePlus />新增補充／提醒</Button>{item.publicationStatus === "withdrawn" ? <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "restore")}>復原公告</Button> : <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "withdraw")}>下架公告</Button>}{item.deadlines.length > 0 && (item.collectionStatus === "chasing" ? <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "stopChase")}>結束催繳</Button> : <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "startChase")}>啟動催繳</Button>)}{publisher.role === "systemAdmin" && <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "delete")}><Trash2 />永久刪除</Button>}{publisher.role === "systemAdmin" && item.publisherUid !== publisher.uid && <Button variant="outline" onClick={() => { setError(""); setMessage(""); setFollowType("related"); setFollowTarget(item); }}><MessageSquarePlus />💬 新增相關補充</Button>}</> : <Button variant="outline" onClick={() => { setError(""); setMessage(""); setFollowType("related"); setFollowTarget(item); }}><MessageSquarePlus />💬 新增相關補充</Button>}</div>
+        <div className={styles.cardActions}><Button variant="outline" onClick={() => setViewing(item)}><Eye />查看</Button>{(item.publisherUid === publisher.uid || publisher.role === "systemAdmin") ? <><Button variant="outline" onClick={() => { setError(""); setEditing(clone(item)); setImageSelections(imageAudienceSelectionsFrom(item)); }}><Edit3 />修正公告</Button><Button variant="outline" onClick={() => { setError(""); setMessage(""); setFollowType("supplement"); setFollowTarget(item); }}><MessageSquarePlus />新增補充／提醒</Button>{item.publicationStatus === "withdrawn" ? <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "restore")}>復原公告</Button> : <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "withdraw")}>下架公告</Button>}{item.deadlines.length > 0 && (item.collectionStatus === "chasing" ? <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "stopChase")}>結束催繳</Button> : <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "startChase")}>啟動催繳</Button>)}{publisher.role === "systemAdmin" && <Button variant="outline" disabled={saving} onClick={() => runLifecycleAction(item, "delete")}><Trash2 />永久刪除</Button>}{publisher.role === "systemAdmin" && item.publisherUid !== publisher.uid && <Button variant="outline" onClick={() => { setError(""); setMessage(""); setFollowType("related"); setFollowTarget(item); }}><MessageSquarePlus />💬 新增相關補充</Button>}</> : <Button variant="outline" onClick={() => { setError(""); setMessage(""); setFollowType("related"); setFollowTarget(item); }}><MessageSquarePlus />💬 新增相關補充</Button>}</div>
       </article>)}</section>}
     </div>
 
@@ -142,7 +150,7 @@ export default function ManagePage() {
       <LineNotificationSettings idPrefix={`edit-${editing.id}`} level={editing.lineNotificationLevel} audienceNote={editing.audienceNote} audiences={editing.audiences} onLevelChange={lineNotificationLevel => setEditing({ ...editing, lineNotificationLevel })} onAudienceNoteChange={audienceNote => setEditing({ ...editing, audienceNote })} />
       <label>完整公告內容<Textarea value={editing.content} onChange={event => setEditing({ ...editing, content: event.target.value })} /></label>
       <ContactEditor item={editing} setItem={setEditing} />
-      <EditorExtras item={editing} setItem={setEditing} /><ReadOnlyImages item={editing} />
+      <EditorExtras item={editing} setItem={setEditing} /><ReadOnlyImages item={editing} imageAudienceEditor={{ selections: imageSelections, onChange: (imageId, next) => setImageSelections(current => ({ ...current, [imageId]: next })) }} />
       {error && <p className={styles.errorNotice} role="alert">{error}</p>}
       <ImportantDateReminder show={needsImportantDateReminder(editing)} />
       <div className={styles.editorActions}><Button variant="outline" onClick={() => setEditing(null)} disabled={saving}>取消</Button><Button className={styles.primaryCta} onClick={saveEdit} disabled={saving}>{saving ? "儲存中…" : "儲存修改"}</Button></div>

@@ -180,6 +180,13 @@ service cloud.firestore {
             && data.audienceNote.size() <= 40));
     }
 
+    // 圖片 ID → 適用身分的對照表：只檢查型別與最多 5 筆，內容由前端驗證並在讀取時判斷異常。
+    function isValidImageAudiences(data) {
+      return !data.keys().hasAny(['imageAudiences'])
+        || (data.imageAudiences is map
+          && data.imageAudiences.size() <= 5);
+    }
+
     function isOwnVerifiedPublisherRequest(publisherUid) {
       return request.auth != null
         && request.auth.uid == publisherUid
@@ -300,6 +307,7 @@ service cloud.firestore {
         && canCreateAnnouncementDepartment()
         && isValidContact(request.resource.data)
         && isValidLineNotificationSettings(request.resource.data)
+        && isValidImageAudiences(request.resource.data)
         && isValidAttachments(request.resource.data, announcementId, request.auth.uid);
       allow update: if canManageAnnouncement()
         && keepsLifecycleFields()
@@ -309,6 +317,7 @@ service cloud.firestore {
         && canUpdateAnnouncementDepartment()
         && isValidContact(request.resource.data)
         && isValidLineNotificationSettings(request.resource.data)
+        && isValidImageAudiences(request.resource.data)
         && keepsValidAttachments(announcementId);
       allow delete: if false;
 
