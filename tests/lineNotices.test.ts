@@ -24,7 +24,7 @@ test("預設勾選：重要異動與一般補充不勾，提醒與催繳勾選",
 test("各類通知文字只呈現本次重點並附直達連結，不重複整篇公告", () => {
   const a = item();
   const update = createUpdateNoticeText(a, " 期限延後至 11/30 ", site);
-  assert.match(update, /^🔄【公告更新】\n\n📢 教務處資訊組公告\n\n📌 雙因子驗證設定\n\n✏️ 異動重點｜期限延後至 11\/30\n\n🔗 完整公告：\nhttps:\/\/easyshih-ux\.github\.io\/ysjh-info\/\?announcement=a1$/);
+  assert.equal(update, "🔄【公告更新】雙因子驗證設定\n📢 教務處資訊組公告\n\n✏️ 異動重點｜期限延後至 11/30\n\n🔗 完整公告：\nhttps://easyshih-ux.github.io/ysjh-info/?announcement=a1");
   const supplement = createFollowUpNoticeText(a, "supplement", "操作說明已更新", site, "2026-10-23");
   assert.match(supplement, /^📌【公告補充】[\s\S]*💬 補充｜操作說明已更新/);
   assert.doesNotMatch(supplement, /⏰/);
@@ -34,6 +34,25 @@ test("各類通知文字只呈現本次重點並附直達連結，不重複整�
   const chase = createChaseNoticeText({ ...a, collectionMessage: "請於今日完成" }, site, "2026-10-23");
   assert.match(chase, /^🚨【催繳】[\s\S]*🔔 請於今日完成[\s\S]*⏰ 截止｜11\/30 12:00 完成設定/);
   for (const text of [update, supplement, reminder, chase]) assert.ok(!text.includes(a.content));
+});
+
+test("四種通知第一行為類型＋標題、第二行為發布單位，不重複標題也沒有多餘空行", () => {
+  const a = item({ title: "  速印費送單請送目前的執行版本 ", department: "設備組", collectionMessage: "請於今日完成" });
+  const header = "\n📢 教務處設備組公告\n\n";
+  const texts = {
+    supplement: createFollowUpNoticeText(a, "supplement", "改用新版表單", site, "2026-10-23"),
+    reminder: createFollowUpNoticeText(a, "reminder", "尚未送單請儘速處理", site, "2026-10-23"),
+    update: createUpdateNoticeText(a, "送單期限延後", site),
+    chase: createChaseNoticeText(a, site, "2026-10-23"),
+  };
+  assert.equal(texts.supplement, `📌【公告補充】速印費送單請送目前的執行版本${header}💬 補充｜改用新版表單\n\n🔗 完整公告：\n${site}?announcement=a1`);
+  assert.equal(texts.reminder, `⚠️【提醒】速印費送單請送目前的執行版本${header}🔔 尚未送單請儘速處理\n\n⏰ 截止｜11/30 12:00 完成設定\n\n🔗 完整公告：\n${site}?announcement=a1`);
+  assert.equal(texts.update, `🔄【公告更新】速印費送單請送目前的執行版本${header}✏️ 異動重點｜送單期限延後\n\n🔗 完整公告：\n${site}?announcement=a1`);
+  assert.equal(texts.chase, `🚨【催繳】速印費送單請送目前的執行版本${header}🔔 請於今日完成\n\n⏰ 截止｜11/30 12:00 完成設定\n\n🔗 完整公告：\n${site}?announcement=a1`);
+  for (const text of Object.values(texts)) {
+    assert.equal(text.split("速印費送單請送目前的執行版本").length, 2, "標題只出現一次");
+    assert.doesNotMatch(text, /\n{3,}|^\s|\s$/);
+  }
 });
 
 test("首次發布沿用 LINE V2 並依最新內容產生；其他類型使用建立時的快照", () => {

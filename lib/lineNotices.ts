@@ -46,8 +46,9 @@ export const lineNoticeIds = {
   chase: (collectionStartedAtMillis: number) => `chase-${collectionStartedAtMillis}`,
 };
 
+/** 第一行為「通知類型＋公告標題」，第二行緊接發布單位；與內文之間保留一個空行。 */
 function noticeHeader(label: string, announcement: Pick<Announcement, "department" | "title">) {
-  return [label, `📢 ${formatDepartmentFullName(announcement.department)}公告`, `📌 ${announcement.title.trim()}`];
+  return [`${label}${announcement.title.trim()}\n📢 ${formatDepartmentFullName(announcement.department)}公告`];
 }
 
 function noticeLink(siteUrl: string, announcementId: string) {
