@@ -1,12 +1,13 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BellRing, CalendarDays, ChevronRight, Clock3, FileText, ImageIcon, Search, Settings, ZoomIn } from "lucide-react";
 import { USER_IDENTITIES, formatImportantEventSchedule, formatLatestFollowUpLabel, type Announcement, type ImageAttachment, type PdfAttachment, type Audience, type UserIdentity } from "@/lib/announcements";
 import { formatFileSize } from "@/lib/attachmentFiles";
 import { announcementsForIdentity, chasingAnnouncements, daysUntil, deadlineDateLabel, deadlineRelativeLabel, deadlineUrgency, filterAnnouncements, importantEventDateLabel, needsAcademicYearConfirmation, nextWeekBounds, nextWeekEvents, readSavedIdentity, saveIdentity, type SavedIdentity, upcomingDeadlines, weekBounds, weeklyEventDisplay, weeklyEvents } from "@/lib/announcementLogic";
 import { announcementsForAcademicYear, CURRENT_ACADEMIC_YEAR, FRONTEND_ACADEMIC_YEARS } from "@/lib/academicYear";
 import { readPublicAnnouncements } from "@/lib/announcementFirestore";
+import { readAnnouncementIdFromSearch, resolveAnnouncementDeepLink, withAnnouncementQuery } from "@/lib/announcementDeepLink";
 import { mergeAnnouncementFollowUps, readAnnouncementFollowUps } from "@/lib/announcementFollowUps";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -49,6 +50,12 @@ export default function Home() {
   const [switchingIdentity, setSwitchingIdentity] = useState(false);
   const [query, setQuery] = useState("");
   const [department, setDepartment] = useState("全部");
+  const [deepLinkNotice, setDeepLinkNotice] = useState<string | null>(null);
+  const [locationState, setLocationState] = useState<{ search: string; key: number } | null>(null);
+  const locationKeyRef = useRef(0);
+  const handledLocationRef = useRef<string | null>(null);
+  const pushedAnnouncementRef = useRef<string | null>(null);
+  const refreshLocationState = () => setLocationState({ search: window.location.search, key: ++locationKeyRef.current });
   useEffect(() => { const stale = needsAcademicYearConfirmation(localStorage, CURRENT_ACADEMIC_YEAR); const saved = readSavedIdentity(localStorage, CURRENT_ACADEMIC_YEAR); setNewAcademicYear(stale); setIdentity(saved); setViewMode(saved === "全部" ? "all" : "related"); }, []);
   useEffect(() => { let active = true; readPublicAnnouncements().then(items => { if (active) setAnnouncements(items); }).catch(() => { if (active) setAnnouncementsError(true); }).finally(() => { if (active) setAnnouncementsLoading(false); }); return () => { active = false; }; }, []);
   useEffect(() => {
@@ -67,9 +74,64 @@ export default function Home() {
     }).catch(() => undefined);
     return () => { active = false; };
   }, [selected?.id, loadedFollowUps]);
+  useEffect(() => {
+    refreshLocationState();
+    const onPopState = () => refreshLocationState();
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+  useEffect(() => {
+    if (!locationState || !identity || announcementsLoading || announcementsError) return;
+    const handledKey = `${locationState.key}|${identity}|${viewMode}`;
+    if (handledLocationRef.current === handledKey) return;
+    handledLocationRef.current = handledKey;
+    const announcementId = readAnnouncementIdFromSearch(locationState.search);
+    if (!announcementId) {
+      pushedAnnouncementRef.current = null;
+      setSelected(null);
+      return;
+    }
+    const result = resolveAnnouncementDeepLink(announcements, announcementId, identity, viewMode);
+    if (result.status === "open") {
+      setDeepLinkNotice(null);
+      setSelected(current => current?.id === result.announcement.id ? current : result.announcement);
+      return;
+    }
+    setSelected(null);
+    setDeepLinkNotice(result.message);
+    if (result.status === "not-found") {
+      window.history.replaceState(null, "", withAnnouncementQuery(window.location.href, null));
+      refreshLocationState();
+    }
+  }, [locationState, identity, viewMode, announcementsLoading, announcementsError, announcements]);
+  const syncAnnouncementUrl = (announcementId: string) => {
+    const current = readAnnouncementIdFromSearch(window.location.search);
+    if (current === announcementId) return;
+    const url = withAnnouncementQuery(window.location.href, announcementId);
+    if (current) window.history.replaceState(null, "", url);
+    else {
+      window.history.pushState(null, "", url);
+      pushedAnnouncementRef.current = announcementId;
+    }
+    refreshLocationState();
+  };
   const openAnnouncement = (announcement: Announcement, source: AnnouncementOpenSource) => {
     void trackAnnouncementOpen(announcement.id, source);
+    setDeepLinkNotice(null);
     setSelected(announcement);
+    syncAnnouncementUrl(announcement.id);
+  };
+  const closeAnnouncement = () => {
+    setSelected(null);
+    const current = readAnnouncementIdFromSearch(window.location.search);
+    if (!current) return;
+    if (pushedAnnouncementRef.current === current) {
+      pushedAnnouncementRef.current = null;
+      window.history.back();
+      return;
+    }
+    window.history.replaceState(null, "", withAnnouncementQuery(window.location.href, null));
+    refreshLocationState();
   };
   const chooseIdentity = (value: SavedIdentity) => { saveIdentity(localStorage, value, CURRENT_ACADEMIC_YEAR); setIdentity(value); setNewAcademicYear(false); setViewMode(value === "全部" ? "all" : "related"); setSwitchingIdentity(false); setQuery(""); };
   const currentYearAnnouncements = useMemo(() => announcementsForAcademicYear(announcements, CURRENT_ACADEMIC_YEAR), [announcements]);
@@ -93,6 +155,7 @@ export default function Home() {
     <header className="site-header"><div className="header-inner"><img className="brand-mark" src="/ysjh-info/icons/icon-192.png" alt="" aria-hidden="true" /><div className="brand-copy"><p className="eyebrow">校內公務公告</p><h1>義學公務資訊站</h1><HomeScreenInstall /></div><div className="date-stamp"><span>今天</span><strong>{fmtDate(taipeiDateKey(now))}</strong></div><Link className="admin-entry" href="/admin"><Settings aria-hidden="true" />行政管理</Link></div></header>
     <div className="identity-toolbar"><span>{CURRENT_ACADEMIC_YEAR} 學年度 · 目前身分：<strong>{identity === "全部" ? "查看全部" : identity}</strong></span><div><button onClick={() => setSwitchingIdentity(true)}>切換身分</button>{viewMode === "related" ? <button className="mode-button" onClick={() => { setViewMode("all"); setQuery(""); }}>查看全部公告</button> : identity !== "全部" && <button className="mode-button active" onClick={() => { setViewMode("related"); setQuery(""); }}>返回與我相關</button>}</div></div>
     <div className="page-shell">
+      {deepLinkNotice && <section className="announcement-state deeplink-notice" role="status"><p>{deepLinkNotice}</p><button type="button" onClick={() => setDeepLinkNotice(null)}>知道了</button></section>}
       {announcementsLoading ? <section className="announcement-state" aria-live="polite">公告載入中…</section> : announcementsError ? <section className="announcement-state error-state" role="alert">目前無法載入公告，請稍後再試。</section> : announcements.length === 0 ? <section className="announcement-state">目前沒有公告。</section> : <>
       {chasing.length > 0 && <section className="section chase-section" aria-labelledby="chase-title"><div className="section-heading"><div><p className="section-kicker">COLLECTION REMINDER</p><h2 id="chase-title">🚨 催繳中</h2></div></div><div className="announcement-list">{chasing.map(item => <article className="announcement-card chase-card" key={item.id}><span className="chase-badge">催繳中</span><h3>{item.title}</h3>{item.deadlines.map((deadline, index) => <p key={index}>{deadlineDateLabel(deadline.date)} {deadline.time || ""}</p>)}{item.collectionMessage && <p>{item.collectionMessage}</p>}<DepartmentBadge department={item.department} /><button className="text-button" onClick={() => openAnnouncement(item, "chasing")}>查看完整公告 <ChevronRight aria-hidden="true" /></button></article>)}</div></section>}
       <section className={`section section-primary priority-section priority-weekly ${events.length === 0 ? "weekly-empty" : ""}`} aria-labelledby="weekly-title"><div className="section-heading"><div><p className="section-kicker">WEEKLY FOCUS</p><h2 id="weekly-title">📌 本週重要事項</h2></div><span className="range">{weekRange}</span></div>{events.length === 0 ? <p className="weekly-empty-message">本週暫無其他重要事項</p> : <div className="event-board">
@@ -115,7 +178,7 @@ export default function Home() {
       <section className="section search-section" aria-labelledby="search-title"><div className="section-heading"><div><p className="section-kicker">ARCHIVE</p><h2 id="search-title">🔍 搜尋與篩選</h2></div><span className="scope-label">{viewMode === "all" ? "搜尋全部公告" : "搜尋與我相關"}</span></div><div className="year-switch" aria-label="學年度篩選">{FRONTEND_ACADEMIC_YEARS.map(year => <button key={year} className={searchAcademicYear === year ? "active" : ""} onClick={() => { setSearchAcademicYear(year); setQuery(""); }}>{year}學年度</button>)}</div><div className="filters"><label className="search-box"><span className="sr-only">搜尋公告</span><Search aria-hidden="true" /><Input value={query} onChange={e => setQuery(e.target.value)} placeholder="搜尋標題、內容或發布單位" /></label><div className="select-row single"><label><span>發布單位</span><select value={department} onChange={event => setDepartment(event.target.value)}><option value="全部">全部發布單位</option><DepartmentOptionGroups /></select></label></div></div><p className="result-count">{searchAcademicYear} 學年度 · 找到 {results.length} 則公告</p><div className="results-list">{results.map(a => <button key={a.id} className="result-row" onClick={() => openAnnouncement(a, "search")}><span><small className="result-meta"><span>{a.academicYear} 學年度 · {fmtPublished(a.publishedAt)}</span><DepartmentBadge department={a.department} /></small><strong>{a.title}</strong><em>{a.audiences.join("、")}</em></span><ChevronRight aria-hidden="true" /></button>)}</div></section>
       </>}
     </div><footer>義學國中 · 公務資訊查詢原型 <span aria-hidden="true">·</span> <Link href="/admin">公務資訊發布</Link><small>Made by WenYi</small></footer>
-    <Dialog open={!!selected} onOpenChange={open => !open && setSelected(null)}><DialogContent className="detail-dialog">{selected && <><DialogHeader><DialogDescription>{selected.department} · {fmtPublished(selected.publishedAt)} 發布{selected.contentUpdatedAt && <><br /><span>🔄 {fmtPublished(selected.contentUpdatedAt)} 更新</span></>}</DialogDescription><DialogTitle>{selected.title}</DialogTitle><AudienceTags values={selected.audiences} /></DialogHeader>{(selected.importantEvents.length > 0 || selected.deadlines.length > 0) && <div className="detail-dates">{selected.importantEvents.length > 0 && <div><h4><CalendarDays />重要日期／活動</h4>{selected.importantEvents.map((event, i) => <p key={i}><strong>{formatImportantEventSchedule(event, fmtDate)}</strong><span>{event.title}</span></p>)}</div>}{selected.deadlines.length > 0 && <div className="deadline-detail"><h4><BellRing />繳交／填報期限</h4>{selected.deadlines.map((deadline, i) => <p key={i}><strong>{fmtDate(deadline.date)} {deadline.time}</strong><span>{deadline.label}</span></p>)}</div>}</div>}<div className="detail-content"><h4>公告內容</h4><p>{selected.content}</p></div><PublicAnnouncementFollowUps announcement={selected} formatDateTime={fmtPublished} />{relatedFollowUps(selected).length > 0 && <section className="followup-panel related-followups"><h4>💬 其他單位補充（{relatedFollowUps(selected).length}）</h4><div className="followup-history">{relatedFollowUps(selected).map((item, i) => <article className="related-followup-card" key={item.id ?? i}><div className="related-followup-meta"><DepartmentBadge department={item.department ?? "其他單位"} /><time>{fmtPublished(item.createdAt)}</time>{item.updatedAt && <small>🔄 已編輯</small>}</div><p>{item.message}</p></article>)}</div></section>}<AnnouncementContactLine contact={selected.contact} className="announcement-contact" />{selected.attachments.length > 0 && <section className="attachment-section"><h4><ImageIcon />公告圖片／附件</h4><div className="attachment-grid">{selected.attachments.map(attachment => attachment.type === "image" ? <figure key={attachment.id}><button onClick={() => setPreviewAttachment(attachment)} aria-label={`放大查看 ${attachment.name}`}><AnnouncementImage attachment={attachment} /><span><ZoomIn />放大查看</span></button><figcaption><strong>{attachment.name}</strong>{attachment.caption && <span>{attachment.caption}</span>}</figcaption></figure> : <PdfAttachmentCard key={attachment.id} attachment={attachment} />)}</div></section>}{selected.links.length > 0 && <section className="links-section"><h4>🔗 相關連結</h4><div>{selected.links.map(link => <article key={link.id} className={link.isPrimary ? "primary" : ""}><strong>{link.label}</strong>{link.isPrimary && <span>主要連結</span>}<a href={link.url} target="_blank" rel="noopener noreferrer">開啟連結 ↗</a></article>)}</div></section>}</>}</DialogContent></Dialog>
+    <Dialog open={!!selected} onOpenChange={open => !open && closeAnnouncement()}><DialogContent className="detail-dialog">{selected && <><DialogHeader><DialogDescription>{selected.department} · {fmtPublished(selected.publishedAt)} 發布{selected.contentUpdatedAt && <><br /><span>🔄 {fmtPublished(selected.contentUpdatedAt)} 更新</span></>}</DialogDescription><DialogTitle>{selected.title}</DialogTitle><AudienceTags values={selected.audiences} /></DialogHeader>{(selected.importantEvents.length > 0 || selected.deadlines.length > 0) && <div className="detail-dates">{selected.importantEvents.length > 0 && <div><h4><CalendarDays />重要日期／活動</h4>{selected.importantEvents.map((event, i) => <p key={i}><strong>{formatImportantEventSchedule(event, fmtDate)}</strong><span>{event.title}</span></p>)}</div>}{selected.deadlines.length > 0 && <div className="deadline-detail"><h4><BellRing />繳交／填報期限</h4>{selected.deadlines.map((deadline, i) => <p key={i}><strong>{fmtDate(deadline.date)} {deadline.time}</strong><span>{deadline.label}</span></p>)}</div>}</div>}<div className="detail-content"><h4>公告內容</h4><p>{selected.content}</p></div><PublicAnnouncementFollowUps announcement={selected} formatDateTime={fmtPublished} />{relatedFollowUps(selected).length > 0 && <section className="followup-panel related-followups"><h4>💬 其他單位補充（{relatedFollowUps(selected).length}）</h4><div className="followup-history">{relatedFollowUps(selected).map((item, i) => <article className="related-followup-card" key={item.id ?? i}><div className="related-followup-meta"><DepartmentBadge department={item.department ?? "其他單位"} /><time>{fmtPublished(item.createdAt)}</time>{item.updatedAt && <small>🔄 已編輯</small>}</div><p>{item.message}</p></article>)}</div></section>}<AnnouncementContactLine contact={selected.contact} className="announcement-contact" />{selected.attachments.length > 0 && <section className="attachment-section"><h4><ImageIcon />公告圖片／附件</h4><div className="attachment-grid">{selected.attachments.map(attachment => attachment.type === "image" ? <figure key={attachment.id}><button onClick={() => setPreviewAttachment(attachment)} aria-label={`放大查看 ${attachment.name}`}><AnnouncementImage attachment={attachment} /><span><ZoomIn />放大查看</span></button><figcaption><strong>{attachment.name}</strong>{attachment.caption && <span>{attachment.caption}</span>}</figcaption></figure> : <PdfAttachmentCard key={attachment.id} attachment={attachment} />)}</div></section>}{selected.links.length > 0 && <section className="links-section"><h4>🔗 相關連結</h4><div>{selected.links.map(link => <article key={link.id} className={link.isPrimary ? "primary" : ""}><strong>{link.label}</strong>{link.isPrimary && <span>主要連結</span>}<a href={link.url} target="_blank" rel="noopener noreferrer">開啟連結 ↗</a></article>)}</div></section>}</>}</DialogContent></Dialog>
     <Dialog open={!!previewAttachment} onOpenChange={open => !open && setPreviewAttachment(null)}><DialogContent className="image-dialog">{previewAttachment && <><DialogHeader><DialogTitle>{previewAttachment.name}</DialogTitle>{previewAttachment.caption && <DialogDescription>{previewAttachment.caption}</DialogDescription>}</DialogHeader><AnnouncementImage attachment={previewAttachment} /></>}</DialogContent></Dialog>
     <Dialog open={switchingIdentity} onOpenChange={setSwitchingIdentity}><DialogContent className="identity-dialog"><DialogHeader><DialogTitle>切換身分</DialogTitle><DialogDescription>首頁會立即改為顯示與新身分相關的資訊。</DialogDescription></DialogHeader><IdentityChoices onChoose={chooseIdentity} /></DialogContent></Dialog>
   </main><AnalyticsConsent /></>;

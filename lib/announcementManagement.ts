@@ -1,4 +1,4 @@
-import { isImportantEventUsed, normalizeAudiences, normalizeImportantEvent, type Announcement, type Audience, type FollowUp } from "./announcements.ts";
+import { isImportantEventUsed, normalizeAudienceNote, normalizeAudiences, normalizeImportantEvent, resolveLineNotificationLevel, type Announcement, type Audience, type FollowUp } from "./announcements.ts";
 import { validateBasicDraft } from "./publishDraft.ts";
 import { normalizeAnnouncementContact } from "./departmentContacts.ts";
 
@@ -28,7 +28,7 @@ export function filterManagedAnnouncements(items: Announcement[], department: st
 }
 
 export function validateAnnouncementCore(item: Announcement) {
-  return validateBasicDraft({ department: item.department, title: item.title, audiences: normalizeAudiences(item.audiences), content: item.content, contact: item.contact, attachments: item.attachments.filter(a => a.type === "image").map(a => ({ ...a, caption: a.caption ?? "", previewUrl: a.url })), importantEvents: item.importantEvents, deadlines: item.deadlines, links: item.links });
+  return validateBasicDraft({ department: item.department, title: item.title, audiences: normalizeAudiences(item.audiences), lineNotificationLevel: item.lineNotificationLevel, audienceNote: item.audienceNote, content: item.content, contact: item.contact, attachments: item.attachments.filter(a => a.type === "image").map(a => ({ ...a, caption: a.caption ?? "", previewUrl: a.url })), importantEvents: item.importantEvents, deadlines: item.deadlines, links: item.links });
 }
 
 export function updateAnnouncement(items: Announcement[], edited: Announcement, updatedAt: string) {
@@ -64,6 +64,22 @@ export function createAnnouncementUpdate(edited: Announcement, contentUpdatedAt:
 
 export function applyAnnouncementUpdate(original: Announcement, edited: Announcement, updatedAt: string): Announcement {
   return { ...original, ...createAnnouncementUpdate(edited, updatedAt, (original.contentUpdateCount ?? 0) + 1), contact: normalizeAnnouncementContact(edited.contact), id: original.id, publishedAt: original.publishedAt, attachments: original.attachments, followUps: original.followUps };
+}
+
+/** LINE 通知設定只影響 LINE 呈現，不計入公告原文更新，也不產生教師端「已更新」標示。 */
+export function normalizeLineSettings(item: Pick<Announcement, "lineNotificationLevel" | "audienceNote">) {
+  const audienceNote = normalizeAudienceNote(item.audienceNote);
+  return { lineNotificationLevel: resolveLineNotificationLevel(item.lineNotificationLevel), ...(audienceNote ? { audienceNote } : {}) };
+}
+
+export function hasLineSettingChanges(original: Announcement, edited: Announcement) {
+  return JSON.stringify(normalizeLineSettings(original)) !== JSON.stringify(normalizeLineSettings(edited));
+}
+
+export function applyManagedAnnouncementSave(original: Announcement, edited: Announcement, contentUpdatedAt: string | null): Announcement {
+  const base = contentUpdatedAt ? applyAnnouncementUpdate(original, edited, contentUpdatedAt) : original;
+  const { audienceNote: _previousNote, ...rest } = base;
+  return { ...rest, ...normalizeLineSettings(edited) };
 }
 
 export function createFollowUp(type: FollowUp["type"], message: string, createdAt: string): FollowUp {

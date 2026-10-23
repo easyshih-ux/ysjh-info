@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { DEPARTMENTS } from "../lib/departments.ts";
-import { DEPARTMENT_EXTENSIONS, defaultContactForDepartment, formatContactCompact, formatContactSentence, getFixedDepartmentExtension, normalizeAnnouncementContact, selectContactDepartment, validateAnnouncementContact } from "../lib/departmentContacts.ts";
+import { DEPARTMENT_EXTENSIONS, defaultContactForDepartment, formatContactCompact, formatContactInquiry, formatContactSentence, getFixedDepartmentExtension, normalizeAnnouncementContact, selectContactDepartment, validateAnnouncementContact } from "../lib/departmentContacts.ts";
 import { publishDraftToAnnouncement, validateBasicDraft, type BasicAnnouncementDraft } from "../lib/publishDraft.ts";
 
 const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -43,7 +43,8 @@ test("網站與 LINE 的聯絡文案由集中 formatter 產生", () => {
   assert.equal(formatContactCompact(contact), "☎ 業務聯絡｜設備組｜分機 104");
   assert.equal(formatContactSentence(contact), "☎ 如有任何疑問，請洽設備組，分機 104。");
   assert.match(source("components/announcement-contact.tsx"), /formatContactCompact/);
-  assert.match(source("lib/lineAnnouncementSummary.ts"), /formatContactSentence/);
+  assert.equal(formatContactInquiry(contact), "☎ 洽詢｜設備組，分機 104");
+  assert.match(source("lib/lineAnnouncementSummary.ts"), /formatContactInquiry/);
 });
 
 test("發布頁固定分機唯讀並支援自訂發布單位預填", () => {

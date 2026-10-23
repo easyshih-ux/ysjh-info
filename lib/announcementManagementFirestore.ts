@@ -1,6 +1,6 @@
 import { deleteField, doc, updateDoc } from "firebase/firestore";
 import type { Announcement, FollowUp } from "./announcements.ts";
-import { createAnnouncementUpdate, hasAnnouncementContentChanges } from "./announcementManagement.ts";
+import { createAnnouncementUpdate, hasAnnouncementContentChanges, hasLineSettingChanges, normalizeLineSettings } from "./announcementManagement.ts";
 import { createAnnouncementFollowUp, withdrawAnnouncementFollowUp } from "./announcementFollowUps.ts";
 import { ANNOUNCEMENTS_COLLECTION, getFirestoreClient } from "./firestoreClient.ts";
 import type { AuthorizedPublisherContextValue } from "./publisherAccess.ts";
@@ -17,15 +17,25 @@ export async function withdrawManagedFollowUp(announcementId: string, followUpId
   catch { throw new AnnouncementManagementError("撤回補充／提醒失敗，請確認權限與網路連線後再試一次。"); }
 }
 
-export async function updateManagedAnnouncement(original: Announcement, edited: Announcement) {
-  if (!hasAnnouncementContentChanges(original, edited)) return null;
-  const updatedAt = new Date().toISOString();
+/**
+ * 回傳 null 表示沒有任何變更；contentUpdatedAt 為 null 表示只更新 LINE 通知設定，
+ * 不更新公告原文時間與次數。
+ */
+export async function updateManagedAnnouncement(original: Announcement, edited: Announcement): Promise<{ contentUpdatedAt: string | null } | null> {
+  const contentChanged = hasAnnouncementContentChanges(original, edited);
+  const lineSettingsChanged = hasLineSettingChanges(original, edited);
+  if (!contentChanged && !lineSettingsChanged) return null;
+  const contentUpdatedAt = contentChanged ? new Date().toISOString() : null;
+  const lineSettings = normalizeLineSettings(edited);
   try {
     await updateDoc(
       doc(getFirestoreClient(), ANNOUNCEMENTS_COLLECTION, edited.id),
-      { ...createAnnouncementUpdate(edited, updatedAt, (original.contentUpdateCount ?? 0) + 1), contact: edited.contact ?? deleteField() },
+      {
+        ...(contentUpdatedAt ? { ...createAnnouncementUpdate(edited, contentUpdatedAt, (original.contentUpdateCount ?? 0) + 1), contact: edited.contact ?? deleteField() } : {}),
+        ...(lineSettingsChanged ? { lineNotificationLevel: lineSettings.lineNotificationLevel, audienceNote: lineSettings.audienceNote ?? deleteField() } : {}),
+      },
     );
-    return updatedAt;
+    return { contentUpdatedAt };
   } catch {
     throw new AnnouncementManagementError("公告更新失敗，請確認網路連線與發布權限後再試一次。");
   }

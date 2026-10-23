@@ -1,6 +1,6 @@
 import { collection, getDocs } from "firebase/firestore";
 import { ANNOUNCEMENTS_COLLECTION, getFirestoreClient } from "./firestoreClient.ts";
-import { AUDIENCES, normalizeAudiences, type Announcement, type AnnouncementLink, type Attachment, type Audience, type Deadline, type FollowUp, type ImportantEvent, type LatestFollowUpSummary, type FollowUpCounts } from "./announcements.ts";
+import { AUDIENCES, isLineNotificationLevel, MAX_AUDIENCE_NOTE_LENGTH, normalizeAudienceNote, normalizeAudiences, type Announcement, type AnnouncementLink, type Attachment, type Audience, type Deadline, type FollowUp, type ImportantEvent, type LatestFollowUpSummary, type FollowUpCounts } from "./announcements.ts";
 import type { Timestamp } from "firebase/firestore";
 import { MAX_ATTACHMENT_NAME_LENGTH, MAX_PDF_BYTES } from "./attachmentFiles.ts";
 import { isDepartment } from "./departments.ts";
@@ -79,6 +79,11 @@ function normalizeFollowUpCounts(value: unknown): FollowUpCounts | undefined {
     : undefined;
 }
 
+function normalizeStoredAudienceNote(value: unknown) {
+  const note = normalizeAudienceNote(value);
+  return note && note.length <= MAX_AUDIENCE_NOTE_LENGTH ? note : undefined;
+}
+
 function normalizeContact(value: unknown): AnnouncementContact | undefined {
   if (!isRecord(value)
     || !isNonEmptyString(value.department)
@@ -119,6 +124,8 @@ export function announcementFromFirestore(id: string, value: unknown): Announcem
     department: value.department,
     title: value.title,
     audiences: normalizeAudiences(audiences),
+    ...(isLineNotificationLevel(value.lineNotificationLevel) ? { lineNotificationLevel: value.lineNotificationLevel } : {}),
+    ...(normalizeStoredAudienceNote(value.audienceNote) ? { audienceNote: normalizeStoredAudienceNote(value.audienceNote) } : {}),
     content: value.content,
     ...(normalizeContact(value.contact) ? { contact: normalizeContact(value.contact) } : {}),
     importantEvents: normalizeImportantEvents(value.importantEvents),

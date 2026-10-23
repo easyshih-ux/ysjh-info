@@ -8,16 +8,37 @@ import { getPublicSiteUrl } from "../lib/siteUrl.ts";
 const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const complete = mockAnnouncements[0];
 
-test("摘要包含 department、完整 title 與人類可讀 audiences", () => {
-  const summary = createLineAnnouncementSummary(complete, "https://school.example/", 2026);
-  assert.match(summary, /📢【設備組公告】/);
-  assert.match(summary, new RegExp(complete.title));
-  assert.match(summary, /👥 對象：七年級導師、八年級導師、全校教師/);
+test("V2 第一行只顯示通知等級，舊公告無等級時為一般公告", () => {
+  const legacy = createLineAnnouncementSummary({ ...complete, lineNotificationLevel: undefined }, "https://school.example/", 2026);
+  assert.equal(legacy.split("\n")[0], "🔵【一般公告】");
+  const labels = { schoolwide: "🚨【全校必讀】", required: "🔴【重要必讀】", task: "🟠【待辦事項】", general: "🔵【一般公告】" } as const;
+  for (const [level, label] of Object.entries(labels)) {
+    const summary = createLineAnnouncementSummary({ ...complete, lineNotificationLevel: level as keyof typeof labels }, "https://school.example/", 2026);
+    assert.equal(summary.split("\n")[0], label);
+  }
 });
 
-test("importantEvents 有資料顯示，空陣列時整區不顯示", () => {
-  assert.match(createLineAnnouncementSummary(complete, "https://school.example/", 2026), /📅 重要日期：[\s\S]*・9\/18 07:52 晨讀公播/);
-  assert.doesNotMatch(createLineAnnouncementSummary({ ...complete, importantEvents: [] }, "https://school.example/", 2026), /📅 重要日期：/);
+test("V2 顯示完整處室組別名稱、標題與人類可讀 audiences", () => {
+  const summary = createLineAnnouncementSummary(complete, "https://school.example/", 2026);
+  assert.match(summary, /📢 教務處設備組公告/);
+  assert.match(summary, new RegExp(`📌 ${complete.title}`));
+  assert.match(summary, /👥 對象｜七年級導師、八年級導師、全校教師/);
+  assert.match(createLineAnnouncementSummary({ ...complete, department: "人事室" }, "https://school.example/", 2026), /📢 人事室公告/);
+});
+
+test("V2 優先顯示實際辦理對象，未填寫才顯示 audiences", () => {
+  const summary = createLineAnnouncementSummary({ ...complete, audienceNote: "尚未完成設定的同仁" }, "https://school.example/", 2026);
+  assert.match(summary, /👥 對象｜尚未完成設定的同仁/);
+  assert.doesNotMatch(summary, /七年級導師、八年級導師/);
+  assert.match(createLineAnnouncementSummary({ ...complete, audienceNote: "  " }, "https://school.example/", 2026), /👥 對象｜七年級導師/);
+});
+
+test("importantEvents 單筆精簡一行、多筆全部保留，空陣列時整區不顯示", () => {
+  const single = createLineAnnouncementSummary({ ...complete, importantEvents: [{ date: "2026-09-18", time: "07:52", title: "晨讀公播" }] }, "https://school.example/", 2026);
+  assert.match(single, /📅 日期｜9\/18 07:52 晨讀公播/);
+  const multiple = createLineAnnouncementSummary({ ...complete, importantEvents: [{ date: "2026-09-18", title: "A" }, { date: "2026-09-19", title: "B" }, { date: "2026-09-20", title: "C" }] }, "https://school.example/", 2026);
+  assert.match(multiple, /📅 重要日期\n・9\/18 A\n・9\/19 B\n・9\/20 C/);
+  assert.doesNotMatch(createLineAnnouncementSummary({ ...complete, importantEvents: [] }, "https://school.example/", 2026), /📅/);
 });
 
 test("importantEvents 日期區間顯示開始與結束日期", () => {
@@ -32,16 +53,38 @@ test("LINE 摘要顯示重要事項同日與跨日起訖時間", () => {
   assert.match(crossDay, /9\/23 08:30 ～ 9\/25 16:00 跨日活動/);
 });
 
-test("deadlines 有資料顯示，空陣列時整區不顯示", () => {
-  assert.match(createLineAnnouncementSummary(complete, "https://school.example/", 2026), /⏰ 截止：[\s\S]*・9\/18 16:00 七年級閱讀調查表繳交截止/);
-  assert.doesNotMatch(createLineAnnouncementSummary({ ...complete, deadlines: [] }, "https://school.example/", 2026), /⏰ 截止：/);
+test("deadlines 單筆精簡、多筆全部保留，沒有期限就不顯示", () => {
+  const single = createLineAnnouncementSummary({ ...complete, deadlines: [{ date: "2026-10-23", time: "12:00", label: "完成設定" }] }, "https://school.example/", 2026);
+  assert.match(single, /⏰ 截止｜10\/23 12:00 完成設定/);
+  const multiple = createLineAnnouncementSummary({ ...complete, deadlines: [{ date: "2026-10-23", label: "A" }, { date: "2026-10-24", time: "16:00", label: "B" }] }, "https://school.example/", 2026);
+  assert.match(multiple, /⏰ 截止\n・10\/23 A\n・10\/24 16:00 B/);
+  assert.doesNotMatch(createLineAnnouncementSummary({ ...complete, deadlines: [] }, "https://school.example/", 2026), /⏰/);
 });
 
-test("LINE 摘要使用共用 formatter 輸出聯絡資訊，舊公告不輸出", () => {
-  const withContact = createLineAnnouncementSummary({ ...complete, contact: { department: "設備組", extension: "104" } }, "https://school.example/", 2026);
-  assert.match(withContact, /☎ 如有任何疑問，請洽設備組，分機 104。/);
-  assert.ok(withContact.indexOf("☎ 如有任何疑問") < withContact.indexOf("🔗 主要連結"));
-  assert.doesNotMatch(createLineAnnouncementSummary({ ...complete, contact: undefined }, "https://school.example/", 2026), /☎ 如有任何疑問/);
+test("只有完全相同的重複日期或期限才合併", () => {
+  const summary = createLineAnnouncementSummary({ ...complete, importantEvents: [], deadlines: [{ date: "2026-10-23", label: "繳交" }, { date: "2026-10-23", label: "繳交" }, { date: "2026-10-23", time: "12:00", label: "繳交" }] }, "https://school.example/", 2026);
+  assert.match(summary, /⏰ 截止\n・10\/23 繳交\n・10\/23 12:00 繳交(\n|$)/);
+  assert.equal(summary.match(/・10\/23 繳交\n/g)?.length, 1);
+});
+
+test("通知等級對應固定提醒句，一般公告不加提醒句", () => {
+  const base = { ...complete, deadlines: [] };
+  assert.match(createLineAnnouncementSummary({ ...base, lineNotificationLevel: "schoolwide" }, "https://school.example/", 2026), /⚠️ 請全校同仁務必詳閱。/);
+  assert.match(createLineAnnouncementSummary({ ...base, lineNotificationLevel: "required" }, "https://school.example/", 2026), /⚠️ 請相關同仁務必詳閱並依公告辦理。/);
+  assert.match(createLineAnnouncementSummary({ ...complete, lineNotificationLevel: "task" }, "https://school.example/", 2026), /⚠️ 請相關同仁於期限內完成。/);
+  assert.doesNotMatch(createLineAnnouncementSummary({ ...base, lineNotificationLevel: "general" }, "https://school.example/", 2026), /⚠️/);
+});
+
+test("LINE 摘要沿用聯絡資料以精簡洽詢格式輸出，舊公告不輸出", () => {
+  const withContact = createLineAnnouncementSummary({ ...complete, contact: { department: "資訊組", extension: "103" } }, "https://school.example/", 2026);
+  assert.match(withContact, /☎ 洽詢｜資訊組，分機 103/);
+  assert.ok(withContact.indexOf("☎ 洽詢") < withContact.indexOf("👉 "));
+  assert.doesNotMatch(createLineAnnouncementSummary({ ...complete, contact: undefined }, "https://school.example/", 2026), /☎/);
+});
+
+test("LINE V2 純文字不使用 Markdown 語法", () => {
+  const summary = createLineAnnouncementSummary({ ...complete, lineNotificationLevel: "required", contact: { department: "資訊組", extension: "103" } }, "https://school.example/", 2026);
+  assert.doesNotMatch(summary, /\*\*|__|^#|\[[^\]]+\]\(/m);
 });
 
 test("日期無 time 只顯示日期，有 time 顯示日期加時間，跨年顯示年份", () => {
@@ -57,11 +100,11 @@ test("摘要不包含完整 content、attachment URL 或 followUp 內容", () =>
   assert.ok(!summary.includes(complete.followUps[0].message));
 });
 
-test("只顯示主要連結，沒有 primary link 時不產生空白區塊", () => {
+test("保留主要操作連結，沒有 primary link 時不產生空白區塊", () => {
   const summary = createLineAnnouncementSummary(complete, "https://school.example/", 2026);
-  assert.match(summary, /🔗 主要連結：七年級閱讀調查表\nhttps:\/\/forms\.google\.com\//);
+  assert.match(summary, /👉 七年級閱讀調查表\nhttps:\/\/forms\.google\.com\//);
   assert.ok(!summary.includes(complete.links[1].url));
-  assert.doesNotMatch(createLineAnnouncementSummary({ ...complete, links: [] }, "https://school.example/", 2026), /🔗 主要連結：/);
+  assert.doesNotMatch(createLineAnnouncementSummary({ ...complete, links: [] }, "https://school.example/", 2026), /👉/);
 });
 
 test("網站首頁連結集中取得並正確加入摘要", () => {
@@ -75,7 +118,7 @@ test("網站首頁連結集中取得並正確加入摘要", () => {
     );
     assert.match(
       createLineAnnouncementSummary(complete, "https://school.example/", 2026),
-      /🔎 完整公告、附件及最新補充請至「義學公務資訊站」查看：\nhttps:\/\/school\.example\/$/
+      new RegExp(`🔗 完整公告及操作說明：\\nhttps://school\\.example/\\?announcement=${complete.id}$`)
     );
   } finally {
     if (previous === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
@@ -87,6 +130,10 @@ test("GitHub Project Pages 網址保留 repository base path", () => {
   process.env.NEXT_PUBLIC_SITE_URL = "https://easyshih-ux.github.io/ysjh-info/?source=test#top";
   try {
     assert.equal(getPublicSiteUrl(), "https://easyshih-ux.github.io/ysjh-info/");
+    assert.match(
+      createLineAnnouncementSummary({ ...complete, id: "abc123" }, getPublicSiteUrl(), 2026),
+      /🔗 完整公告及操作說明：\nhttps:\/\/easyshih-ux\.github\.io\/ysjh-info\/\?announcement=abc123$/
+    );
   } finally {
     if (previous === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
     else process.env.NEXT_PUBLIC_SITE_URL = previous;
@@ -117,4 +164,29 @@ test("複製為純 client-side，不修改 Firestore 或 updatedAt", () => {
   assert.doesNotMatch(combined, /updateDoc|setDoc|addDoc|updatedAt|firebase/);
   assert.match(component, /已複製，可直接貼到 LINE 群組。/);
   assert.match(component, /複製失敗，請手動選取文字複製。/);
+});
+
+test("V2 完整範例格式與段落順序", () => {
+  const summary = createLineAnnouncementSummary({
+    ...complete,
+    id: "2fa",
+    department: "資訊組",
+    title: "校務行政系統「雙因子驗證」設定",
+    lineNotificationLevel: "required",
+    audienceNote: "尚未完成設定的同仁",
+    importantEvents: [],
+    deadlines: [{ date: "2026-10-23", time: "12:00", label: "完成設定" }],
+    contact: { department: "資訊組", extension: "103" },
+    links: [],
+  }, "https://easyshih-ux.github.io/ysjh-info/", 2026);
+  assert.equal(summary, [
+    "🔴【重要必讀】",
+    "📢 教務處資訊組公告",
+    "📌 校務行政系統「雙因子驗證」設定",
+    "👥 對象｜尚未完成設定的同仁",
+    "⏰ 截止｜10/23 12:00 完成設定",
+    "⚠️ 請相關同仁務必詳閱並依公告辦理。",
+    "☎ 洽詢｜資訊組，分機 103",
+    "🔗 完整公告及操作說明：\nhttps://easyshih-ux.github.io/ysjh-info/?announcement=2fa",
+  ].join("\n\n"));
 });

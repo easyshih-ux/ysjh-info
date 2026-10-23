@@ -6,7 +6,7 @@ import { ArrowLeft, Edit3, Eye, MessageSquarePlus, Search, Trash2 } from "lucide
 import { AUDIENCES, toggleAudienceSelection, type Announcement, type Audience, type FollowUp } from "@/lib/announcements";
 import { CURRENT_ACADEMIC_YEAR, FRONTEND_ACADEMIC_YEARS } from "@/lib/academicYear";
 import { DEPARTMENTS, MAX_CUSTOM_DEPARTMENT_LENGTH, OTHER_DEPARTMENT_OPTION, isDepartment, type Department } from "@/lib/departments";
-import { announcementPublisherLabel, applyAnnouncementUpdate, filterManagedAnnouncements, MANAGE_DEPARTMENT_KEY, resolveInitialManageDepartment, validateAnnouncementCore } from "@/lib/announcementManagement";
+import { announcementPublisherLabel, applyManagedAnnouncementSave, filterManagedAnnouncements, MANAGE_DEPARTMENT_KEY, resolveInitialManageDepartment, validateAnnouncementCore } from "@/lib/announcementManagement";
 import { AnnouncementManagementError, appendManagedFollowUp, updateManagedAnnouncement } from "@/lib/announcementManagementFirestore";
 import { readManagedAnnouncements } from "@/lib/announcementFirestore";
 import { manageAnnouncementLifecycle, type AnnouncementLifecycleAction } from "@/lib/announcementLifecycle";
@@ -18,6 +18,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { DepartmentOptionGroups } from "@/components/department-option-groups";
+import { LineNotificationSettings } from "@/components/line-notification-settings";
 import { defaultContactForDepartment, getFixedDepartmentExtension, MAX_CONTACT_EXTENSION_LENGTH, selectContactDepartment } from "@/lib/departmentContacts";
 import { Textarea } from "@/components/ui/textarea";
 import { announcementTimeStates } from "@/lib/announcementLogic";
@@ -93,9 +94,9 @@ export default function ManagePage() {
     try {
       const original = items.find(item => item.id === editing.id);
       if (!original) throw new AnnouncementManagementError("找不到要修改的公告，請重新整理後再試一次。");
-      const updatedAt = await updateManagedAnnouncement(original, editing);
-      if (updatedAt) setItems(current => current.map(item => item.id === editing.id ? applyAnnouncementUpdate(item, editing, updatedAt) : item));
-      setEditing(null); setNotice(updatedAt ? "公告已更新" : "公告內容沒有變更");
+      const saved = await updateManagedAnnouncement(original, editing);
+      if (saved) setItems(current => current.map(item => item.id === editing.id ? applyManagedAnnouncementSave(item, editing, saved.contentUpdatedAt) : item));
+      setEditing(null); setNotice(!saved ? "公告內容沒有變更" : saved.contentUpdatedAt ? "公告已更新" : "LINE 通知設定已更新");
     } catch (caught) {
       setError(caught instanceof AnnouncementManagementError ? caught.message : "公告更新失敗，請稍後再試。");
     } finally { savingRef.current = false; setSaving(false); }
@@ -137,6 +138,7 @@ export default function ManagePage() {
       <div className={styles.twoFields}><label>學年度<select value={editing.academicYear} onChange={event => setEditing({ ...editing, academicYear: Number(event.target.value) })}>{FRONTEND_ACADEMIC_YEARS.map(value => <option key={value} value={value}>{value} 學年度</option>)}</select></label>{publisher.role === "systemAdmin" ? <label>發布單位<select value={editing.department} onChange={event => setEditing({ ...editing, department: event.target.value as Department })}><DepartmentOptionGroups currentDepartment={editing.department} /></select></label> : <div className={styles.lockedDepartment}><span>發布單位</span><strong className={`department-badge department-${departmentVisualFamily(editing.department)}`}>{editing.department}</strong><small>依您的發布權限固定，不可修改</small></div>}</div>
       <label>公告標題<Input value={editing.title} onChange={event => setEditing({ ...editing, title: event.target.value })} /></label>
       <fieldset><legend>適用對象</legend><div className={styles.audiences}>{AUDIENCES.map(value => <label key={value}><Checkbox checked={editing.audiences.includes(value)} onCheckedChange={checked => setEditing({ ...editing, audiences: toggleAudienceSelection(editing.audiences, value, checked === true) })} />{value}</label>)}</div></fieldset>
+      <LineNotificationSettings idPrefix={`edit-${editing.id}`} level={editing.lineNotificationLevel} audienceNote={editing.audienceNote} audiences={editing.audiences} onLevelChange={lineNotificationLevel => setEditing({ ...editing, lineNotificationLevel })} onAudienceNoteChange={audienceNote => setEditing({ ...editing, audienceNote })} />
       <label>完整公告內容<Textarea value={editing.content} onChange={event => setEditing({ ...editing, content: event.target.value })} /></label>
       <ContactEditor item={editing} setItem={setEditing} />
       <EditorExtras item={editing} setItem={setEditing} /><ReadOnlyImages item={editing} />

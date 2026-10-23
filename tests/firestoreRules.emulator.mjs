@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { after, afterEach, before, test } from "node:test";
 import { readFile } from "node:fs/promises";
 import {
@@ -480,6 +481,101 @@ test("47 announcement contact 拒絕非法分機與多餘敏感欄位", async ()
   const database = userDb("userA");
   await assertFails(setDoc(doc(database, "announcements/badExtension"), { ...announcementData(), contact: { department: "設備組", extension: "09-1234" } }));
   await assertFails(setDoc(doc(database, "announcements/extraField"), { ...announcementData(), contact: { department: "設備組", extension: "104", email: "private@example.test" } }));
+});
+
+test("47a LINE 通知等級與實際辦理對象可建立，舊公告缺少欄位仍相容", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  const database = userDb("userA");
+  await assertSucceeds(setDoc(doc(database, "announcements/legacyNoLine"), announcementData()));
+  for (const level of ["schoolwide", "required", "task", "general"]) {
+    await assertSucceeds(setDoc(doc(database, `announcements/line-${level}`), { ...announcementData(), lineNotificationLevel: level }));
+  }
+  await assertSucceeds(setDoc(doc(database, "announcements/withNote"), { ...announcementData(), lineNotificationLevel: "task", audienceNote: "尚未完成雙因子驗證設定的同仁" }));
+});
+
+test("47b LINE 通知設定拒絕非法等級與過長或空白的實際辦理對象", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  const database = userDb("userA");
+  await assertFails(setDoc(doc(database, "announcements/badLevel"), { ...announcementData(), lineNotificationLevel: "urgent" }));
+  await assertFails(setDoc(doc(database, "announcements/emptyNote"), { ...announcementData(), audienceNote: "" }));
+  await assertFails(setDoc(doc(database, "announcements/longNote"), { ...announcementData(), audienceNote: "對".repeat(41) }));
+  await assertFails(setDoc(doc(database, "announcements/numberNote"), { ...announcementData(), audienceNote: 123 }));
+});
+
+test("47c 只修改 LINE 通知設定不需更新原文次數，非法值仍拒絕", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await seed("announcements/lineEdit", announcementData());
+  const reference = doc(userDb("userA"), "announcements/lineEdit");
+  await assertSucceeds(updateDoc(reference, { lineNotificationLevel: "required", audienceNote: "各班導師" }));
+  await assertSucceeds(updateDoc(reference, { audienceNote: deleteField() }));
+  await assertFails(updateDoc(reference, { lineNotificationLevel: "urgent" }));
+  await assertFails(updateDoc(reference, { audienceNote: "對".repeat(41) }));
+});
+
+test("47d 最重發布：5 張圖片＋2 份 PDF＋聯絡資訊＋LINE 設定同時建立必須成功", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  const images = Array.from({ length: 5 }, (_, index) => ({ id: `image-${index + 1}`, type: "image", url: `https://example.test/image-${index + 1}.webp`, name: `圖片${index + 1}.webp`, caption: "說明" }));
+  await assertSucceeds(setDoc(doc(userDb("userA"), "announcements/newA"), {
+    ...announcementData(),
+    contact: { department: "設備組", extension: "104" },
+    lineNotificationLevel: "schoolwide",
+    audienceNote: "尚未完成雙因子驗證設定的同仁",
+    attachments: [...images, pdfAttachment("pdf-1"), pdfAttachment("pdf-2")],
+  }));
+});
+
+test("47e 實際辦理對象剛好 40 個中文字必須成功", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  const note = "對".repeat(40);
+  assert.equal(note.length, 40);
+  await assertSucceeds(setDoc(doc(userDb("userA"), "announcements/note40"), { ...announcementData(), lineNotificationLevel: "task", audienceNote: note }));
+  await seed("announcements/note40Edit", announcementData());
+  await assertSucceeds(updateDoc(doc(userDb("userA"), "announcements/note40Edit"), { audienceNote: note }));
+});
+
+test("47f 附件驗證最佳化後仍拒絕不合法附件", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  const database = userDb("userA");
+  const image = n => ({ id: `image-${n}`, type: "image", url: `https://example.test/image-${n}.webp`, name: `圖片${n}.webp` });
+  const create = attachments => setDoc(doc(database, "announcements/newA"), { ...announcementData(), attachments });
+  // 類型與格式
+  await assertFails(create(["not-a-map"]));
+  await assertFails(create([{ ...image(1), type: "video" }]));
+  await assertFails(create([{ ...image(1), url: "http://example.test/image.webp" }]));
+  await assertFails(create([{ ...image(1), name: "" }]));
+  // PDF 欄位、大小、格式與路徑
+  await assertFails(create([{ ...pdfAttachment("pdf-1"), contentType: "image/png" }]));
+  await assertFails(create([{ ...pdfAttachment("pdf-1"), sizeBytes: 5 * 1024 * 1024 + 1 }]));
+  await assertFails(create([{ ...pdfAttachment("pdf-1"), extra: "x" }]));
+  await assertFails(create([(({ contentType: _contentType, ...item }) => item)(pdfAttachment("pdf-1"))]));
+  await assertFails(create([(({ name: _name, ...item }) => ({ ...item, note: "x" }))(pdfAttachment("pdf-1"))]));
+  await assertFails(create([{ ...pdfAttachment("pdf-1"), type: "image" }].map(({ url: _url, ...item }) => item)));
+  await assertFails(create([pdfAttachment("pdf-1", "userB")]));
+  // 順序與數量
+  await assertFails(create([pdfAttachment("pdf-1"), image(1), image(2)]));
+  await assertFails(create([image(1), image(2), image(3), image(4), pdfAttachment("pdf-1"), image(5), pdfAttachment("pdf-2")]));
+  await assertFails(create([image(1), image(2), image(3), image(4), image(5), pdfAttachment("pdf-1"), pdfAttachment("pdf-2"), image(6)]));
+  await assertFails(create([image(1), image(2), image(3), image(4), image(5), { ...pdfAttachment("pdf-1"), storagePath: "announcements/other/pdf/userA/pdf-1.pdf" }, pdfAttachment("pdf-2")]));
+  // 合法最大組合仍可建立
+  await assertSucceeds(create([image(1), image(2), image(3), image(4), image(5), pdfAttachment("pdf-1"), pdfAttachment("pdf-2")]));
+});
+
+test("47g 修改公告時附件驗證最佳化仍拒絕竄改", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  const image = n => ({ id: `image-${n}`, type: "image", url: `https://example.test/image-${n}.webp`, name: `圖片${n}.webp` });
+  await seed("announcements/newA", { ...announcementData(), attachments: [image(1), image(2), image(3), image(4), pdfAttachment("pdf-1"), pdfAttachment("pdf-2")] });
+  const reference = doc(userDb("userA"), "announcements/newA");
+  await assertFails(updateDoc(reference, { attachments: [pdfAttachment("pdf-1"), image(1), image(2), image(3), image(4), pdfAttachment("pdf-2")] }));
+  await assertFails(updateDoc(reference, { attachments: [image(1), image(2), image(3), image(4), pdfAttachment("pdf-1"), { ...pdfAttachment("pdf-2"), sizeBytes: 0 }] }));
+  await assertSucceeds(updateDoc(reference, { title: "附件未變更的一般修改", lineNotificationLevel: "required", audienceNote: "各班導師" }));
+  // 缺少 publisherUid 的歷史公告：PDF 路徑無法組成，仍須拒絕 PDF；只有圖片時維持原本可修改。
+  await seed("authorizedPublishers/adminA", profile("systemAdmin", true));
+  const { publisherUid: _publisherUid, ...legacy } = announcementData();
+  await seed("announcements/newA", legacy);
+  const adminReference = doc(userDb("adminA"), "announcements/newA");
+  await assertFails(updateDoc(adminReference, { attachments: [image(1), { ...pdfAttachment("pdf-1"), storagePath: "pdf-1.pdf" }] }));
+  await assertFails(updateDoc(adminReference, { attachments: [image(1), pdfAttachment("pdf-1")] }));
+  await assertSucceeds(updateDoc(adminReference, { attachments: [image(1), image(2)] }));
 });
 
 test("48 原 publisher 可新增 supplement 與 reminder", async () => {

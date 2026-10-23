@@ -1,0 +1,23 @@
+.settings{display:grid;gap:14px;grid-column:1/-1;border:1px solid #d6e0e7;border-radius:10px;background:#f8fafb;padding:16px}
+.heading h3{margin:0;font-size:16px}
+.heading p{margin:2px 0 0;color:#6c7c8c;font-size:13px;font-weight:400}
+.levels{min-width:0;margin:0;padding:0;border:0}
+.levels legend{margin-bottom:8px;font-size:15px;font-weight:700}
+.levelGrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.level{display:flex;align-items:flex-start;gap:9px;min-height:52px;border:1px solid #d6dfe7;border-radius:8px;padding:9px 11px;background:#fff;cursor:pointer}
+.level input{margin-top:4px;accent-color:#173b63}
+.level span{display:grid;gap:1px}
+.level strong{font-size:15px}
+.level small{color:#6c7c8c;font-size:12px;font-weight:400}
+.level:focus-within{outline:3px solid #17324d;outline-offset:2px}
+.selected{border-width:2px;padding:8px 10px}
+.schoolwide.selected{border-color:#b42318;background:#fff1f0}
+.required.selected{border-color:#c0392b;background:#fdf2f1}
+.task.selected{border-color:#c26a00;background:#fff6ea}
+.general.selected{border-color:#2f6fae;background:#eef5fa}
+.reminder{margin:10px 0 0;border:1px solid #f0c36d;border-radius:8px;background:#fff8e6;padding:10px 12px;color:#7a4b00;font-size:14px;font-weight:700}
+.note{display:flex;flex-direction:column;gap:7px;font-weight:700}
+.note input{height:44px;background:#fff}
+.note small{color:#718193;font-size:13px;font-weight:400}
+.note .error{color:#aa3434;font-weight:700}
+@media(max-width:560px){.levelGrid{grid-template-columns:1fr}}

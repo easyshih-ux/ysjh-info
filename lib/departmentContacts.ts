@@ -86,3 +86,7 @@ export function formatContactCompact(contact: AnnouncementContact) {
 export function formatContactSentence(contact: AnnouncementContact) {
   return `☎ 如有任何疑問，請洽${contact.department}，分機 ${contact.extension}。`;
 }
+
+export function formatContactInquiry(contact: AnnouncementContact) {
+  return `☎ 洽詢｜${contact.department}，分機 ${contact.extension}`;
+}

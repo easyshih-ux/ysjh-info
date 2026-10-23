@@ -1,4 +1,4 @@
-import { isImportantEventUsed, normalizeAudiences, normalizeImportantEvent, type Announcement, type AnnouncementLink, type Audience, type Deadline, type ImportantEvent } from "./announcements.ts";
+import { isImportantEventUsed, isLineNotificationLevel, normalizeAudienceNote, normalizeAudiences, normalizeImportantEvent, resolveLineNotificationLevel, validateAudienceNote, type Announcement, type LineNotificationLevel, type AnnouncementLink, type Audience, type Deadline, type ImportantEvent } from "./announcements.ts";
 import { isDepartment, type Department } from "./departments.ts";
 import { isSupportedPdf, MAX_PDF_BYTES, MAX_PUBLISH_PDFS } from "./attachmentFiles.ts";
 import { normalizeAnnouncementContact, validateAnnouncementContact, type AnnouncementContact } from "./departmentContacts.ts";
@@ -7,6 +7,8 @@ export interface BasicAnnouncementDraft {
   department: Department | "";
   title: string;
   audiences: Audience[];
+  lineNotificationLevel?: LineNotificationLevel;
+  audienceNote?: string;
   content: string;
   contact?: AnnouncementContact;
   attachments: PublishImageAttachment[];
@@ -68,7 +70,10 @@ export function publishDraftToAnnouncement(draft: BasicAnnouncementDraft, id: st
   if (!isDepartment(draft.department)) throw new Error("Invalid department");
   return {
     id, publishedAt, academicYear, department: draft.department, title: draft.title,
-    audiences: normalizeAudiences(draft.audiences), content: draft.content,
+    audiences: normalizeAudiences(draft.audiences),
+    lineNotificationLevel: resolveLineNotificationLevel(draft.lineNotificationLevel),
+    ...(normalizeAudienceNote(draft.audienceNote) ? { audienceNote: normalizeAudienceNote(draft.audienceNote) } : {}),
+    content: draft.content,
     ...(normalizeAnnouncementContact(draft.contact) ? { contact: normalizeAnnouncementContact(draft.contact) } : {}),
     importantEvents: draft.importantEvents.filter(isImportantEventUsed).map(normalizeImportantEvent),
     deadlines: draft.deadlines.filter(deadline => deadline.date || deadline.time || deadline.label),
@@ -106,6 +111,9 @@ export function validateBasicDraft(draft: BasicAnnouncementDraft): DraftErrors {
   if (!draft.title.trim()) errors.title = "請輸入公告標題";
   if (draft.audiences.length === 0) errors.audiences = "請至少選擇一個適用對象";
   if (draft.audiences.includes("全校教師") && draft.audiences.length > 1) errors.audiences = "全校教師不可與其他適用對象同時選擇";
+  if (draft.lineNotificationLevel !== undefined && !isLineNotificationLevel(draft.lineNotificationLevel)) errors.lineNotificationLevel = "請選擇 LINE 通知等級";
+  const audienceNoteError = validateAudienceNote(draft.audienceNote);
+  if (audienceNoteError) errors.audienceNote = audienceNoteError;
   if (!draft.content.trim()) errors.content = "請輸入完整公告內容";
   const contactError = validateAnnouncementContact(draft.contact);
   if (contactError) errors.contact = contactError;

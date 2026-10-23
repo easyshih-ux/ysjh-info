@@ -42,3 +42,9 @@ export function resolveDepartmentSelection(selection: unknown, customName: unkno
   if (isFixedDepartment(selection)) return selection;
   return selection === OTHER_DEPARTMENT_OPTION ? normalizeCustomDepartment(customName) : null;
 }
+
+/** 組別顯示完整處室名稱，例如「資訊組」→「教務處資訊組」；處室、獨立單位及自訂單位維持原名。 */
+export function formatDepartmentFullName(department: string) {
+  const group = departmentGroups.find(item => item.office !== department && (item.departments as readonly string[]).includes(department));
+  return group ? `${group.office}${department}` : department;
+}

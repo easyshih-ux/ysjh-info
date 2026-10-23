@@ -40,6 +40,48 @@ export interface LatestFollowUpSummary {
 }
 export interface FollowUpCounts { supplement: number; reminder: number; related: number }
 export interface AnnouncementLink { id: string; label: string; url: string; type: "website"; isPrimary: boolean }
+export const LINE_NOTIFICATION_LEVELS = ["schoolwide", "required", "task", "general"] as const;
+export type LineNotificationLevel = (typeof LINE_NOTIFICATION_LEVELS)[number];
+export const DEFAULT_LINE_NOTIFICATION_LEVEL: LineNotificationLevel = "general";
+export const LINE_NOTIFICATION_LEVEL_LABELS: Record<LineNotificationLevel, string> = {
+  schoolwide: "🚨【全校必讀】",
+  required: "🔴【重要必讀】",
+  task: "🟠【待辦事項】",
+  general: "🔵【一般公告】",
+};
+export const LINE_NOTIFICATION_LEVEL_DESCRIPTIONS: Record<LineNotificationLevel, string> = {
+  schoolwide: "全校同仁都必須閱讀",
+  required: "相關同仁務必詳閱",
+  task: "需要完成繳交、填報或設定",
+  general: "一般資訊周知",
+};
+export const MAX_AUDIENCE_NOTE_LENGTH = 40;
+
+export function isLineNotificationLevel(value: unknown): value is LineNotificationLevel {
+  return typeof value === "string" && LINE_NOTIFICATION_LEVELS.includes(value as LineNotificationLevel);
+}
+
+/** 舊公告沒有通知等級時，一律視為一般公告；不做歷史資料遷移。 */
+export function resolveLineNotificationLevel(value: unknown): LineNotificationLevel {
+  return isLineNotificationLevel(value) ? value : DEFAULT_LINE_NOTIFICATION_LEVEL;
+}
+
+export function normalizeAudienceNote(value: unknown) {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().replace(/\s+/g, " ");
+  return normalized ? normalized : undefined;
+}
+
+export function validateAudienceNote(value: unknown) {
+  const normalized = normalizeAudienceNote(value);
+  return normalized && normalized.length > MAX_AUDIENCE_NOTE_LENGTH ? `實際辦理對象不可超過 ${MAX_AUDIENCE_NOTE_LENGTH} 個字` : undefined;
+}
+
+/** 選擇「全校必讀」但接收對象不是全校教師時，只提醒、不阻止發布。 */
+export function needsSchoolwideAudienceReminder(level: LineNotificationLevel | undefined, audiences: readonly Audience[]) {
+  return level === "schoolwide" && !(audiences.length === 1 && audiences[0] === "全校教師");
+}
+
 export interface Announcement {
   id: string;
   publisherUid?: string;
@@ -63,6 +105,10 @@ export interface Announcement {
   department: Department;
   title: string;
   audiences: Audience[];
+  /** 僅影響 LINE 通知呈現，不影響公告接收身分。 */
+  lineNotificationLevel?: LineNotificationLevel;
+  /** 實際辦理對象（選填），僅供 LINE 通知顯示，不影響 audiences 篩選。 */
+  audienceNote?: string;
   content: string;
   contact?: AnnouncementContact;
   importantEvents: ImportantEvent[];

@@ -85,7 +85,8 @@ test("Firestore 修正使用原 ID，follow-up 改寫入安全 subcollection", (
   assert.match(firestore, /createAnnouncementFollowUp\(announcementId, type, message, publisher\)/);
   assert.doesNotMatch(firestore, /arrayUnion|followUps:\s*arrayUnion/);
   assert.doesNotMatch(firestore, /updatedAt: createdAt|contentUpdatedAt: createdAt/);
-  assert.match(firestore, /if \(!hasAnnouncementContentChanges\(original, edited\)\) return null/);
+  assert.match(firestore, /const contentChanged = hasAnnouncementContentChanges\(original, edited\)/);
+  assert.match(firestore, /if \(!contentChanged && !lineSettingsChanged\) return null/);
   assert.doesNotMatch(firestore, /setDoc|addDoc|deleteDoc/);
 });
 

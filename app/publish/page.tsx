@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Eye, FileText, ImagePlus, Link2, Trash2 } from "lucide-react";
-import { AUDIENCES, formatImportantEventSchedule, normalizeImportantEvent, toggleAudienceSelection, type Announcement, type Audience } from "@/lib/announcements";
+import { AUDIENCES, DEFAULT_LINE_NOTIFICATION_LEVEL, formatImportantEventSchedule, normalizeImportantEvent, toggleAudienceSelection, type Announcement, type Audience } from "@/lib/announcements";
 import { MAX_CUSTOM_DEPARTMENT_LENGTH, OTHER_DEPARTMENT_OPTION, type Department } from "@/lib/departments";
 import { CURRENT_ACADEMIC_YEAR } from "@/lib/academicYear";
 import { MAX_PUBLISH_IMAGES, normalizeOptionalHttpUrl, publishDraftToAnnouncement, removePublishAttachment, selectPublishImages, setPrimaryLink, validateBasicDraft, validatePublisherDepartment, type BasicAnnouncementDraft, type DraftErrors, type PublishImageAttachment, type PublishPdfAttachment } from "@/lib/publishDraft";
@@ -17,6 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AdminAuthGuard, useAuthorizedPublisher } from "@/components/admin-auth-guard";
 import { LineSummaryCard } from "@/components/line-summary-card";
+import { LineNotificationSettings } from "@/components/line-notification-settings";
 import { DepartmentOptionGroups } from "@/components/department-option-groups";
 import { AnnouncementContactLine } from "@/components/announcement-contact";
 import { hasPublishAttachments, validateAttachmentPrivacyConfirmation } from "@/lib/attachmentPrivacyConfirmation";
@@ -26,7 +27,7 @@ import styles from "./publish.module.css";
 
 const emptyImportantEvents = () => Array.from({ length: 3 }, () => ({ date: "", time: "", title: "" }));
 const emptyDeadlines = () => Array.from({ length: 3 }, () => ({ date: "", time: "", label: "" }));
-const createEmptyDraft = (department: Department | "" = ""): BasicAnnouncementDraft => ({ department, title: "", audiences: [], content: "", contact: defaultContactForDepartment(department), attachments: [], pdfAttachments: [], importantEvents: emptyImportantEvents(), deadlines: emptyDeadlines(), links: [] });
+const createEmptyDraft = (department: Department | "" = ""): BasicAnnouncementDraft => ({ department, title: "", audiences: [], lineNotificationLevel: DEFAULT_LINE_NOTIFICATION_LEVEL, audienceNote: "", content: "", contact: defaultContactForDepartment(department), attachments: [], pdfAttachments: [], importantEvents: emptyImportantEvents(), deadlines: emptyDeadlines(), links: [] });
 
 export default function PublishPage() {
   return <AdminAuthGuard><PublishForm /></AdminAuthGuard>;
@@ -104,6 +105,7 @@ function PublishForm() {
       department: publisher.role === "systemAdmin" ? "select[name='department']" : "[data-publisher-department]",
       title: "input[name='title']",
       audiences: "fieldset button",
+      audienceNote: "input[name='audienceNote']",
       content: "textarea[name='content']",
       contact: `.${styles.contactSection} [aria-invalid='true']`,
       links: `.${styles.editorGroup} [aria-invalid='true']`,
@@ -244,6 +246,7 @@ function PublishForm() {
           <div className={styles.field}><span>發布單位 <em>必填</em></span>{publisher.role === "systemAdmin" ? <select name="department" className={styles.departmentSelect} value={draft.department} onChange={event => setDraft(current => ({ ...current, department: event.target.value as Department }))} aria-invalid={!!errors.department} aria-describedby={errors.department ? "department-error" : undefined}><option value="">請選擇發布單位</option><DepartmentOptionGroups currentDepartment={draft.department} /></select> : <div className={styles.lockedDepartment} data-publisher-department tabIndex={errors.department ? -1 : undefined} aria-invalid={!!errors.department} aria-describedby={errors.department ? "department-error" : undefined}><span className={`department-badge department-${departmentVisualFamily(publisher.defaultDepartment)}`}>{publisher.defaultDepartment || "尚未設定"}</span><small>依您的發布權限自動設定</small></div>}{errors.department && <small id="department-error" className={styles.error}>{errors.department}</small>}</div>
           <label className={styles.field}><span>公告標題 <em>必填</em></span><Input name="title" value={draft.title} onChange={event => setDraft(current => ({ ...current, title: event.target.value }))} placeholder="例如：第一次段考命題範圍確認" aria-invalid={!!errors.title} aria-describedby={errors.title ? "title-error" : undefined} />{errors.title && <small id="title-error" className={styles.error}>{errors.title}</small>}</label>
           <fieldset className={styles.fieldset} data-validation-field="audiences"><legend>適用對象 <em>可複選，必填</em></legend><div className={styles.audienceGrid}>{AUDIENCES.map(audience => { const checked = draft.audiences.includes(audience); return <label key={audience} className={checked ? styles.checked : ""}><Checkbox checked={checked} onCheckedChange={value => toggleAudience(audience, value === true)} aria-invalid={!!errors.audiences} /><span>{audience}</span></label>})}</div>{errors.audiences && <small className={styles.error}>{errors.audiences}</small>}</fieldset>
+          <LineNotificationSettings idPrefix="publish" level={draft.lineNotificationLevel} audienceNote={draft.audienceNote} audiences={draft.audiences} audienceNoteError={errors.audienceNote} onLevelChange={lineNotificationLevel => setDraft(current => ({ ...current, lineNotificationLevel }))} onAudienceNoteChange={audienceNote => setDraft(current => ({ ...current, audienceNote }))} />
           <label className={`${styles.field} ${styles.full}`}><span>完整公告內容 <em>必填</em></span><Textarea name="content" value={draft.content} onChange={event => setDraft(current => ({ ...current, content: event.target.value }))} placeholder={"可直接貼上原本準備發布到 LINE 的完整文字。\n\n段落、換行與編號都會保留。"} aria-invalid={!!errors.content} aria-describedby={errors.content ? "content-error" : undefined} />{errors.content && <small id="content-error" className={styles.error}>{errors.content}</small>}<small className={styles.hint}>支援長文字、換行、段落與編號。</small></label>
         </div>
       </section>

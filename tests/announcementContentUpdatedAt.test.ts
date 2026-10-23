@@ -24,6 +24,7 @@ test("補充提醒與 lifecycle 操作不寫入原文更新時間", () => {
 test("無實質變更不寫 Firestore，成功原文編輯才同步 contentUpdatedAt", () => {
   const management = source("lib/announcementManagementFirestore.ts");
   const model = source("lib/announcementManagement.ts");
-  assert.match(management, /if \(!hasAnnouncementContentChanges\(original, edited\)\) return null/);
+  assert.match(management, /const contentChanged = hasAnnouncementContentChanges\(original, edited\)/);
+  assert.match(management, /if \(!contentChanged && !lineSettingsChanged\) return null/);
   assert.match(model, /updatedAt: contentUpdatedAt, contentUpdatedAt/);
 });

@@ -63,9 +63,13 @@ service cloud.firestore {
       ];
     }
 
+    // 注意：只能在 isAuthorizedPublisher() 為 true 之後呼叫（目前僅 announcements 的 allow create）。
+    // 前置檢查已保證：已登入、發布者資料存在、enabled == true、role 為 systemAdmin 或 publisher，
+    // 因此這裡重用已讀取的發布者資料，以 role == 'systemAdmin' 判斷管理者，結果等同 isEnabledSystemAdmin()。
+    // 若未來要在其他地方使用，必須改回 isEnabledSystemAdmin() 或先完成相同的前置檢查。
     function canCreateAnnouncementDepartment() {
       let publisher = get(/databases/$(database)/documents/authorizedPublishers/$(request.auth.uid)).data;
-      return isEnabledSystemAdmin()
+      return publisher.role == 'systemAdmin'
         || (publisher.role == 'publisher'
           && request.resource.data.department == publisher.defaultDepartment);
     }
@@ -78,9 +82,9 @@ service cloud.firestore {
           && request.resource.data.department == resource.data.department);
     }
 
+    // 只由 isValidAttachment 呼叫，上層已確認 attachment is map。
     function isValidImageAttachment(attachment) {
-      return attachment is map
-        && attachment.type == 'image'
+      return attachment.type == 'image'
         && attachment.id is string
         && attachment.id.size() > 0
         && attachment.url is string
@@ -89,9 +93,11 @@ service cloud.firestore {
         && attachment.name.size() > 0;
     }
 
-    function isValidPdfAttachment(attachment, announcementId, publisherUid) {
-      return attachment is map
-        && attachment.keys().hasAll(['id', 'type', 'url', 'name', 'sizeBytes', 'storagePath', 'contentType'])
+    // 只由 isValidAttachment 呼叫，上層已確認 attachment is map。
+    // 欄位數剛好 7 個且全部屬於允許清單，等同原本「全部都要有」加「只能有這些」。
+    // pdfPathPrefix 為 'announcements/{announcementId}/pdf/{publisherUid}/'；無法組成時為 null，PDF 一律拒絕。
+    function isValidPdfAttachment(attachment, pdfPathPrefix) {
+      return attachment.keys().size() == 7
         && attachment.keys().hasOnly(['id', 'type', 'url', 'name', 'sizeBytes', 'storagePath', 'contentType'])
         && attachment.type == 'pdf'
         && attachment.id is string
@@ -105,34 +111,43 @@ service cloud.firestore {
         && attachment.sizeBytes > 0
         && attachment.sizeBytes <= 5 * 1024 * 1024
         && attachment.contentType == 'application/pdf'
-        && attachment.storagePath == 'announcements/' + announcementId + '/pdf/' + publisherUid + '/' + attachment.id + '.pdf';
+        && pdfPathPrefix is string
+        && attachment.storagePath == pdfPathPrefix + attachment.id + '.pdf';
     }
 
-    function isValidAttachment(attachment, announcementId, publisherUid) {
-      return isValidImageAttachment(attachment)
-        || isValidPdfAttachment(attachment, announcementId, publisherUid);
+    // 依類型分流：圖片只跑圖片檢查、PDF 只跑 PDF 檢查；其他類型兩者皆不符合而拒絕。
+    function isValidAttachment(attachment, pdfPathPrefix) {
+      return attachment is map
+        && (attachment.type == 'image'
+          ? isValidImageAttachment(attachment)
+          : isValidPdfAttachment(attachment, pdfPathPrefix));
     }
 
-    function hasAtMostTwoTrailingPdfs(attachments) {
-      return (attachments.size() < 3 || isValidImageAttachment(attachments[0]))
-        && (attachments.size() < 4 || isValidImageAttachment(attachments[1]))
-        && (attachments.size() < 5 || isValidImageAttachment(attachments[2]))
-        && (attachments.size() < 6 || isValidImageAttachment(attachments[3]))
-        && (attachments.size() < 7 || isValidImageAttachment(attachments[4]));
-    }
-
+    // 附件清單、數量與 PDF 路徑前段只計算一次，再交給 isValidAttachmentList 驗證。
     function isValidAttachments(data, announcementId, publisherUid) {
       return !data.keys().hasAny(['attachments'])
         || (data.attachments is list
-          && data.attachments.size() <= 7
-          && (data.attachments.size() < 1 || isValidAttachment(data.attachments[0], announcementId, publisherUid))
-          && (data.attachments.size() < 2 || isValidAttachment(data.attachments[1], announcementId, publisherUid))
-          && (data.attachments.size() < 3 || isValidAttachment(data.attachments[2], announcementId, publisherUid))
-          && (data.attachments.size() < 4 || isValidAttachment(data.attachments[3], announcementId, publisherUid))
-          && (data.attachments.size() < 5 || isValidAttachment(data.attachments[4], announcementId, publisherUid))
-          && (data.attachments.size() < 6 || isValidAttachment(data.attachments[5], announcementId, publisherUid))
-          && (data.attachments.size() < 7 || isValidAttachment(data.attachments[6], announcementId, publisherUid))
-          && hasAtMostTwoTrailingPdfs(data.attachments));
+          && isValidAttachmentList(
+            data.attachments,
+            data.attachments.size(),
+            publisherUid is string ? 'announcements/' + announcementId + '/pdf/' + publisherUid + '/' : null));
+    }
+
+    // 最多 7 件、每件逐一完整驗證；之後只需確認類型，維持「前段必須是圖片、最多兩份 PDF 排在最後」。
+    function isValidAttachmentList(attachments, count, pdfPathPrefix) {
+      return count <= 7
+        && (count < 1 || isValidAttachment(attachments[0], pdfPathPrefix))
+        && (count < 2 || isValidAttachment(attachments[1], pdfPathPrefix))
+        && (count < 3 || isValidAttachment(attachments[2], pdfPathPrefix))
+        && (count < 4 || isValidAttachment(attachments[3], pdfPathPrefix))
+        && (count < 5 || isValidAttachment(attachments[4], pdfPathPrefix))
+        && (count < 6 || isValidAttachment(attachments[5], pdfPathPrefix))
+        && (count < 7 || isValidAttachment(attachments[6], pdfPathPrefix))
+        && (count < 3 || attachments[0].type == 'image')
+        && (count < 4 || attachments[1].type == 'image')
+        && (count < 5 || attachments[2].type == 'image')
+        && (count < 6 || attachments[3].type == 'image')
+        && (count < 7 || attachments[4].type == 'image');
     }
 
     function keepsValidAttachments(announcementId) {
@@ -154,6 +169,15 @@ service cloud.firestore {
           && data.contact.department.size() <= 30
           && data.contact.extension is string
           && data.contact.extension.matches('^[0-9]{2,6}$'));
+    }
+
+    function isValidLineNotificationSettings(data) {
+      return (!data.keys().hasAny(['lineNotificationLevel'])
+          || data.lineNotificationLevel in ['schoolwide', 'required', 'task', 'general'])
+        && (!data.keys().hasAny(['audienceNote'])
+          || (data.audienceNote is string
+            && data.audienceNote.size() > 0
+            && data.audienceNote.size() <= 40));
     }
 
     function isOwnVerifiedPublisherRequest(publisherUid) {
@@ -275,6 +299,7 @@ service cloud.firestore {
         && !request.resource.data.keys().hasAny(['hasRelatedFollowUp', 'latestFollowUp', 'followUpCounts', 'contentUpdatedAt', 'contentUpdateCount'])
         && canCreateAnnouncementDepartment()
         && isValidContact(request.resource.data)
+        && isValidLineNotificationSettings(request.resource.data)
         && isValidAttachments(request.resource.data, announcementId, request.auth.uid);
       allow update: if canManageAnnouncement()
         && keepsLifecycleFields()
@@ -283,6 +308,7 @@ service cloud.firestore {
         && keepsLegacyFollowUps()
         && canUpdateAnnouncementDepartment()
         && isValidContact(request.resource.data)
+        && isValidLineNotificationSettings(request.resource.data)
         && keepsValidAttachments(announcementId);
       allow delete: if false;
 
