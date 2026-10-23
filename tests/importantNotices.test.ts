@@ -197,3 +197,10 @@ test("漏填提醒不阻擋：發布預覽與編輯儲存都只顯示提醒", ()
   assert.match(reminder, /此公告提及活動或會議，尚未填寫<b>「重要日期／活動」<\/b>。填寫後才會顯示於首頁<b>「本週／下週重要事項」<\/b>。/);
   assert.doesNotMatch(reminder, /<button|onClick/);
 });
+
+test("重要公告區標題沿用本週重要事項的標題樣式（桌面與手機規則共用同一組選擇器）", () => {
+  const css = source("app/globals.css");
+  assert.match(css, /\.priority-section \.section-heading h2,\.important-section \.section-heading h2\{font-size:22px;font-weight:700;line-height:1\.35\}/);
+  assert.match(css, /@media\(max-width:560px\)\{[^@]*\.priority-section \.section-heading h2,\.important-section \.section-heading h2\{font-size:20px\}/);
+  assert.doesNotMatch(css, /(^|[}\n{])\.important-section[^{,]*h2[^{]*\{/, "沒有另外新增重要公告專屬的標題規則");
+});
