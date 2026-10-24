@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import {
   ANALYTICS_CONSENT_STORAGE_KEY,
@@ -9,7 +9,7 @@ import {
   shouldEnableAnalytics,
   writeAnalyticsConsent,
 } from "../lib/analyticsConsent.ts";
-import { createAnalyticsController } from "../lib/publicAnalytics.ts";
+import { ANALYTICS_CONSENT_DEFAULTS, ANALYTICS_GTAG_CONFIG, createAnalyticsController, hasGlobalPrivacyControl, isPublicAnalyticsAllowed } from "../lib/publicAnalytics.ts";
 
 const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
@@ -94,28 +94,51 @@ test("Analytics 被阻擋或不支援時不拋錯也不送事件", async () => {
   assert.equal(unsupported.logAnnouncementOpen("a-1", "weekly"), false);
 });
 
-test("公開首頁不詢問同意、預設啟用，但保留既有拒絕與退出入口", () => {
-  const component = source("components/analytics-consent.tsx");
-  const mountEffect = component.match(/useEffect\(\(\) => \{[\s\S]*?\n  }, \[\]\);/)?.[0] ?? "";
-  assert.match(mountEffect, /shouldEnableAnalytics\(savedConsent\)/);
-  assert.doesNotMatch(mountEffect, /writeAnalyticsConsent/);
-  assert.doesNotMatch(component, /同意統計|暫不同意|analytics-consent-banner/);
-  assert.match(component, /退出統計並停止後續追蹤/);
-  assert.match(component, /重新啟用統計/);
-  assert.match(component, /統計與隱私設定/);
-  assert.match(component, /不傳送姓名、Email、Firebase UID、教師身分選項、公告標題、公告內容或搜尋文字/);
-  assert.doesNotMatch(component, /advanced|進階 Consent Mode/i);
+test("前台不再有統計與隱私設定入口；GA4 由無畫面的啟動器在允許時啟動", () => {
+  const homepage = source("app/page.tsx");
+  const starter = source("components/public-analytics.tsx");
+  assert.ok(!existsSync(new URL("../components/analytics-consent.tsx", import.meta.url)), "舊的按鈕元件已移除");
+  assert.equal(homepage.match(/<PublicAnalytics \/>/g)?.length, 2, "首頁與首次選身分畫面都會啟動 GA4");
+  assert.doesNotMatch(homepage, /統計與隱私設定|AnalyticsConsent|匿名使用統計/);
+  assert.match(homepage, /不需要登入，也不會要求姓名或帳號。<\/p>/);
+  assert.match(homepage, /Made by WenYi/);
+  assert.match(starter, /return null;/, "不顯示任何畫面");
+  assert.match(starter, /if \(isPublicAnalyticsAllowed\(\)\) void enablePublicAnalytics\(\);/);
+  assert.doesNotMatch(starter, /writeAnalyticsConsent|clearAnalyticsCookies|<button|Dialog/);
+  assert.doesNotMatch(source("app/globals.css"), /analytics-preferences-button|analytics-settings-dialog|analytics-consent-/);
+});
 
+test("既有退出偏好、儲存空間封鎖與 GPC 都不載入 GA4；不改寫既有偏好", () => {
+  assert.equal(hasGlobalPrivacyControl({ globalPrivacyControl: true }), true);
+  assert.equal(hasGlobalPrivacyControl({ globalPrivacyControl: false }), false);
+  assert.equal(hasGlobalPrivacyControl({}), false);
+  assert.equal(hasGlobalPrivacyControl(undefined), false);
+  assert.equal(isPublicAnalyticsAllowed(), false, "沒有瀏覽器環境時不統計");
   const analytics = source("lib/publicAnalytics.ts");
-  assert.match(analytics, /shouldEnableAnalytics\(readAnalyticsConsent\(window\.localStorage\)\)/);
+  const allowed = analytics.slice(analytics.indexOf("export function isPublicAnalyticsAllowed"), analytics.indexOf("export const ANALYTICS_CONSENT_DEFAULTS"));
+  assert.match(allowed, /try \{ storage = window\.localStorage; \} catch \{ return false; \}/);
+  assert.match(allowed, /shouldEnableAnalytics\(readAnalyticsConsent\(storage\)\) && !hasGlobalPrivacyControl\(/);
+  assert.doesNotMatch(analytics, /writeAnalyticsConsent|removeItem|clearAnalyticsCookies/);
+  const loader = analytics.slice(analytics.indexOf("async function loadFirebaseAnalyticsRuntime"), analytics.indexOf("const publicAnalyticsController"));
+  assert.ok(loader.indexOf("isPublicAnalyticsAllowed()") < loader.indexOf('import("firebase/analytics")'), "不允許時連 GA4 程式都不下載");
+  assert.match(source("lib/publicAnalytics.ts"), /export async function trackAnnouncementOpen[\s\S]*if \(!isPublicAnalyticsAllowed\(\)\) return false;/);
+});
+
+test("只保留統計用 Cookie：關閉廣告儲存、廣告個人化與 Google Signals，且在初始化前套用", () => {
+  assert.deepEqual(ANALYTICS_CONSENT_DEFAULTS, { ad_storage: "denied", ad_user_data: "denied", ad_personalization: "denied", analytics_storage: "granted" });
+  assert.deepEqual(ANALYTICS_GTAG_CONFIG, { allow_google_signals: false, allow_ad_personalization_signals: false });
+  const analytics = source("lib/publicAnalytics.ts");
+  const loader = analytics.slice(analytics.indexOf("async function loadFirebaseAnalyticsRuntime"), analytics.indexOf("const publicAnalyticsController"));
+  assert.ok(loader.indexOf("setConsent({ ...ANALYTICS_CONSENT_DEFAULTS })") > 0);
+  assert.ok(loader.indexOf("setConsent(") < loader.indexOf("initializeAnalytics("));
+  assert.match(loader, /initializeAnalytics\(getFirebaseApp\(\), \{ config: \{ \.\.\.ANALYTICS_GTAG_CONFIG \} \}\)/);
+  assert.doesNotMatch(analytics, /setUserId|setUserProperties|getAnalytics\(/);
 });
 
 test("Analytics 僅掛載在公開首頁且管理路由沒有追蹤元件", () => {
-  const homepage = source("app/page.tsx");
-  assert.match(homepage, /<AnalyticsConsent \/>/);
   for (const path of ["app/admin/page.tsx", "app/publish/page.tsx", "app/manage/layout.tsx", "app/manage/page.tsx"]) {
     const route = source(path);
-    assert.doesNotMatch(route, /AnalyticsConsent|publicAnalytics|trackAnnouncementOpen/);
+    assert.doesNotMatch(route, /PublicAnalytics|AnalyticsConsent|publicAnalytics|trackAnnouncementOpen/);
   }
 });
 
