@@ -1,4 +1,4 @@
-import { USER_IDENTITIES, resolveLineNotificationLevel, type Announcement, type Audience, type ImportantEvent, type LineNotificationLevel, type UserIdentity } from "./announcements.ts";
+import { LINE_NOTIFICATION_LEVELS, USER_IDENTITIES, resolveLineNotificationLevel, type Announcement, type Audience, type ImportantEvent, type LineNotificationLevel, type UserIdentity } from "./announcements.ts";
 import { parseCalendarDate, taipeiDateKey } from "./taipeiDate.ts";
 
 export const ROLE_STORAGE_KEY = "selectedRole";
@@ -140,14 +140,24 @@ export function upcomingDeadlines(announcements: Announcement[], now: Date) {
   })).filter(item => item.at >= localDate(now)).sort((a, b) => itemDateKey(a.deadline.date, a.deadline.time).localeCompare(itemDateKey(b.deadline.date, b.deadline.time)));
 }
 
-export function filterAnnouncements(announcements: Announcement[], query: string, audience: Audience | "全部", department: string) {
+/** 搜尋與篩選清單的排序：最新優先（預設）或重要程度優先。 */
+export const ANNOUNCEMENT_SORT_MODES = ["newest", "importance"] as const;
+export type AnnouncementSortMode = (typeof ANNOUNCEMENT_SORT_MODES)[number];
+export const ANNOUNCEMENT_SORT_LABELS: Record<AnnouncementSortMode, string> = { newest: "最新優先", importance: "重要程度優先" };
+
+/** 等級權重沿用 LINE_NOTIFICATION_LEVELS 的順序：全校必讀 → 重要必讀 → 待辦事項 → 一般公告；未設定等級視為一般公告。 */
+export function noticeLevelRank(announcement: Pick<Announcement, "lineNotificationLevel">) {
+  return LINE_NOTIFICATION_LEVELS.indexOf(resolveLineNotificationLevel(announcement.lineNotificationLevel));
+}
+
+export function filterAnnouncements(announcements: Announcement[], query: string, audience: Audience | "全部", department: string, sort: AnnouncementSortMode = "newest") {
   const needle = query.trim().toLocaleLowerCase("zh-Hant");
   return announcements.filter(a => {
     const audienceMatch = audience === "全部" || a.audiences.includes(audience);
     const departmentMatch = department === "全部" || a.department === department;
     const searchMatch = !needle || `${a.title}\n${a.content}\n${a.department}`.toLocaleLowerCase("zh-Hant").includes(needle);
     return audienceMatch && departmentMatch && searchMatch;
-  }).sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));
+  }).sort((a, b) => (sort === "importance" ? noticeLevelRank(a) - noticeLevelRank(b) : 0) || b.publishedAt.localeCompare(a.publishedAt));
 }
 
 export function daysUntil(date: string, now: Date) {
