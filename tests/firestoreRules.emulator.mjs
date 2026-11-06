@@ -980,6 +980,30 @@ test("L8 永久刪除中：公告不可修改、不可新增補充或催繳待�
   await assertSucceeds(setDoc(doc(database, "announcements/live/followUps/s"), followUpData()));
 });
 
+test("R9 自動清理競爭條件前提：標記刪除後，相關補充、修正＋LINE 待辦、補充＋LINE 待辦同批寫入皆被拒絕（未標記時對照成功）", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await seed("authorizedPublishers/userB", profile("publisher", true));
+  const marker = { deletionStartedAt: Timestamp.fromMillis(1761184900000), deletionStartedBy: "system:retention-cleanup" };
+  const text = "LINE 通知內容";
+  for (const [id, extra, expectAllowed] of [["frozen", { publicationStatus: "withdrawn", ...marker }, false], ["open", {}, true]]) {
+    await seed(`announcements/${id}`, { ...announcementData(), contentUpdateCount: 1, ...extra });
+    const check = expectAllowed ? assertSucceeds : assertFails;
+    // 其他單位新增相關補充
+    await check(setDoc(doc(userDb("userB"), `announcements/${id}/followUps/related-b`), followUpData({ type: "related", authorUid: "userB" })));
+    // 修正公告內容＋修正 LINE 待辦（同批）
+    const ownerDb = userDb("userA");
+    const updateBatch = writeBatch(ownerDb);
+    updateBatch.update(doc(ownerDb, `announcements/${id}`), { title: "修正", contentUpdatedAt: "2026-11-06T00:00:00.000Z", updatedAt: "2026-11-06T00:00:00.000Z", contentUpdateCount: 2 });
+    updateBatch.set(doc(ownerDb, `announcements/${id}/lineNotices/update-2`), { ...noticeBase("update"), sourceId: 2, text });
+    await check(updateBatch.commit());
+    // 新增補充＋補充 LINE 待辦（同批）
+    const followBatch = writeBatch(ownerDb);
+    followBatch.set(doc(ownerDb, `announcements/${id}/followUps/s1`), followUpData());
+    followBatch.set(doc(ownerDb, `announcements/${id}/lineNotices/followup-s1`), { ...noticeBase("supplement"), sourceId: "s1", text });
+    await check(followBatch.commit());
+  }
+});
+
 test("L9 公告不存在時：不可新增任何 followUps，也不可建立修正、補充、提醒、催繳 LINE 待辦", async () => {
   await seed("authorizedPublishers/userA", profile("publisher", true));
   await seed("authorizedPublishers/userB", profile("publisher", true));

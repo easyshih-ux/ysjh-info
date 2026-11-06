@@ -5,6 +5,7 @@ import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { isDepartment, isFixedDepartment, isPublisherRequestDepartment } from "./departments.js";
 import { syncFollowUpSummaryChange } from "./followUpSummary.js";
+import { AnnouncementDeletionCleanupError, permanentlyDeleteAnnouncement } from "./announcementDeletion.js";
 
 initializeApp();
 
@@ -67,35 +68,23 @@ export async function manageAnnouncementLifecycleHandler(
   const announcementRef = firestore.collection("announcements").doc(input.announcementId);
 
   if (input.action === "delete") {
-    // 先標記刪除中並下架，讓前台不再顯示，也讓 Rules 與其他動作拒絕新的寫入。
-    await firestore.runTransaction(async transaction => {
-      const [callerSnapshot, announcementSnapshot] = await Promise.all([
-        transaction.get(callerRef), transaction.get(announcementRef),
-      ]);
-      assertSystemAdmin(callerSnapshot.exists, callerSnapshot.data());
-      // 公告已不存在時仍繼續清理，讓舊版刪除留下的子集合與附件也能重試清掉。
-      if (!announcementSnapshot.exists) return;
-      const current = announcementSnapshot.data();
-      const now = FieldValue.serverTimestamp();
-      transaction.update(announcementRef, {
-        publicationStatus: "withdrawn",
-        ...(current?.withdrawnAt ? {} : { withdrawnAt: now, withdrawnBy: callerUid }),
-        ...(current?.deletionStartedAt ? {} : { deletionStartedAt: now, deletionStartedBy: callerUid }),
-      });
-    });
+    // 永久刪除流程已抽出為後端內部共用函式；此入口仍只允許啟用中的 systemAdmin。
     try {
-      await cleanupSubcollections(announcementRef);
-      await cleanupStorage(input.announcementId);
-      // 再清一次，收掉標記前已送出、稍晚才寫入的子文件。
-      await cleanupSubcollections(announcementRef);
+      await permanentlyDeleteAnnouncement({
+        firestore,
+        announcementId: input.announcementId,
+        actor: callerUid,
+        authorize: async transaction => {
+          const callerSnapshot = await transaction.get(callerRef);
+          assertSystemAdmin(callerSnapshot.exists, callerSnapshot.data());
+        },
+        cleanup: { cleanupSubcollections, cleanupStorage },
+      });
     } catch (error) {
-      console.error("announcement-delete-cleanup-failed", input.announcementId, error);
+      if (!(error instanceof AnnouncementDeletionCleanupError)) throw error;
+      console.error("announcement-delete-cleanup-failed", input.announcementId, error.original);
       throw new HttpsError("internal", "永久刪除未完成：公告已下架並保留，請再按一次「永久刪除」重試。");
     }
-    await firestore.runTransaction(async transaction => {
-      const announcementSnapshot = await transaction.get(announcementRef);
-      if (announcementSnapshot.exists) transaction.delete(announcementRef);
-    });
     return { success: true, announcementId: input.announcementId, action: input.action };
   }
 
