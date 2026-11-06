@@ -6,7 +6,8 @@ import { LINE_READ_REMINDER } from "../lib/lineAnnouncementSummary.ts";
 import type { Announcement, FollowUp } from "../lib/announcements.ts";
 import { createChaseNoticeText, createFollowUpNoticeText, createUpdateNoticeText, LINE_NOTICE_DEFAULT_CHECKED, lineNoticeFromFirestore, lineNoticeIds, lineNoticeText, pendingLineNotices, type LineNotice } from "../lib/lineNotices.ts";
 
-const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+// Windows（core.autocrlf=true）工作目錄為 CRLF；統一為 LF 後再比對原始碼。
+const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const site = "https://easyshih-ux.github.io/ysjh-info/";
 const item = (overrides: Partial<Announcement> = {}): Announcement => ({ ...mockAnnouncements[0], id: "a1", department: "資訊組", title: "雙因子驗證設定", publicationStatus: "published", deadlines: [{ date: "2026-11-30", time: "12:00", label: "完成設定" }, { date: "2026-10-01", label: "已過期" }], ...overrides });
 const notice = (overrides: Partial<LineNotice> = {}): LineNotice => ({ id: "publish", announcementId: "a1", type: "publish", publisherUid: "u1", status: "pending", createdBy: "u1", createdAt: "2026-10-23T01:00:00.000Z", ...overrides });

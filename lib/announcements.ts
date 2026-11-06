@@ -5,6 +5,7 @@ export type { Department } from "./departments.ts";
 export type Audience = (typeof AUDIENCES)[number];
 import type { Department } from "./departments.ts";
 import type { AnnouncementContact } from "./departmentContacts.ts";
+import type { RetentionPolicy } from "./announcementRetention.ts";
 export const USER_IDENTITIES = ["七年級導師", "八年級導師", "九年級導師", "專任教師", "行政"] as const;
 export type UserIdentity = (typeof USER_IDENTITIES)[number];
 
@@ -117,6 +118,8 @@ export interface Announcement {
    * 只影響教師端圖片顯示，不影響公告接收對象；PDF 不使用。
    */
   imageAudiences?: StoredImageAudiences;
+  /** 保存方式；欄位不存在代表舊公告尚未審查，不得自動清理。目前只儲存設定，不執行刪除。 */
+  retentionPolicy?: RetentionPolicy;
   content: string;
   contact?: AnnouncementContact;
   importantEvents: ImportantEvent[];

@@ -5,6 +5,7 @@ import type { Timestamp } from "firebase/firestore";
 import { MAX_ATTACHMENT_NAME_LENGTH, MAX_PDF_BYTES } from "./attachmentFiles.ts";
 import { isDepartment } from "./departments.ts";
 import { parseStoredImageAudiences } from "./imageAudiences.ts";
+import { isRetentionPolicy } from "./announcementRetention.ts";
 import { MAX_CONTACT_EXTENSION_LENGTH, type AnnouncementContact } from "./departmentContacts.ts";
 
 type UnknownRecord = Record<string, unknown>;
@@ -128,6 +129,8 @@ export function announcementFromFirestore(id: string, value: unknown): Announcem
     ...(isLineNotificationLevel(value.lineNotificationLevel) ? { lineNotificationLevel: value.lineNotificationLevel } : {}),
     ...(normalizeStoredAudienceNote(value.audienceNote) ? { audienceNote: normalizeStoredAudienceNote(value.audienceNote) } : {}),
     ...(parseStoredImageAudiences(value.imageAudiences) ? { imageAudiences: parseStoredImageAudiences(value.imageAudiences) } : {}),
+    // 舊公告或非法值都不帶入欄位，即視為尚未審查，不會回落成自動清理。
+    ...(isRetentionPolicy(value.retentionPolicy) ? { retentionPolicy: value.retentionPolicy } : {}),
     content: value.content,
     ...(normalizeContact(value.contact) ? { contact: normalizeContact(value.contact) } : {}),
     importantEvents: normalizeImportantEvents(value.importantEvents),

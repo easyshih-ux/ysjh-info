@@ -3,6 +3,7 @@ import { addUpdateLineNotice } from "./lineNoticesFirestore.ts";
 import { lineNoticeIds } from "./lineNotices.ts";
 import type { Announcement, FollowUp } from "./announcements.ts";
 import { createAnnouncementUpdate, hasAnnouncementContentChanges, hasImageAudienceChanges, hasLineSettingChanges, normalizeLineSettings } from "./announcementManagement.ts";
+import { hasRetentionPolicyChanges, retentionPolicyPatch } from "./announcementRetention.ts";
 import { createAnnouncementFollowUp, withdrawAnnouncementFollowUp } from "./announcementFollowUps.ts";
 import { ANNOUNCEMENTS_COLLECTION, getFirestoreClient } from "./firestoreClient.ts";
 import type { AuthorizedPublisherContextValue } from "./publisherAccess.ts";
@@ -20,7 +21,7 @@ export async function withdrawManagedFollowUp(announcementId: string, followUpId
 }
 
 /**
- * 回傳 null 表示沒有任何變更；contentUpdatedAt 為 null 表示只更新 LINE 通知設定或圖片適用身分，
+ * 回傳 null 表示沒有任何變更；contentUpdatedAt 為 null 表示只更新 LINE 通知設定、圖片適用身分或保存方式，
  * 不更新公告原文時間與次數。
  */
 export async function updateManagedAnnouncement(
@@ -31,7 +32,8 @@ export async function updateManagedAnnouncement(
   const contentChanged = hasAnnouncementContentChanges(original, edited);
   const lineSettingsChanged = hasLineSettingChanges(original, edited);
   const imageAudiencesChanged = hasImageAudienceChanges(original, edited);
-  if (!contentChanged && !lineSettingsChanged && !imageAudiencesChanged) return null;
+  const retentionChanged = hasRetentionPolicyChanges(original, edited);
+  if (!contentChanged && !lineSettingsChanged && !imageAudiencesChanged && !retentionChanged) return null;
   const contentUpdatedAt = contentChanged ? new Date().toISOString() : null;
   const lineSettings = normalizeLineSettings(edited);
   const nextContentUpdateCount = (original.contentUpdateCount ?? 0) + 1;
@@ -39,6 +41,8 @@ export async function updateManagedAnnouncement(
     ...(contentUpdatedAt ? { ...createAnnouncementUpdate(edited, contentUpdatedAt, nextContentUpdateCount), contact: edited.contact ?? deleteField() } : {}),
     ...(lineSettingsChanged ? { lineNotificationLevel: lineSettings.lineNotificationLevel, audienceNote: lineSettings.audienceNote ?? deleteField() } : {}),
     ...(imageAudiencesChanged ? { imageAudiences: edited.imageAudiences ?? deleteField() } : {}),
+    // 只有明確選擇且有變更時才寫入；舊公告未選擇時不寫入，避免意外授權自動清理。
+    ...retentionPolicyPatch(original, edited),
   };
   try {
     // 只有實質內容修改且行政人員選擇需要通知時，才與修正次數 +1 同批建立 LINE 待辦。

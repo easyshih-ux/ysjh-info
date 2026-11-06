@@ -620,6 +620,203 @@ test("47j 最重發布加強版：5 張皆有身分標記的圖片＋2 份 PDF�
   }));
 });
 
+// ===== Gate 2／2B：公告保存方式 =====
+// 合法值只有 autoCleanup／longTerm；缺少欄位為舊公告（尚未審查，不授權自動清理）。
+const INVALID_RETENTION_VALUES = ["forever", "", "unreviewed", "AutoCleanup", "autoCleanup ", 1, 0, null, true, false, ["autoCleanup"], { value: "autoCleanup" }];
+const retentionImage = (index, overrides = {}) => ({ id: `image-${index}`, type: "image", url: `https://example.test/image-${index}.webp`, name: `圖片${index}.webp`, caption: "說明", ...overrides });
+const retentionImages = count => Array.from({ length: count }, (_, index) => retentionImage(index + 1));
+const retentionPdf = (id, publisherUid = "userA", overrides = {}) => ({ ...pdfAttachment(id, publisherUid), ...overrides });
+const withoutKey = (value, key) => { const copy = { ...value }; delete copy[key]; return copy; };
+const heaviestRetentionAnnouncement = (publisherUid = "userA", retentionPolicy = "autoCleanup") => ({
+  ...announcementData("最重發布", publisherUid),
+  audiences: ["全校教師"],
+  contact: { department: "設備組", extension: "104" },
+  lineNotificationLevel: "schoolwide",
+  audienceNote: "尚未完成雙因子驗證設定的同仁",
+  imageAudiences: { "image-1": ["七年級導師"], "image-2": ["八年級導師"], "image-3": ["九年級導師"], "image-4": ["專任教師", "行政"], "image-5": ["七年級導師", "八年級導師", "九年級導師"] },
+  ...(retentionPolicy === undefined ? {} : { retentionPolicy }),
+  attachments: [...retentionImages(5), retentionPdf("pdf-1", publisherUid), retentionPdf("pdf-2", publisherUid)],
+});
+
+test("R1 create 接受兩種合法保存方式，缺少欄位維持舊版相容", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  const database = userDb("userA");
+  await assertSucceeds(setDoc(doc(database, "announcements/retAuto"), { ...announcementData(), retentionPolicy: "autoCleanup" }));
+  await assertSucceeds(setDoc(doc(database, "announcements/retKeep"), { ...announcementData(), retentionPolicy: "longTerm" }));
+  await assertSucceeds(setDoc(doc(database, "announcements/retLegacy"), announcementData()));
+});
+
+test("R1a create 拒絕非法保存方式值與非法型別", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  const database = userDb("userA");
+  for (const [index, value] of INVALID_RETENTION_VALUES.entries()) {
+    await assertFails(setDoc(doc(database, `announcements/retBad${index}`), { ...announcementData(), retentionPolicy: value }));
+  }
+});
+
+test("R1b update 拒絕非法保存方式值與非法型別", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await seed("announcements/retEdit", announcementData());
+  await seed("announcements/retEditSet", { ...announcementData(), retentionPolicy: "longTerm" });
+  for (const id of ["retEdit", "retEditSet"]) {
+    const reference = doc(userDb("userA"), `announcements/${id}`);
+    for (const value of INVALID_RETENTION_VALUES) await assertFails(updateDoc(reference, { retentionPolicy: value }));
+  }
+});
+
+test("R5 最重 5 圖＋2 PDF 發布：合法保存方式與缺少欄位成功，非法值拒絕（publisher 與 systemAdmin）", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await seed("authorizedPublishers/adminA", profile("systemAdmin", true));
+  for (const uid of ["userA", "adminA"]) {
+    const database = userDb(uid);
+    for (const policy of ["autoCleanup", "longTerm", undefined]) {
+      const batch = writeBatch(database);
+      batch.set(doc(database, "announcements/newA"), heaviestRetentionAnnouncement(uid, policy));
+      batch.set(doc(database, "announcements/newA/lineNotices/publish"), { type: "publish", publisherUid: uid, status: "pending", createdBy: uid, createdAt: serverTimestamp() });
+      await assertSucceeds(batch.commit());
+      await testEnvironment.clearFirestore();
+      await seed("authorizedPublishers/userA", profile("publisher", true));
+      await seed("authorizedPublishers/adminA", profile("systemAdmin", true));
+    }
+    await assertFails(setDoc(doc(database, "announcements/newA"), heaviestRetentionAnnouncement(uid, "forever")));
+  }
+});
+
+test("R6 6～7 個附件的合法修改成功（publisher 與 systemAdmin）", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await seed("authorizedPublishers/adminA", profile("systemAdmin", true));
+  for (const uid of ["userA", "adminA"]) {
+    const lists = [
+      [...retentionImages(4), retentionPdf("pdf-1", uid), retentionPdf("pdf-2", uid)],
+      [...retentionImages(6), retentionPdf("pdf-1", uid)],
+      [...retentionImages(5), retentionPdf("pdf-1", uid), retentionImage(6)],
+      [...retentionImages(5), retentionPdf("pdf-1", uid), retentionPdf("pdf-2", uid)],
+      retentionImages(7),
+    ];
+    for (const attachments of lists) {
+      await seed("announcements/newA", { ...announcementData("修改附件", uid), retentionPolicy: "autoCleanup" });
+      await assertSucceeds(updateDoc(doc(userDb(uid), "announcements/newA"), { attachments }));
+    }
+  }
+});
+
+test("R7 附件排序、數量、大小、類型、欄位與路徑的拒絕案例（create 與 update）", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  const pdf = (id, overrides) => retentionPdf(id, "userA", overrides);
+  const invalidLists = {
+    pdfFirstOf3: [pdf("p1"), ...retentionImages(2)],
+    pdfFirstOf7: [pdf("p1"), ...retentionImages(6)],
+    pdfAtIndex4Of7: [...retentionImages(4), pdf("p1"), retentionImage(6), pdf("p2")],
+    pdfAtIndex3Of6: [...retentionImages(3), pdf("p0"), pdf("p1"), retentionImage(4)],
+    threePdfs: [pdf("p1"), pdf("p2"), pdf("p3")],
+    threePdfsAfterImages: [...retentionImages(4), pdf("p1"), pdf("p2"), pdf("p3")],
+    eightImages: retentionImages(8),
+    unknownType: [retentionImage(1, { type: "video" })],
+    unknownTypeAtIndex6: [...retentionImages(6), retentionImage(7, { type: "doc" })],
+    missingType: [withoutKey(retentionImage(1), "type")],
+    imageEmptyId: [retentionImage(1, { id: "" })],
+    imageNumericId: [retentionImage(1, { id: 5 })],
+    imageHttpUrl: [retentionImage(1, { url: "http://example.test/1.webp" })],
+    imageEmptyName: [retentionImage(1, { name: "" })],
+    imageInvalidAtIndex6: [...retentionImages(6), retentionImage(7, { url: "ftp://example.test/7" })],
+    notMapItem: ["image"],
+    nullItem: [null],
+    notList: "attachments",
+    pdfExtraKey: [pdf("p1", { extra: true })],
+    pdfMissingKey: [withoutKey(pdf("p1"), "contentType")],
+    pdfZeroBytes: [pdf("p1", { sizeBytes: 0 })],
+    pdfOverMax: [pdf("p1", { sizeBytes: 5 * 1024 * 1024 + 1 })],
+    pdfFloatSize: [pdf("p1", { sizeBytes: 1.5 })],
+    pdfWrongContentType: [pdf("p1", { contentType: "image/png" })],
+    pdfNameTooLong: [pdf("p1", { name: "a".repeat(121) })],
+    pdfOtherUidPath: [pdf("p1", { storagePath: "announcements/newA/pdf/userB/p1.pdf" })],
+    pdfOtherAnnouncementPath: [pdf("p1", { storagePath: "announcements/other/pdf/userA/p1.pdf" })],
+    pdfWrongExtension: [pdf("p1", { storagePath: "announcements/newA/pdf/userA/p1.png" })],
+    pdfHttpUrl: [pdf("p1", { url: "http://example.test/p1.pdf" })],
+  };
+  const expectDenied = async (label, promise) => { try { await assertFails(promise); } catch (error) { throw new Error(`${label} 應被拒絕卻成功`, { cause: error }); } };
+  for (const [label, attachments] of Object.entries(invalidLists)) {
+    await expectDenied(`create ${label}`, setDoc(doc(userDb("userA"), "announcements/newA"), { ...announcementData(), retentionPolicy: "autoCleanup", attachments }));
+    await seed("announcements/newA", { ...announcementData(), retentionPolicy: "autoCleanup" });
+    await expectDenied(`update ${label}`, updateDoc(doc(userDb("userA"), "announcements/newA"), { attachments }));
+    await testEnvironment.clearFirestore();
+    await seed("authorizedPublishers/userA", profile("publisher", true));
+  }
+  // 合法邊界值仍可建立。既有規則只要求「最後兩個位置以外必須是圖片」，最後兩格可為任一合法附件，
+  // 因此 [圖, PDF, 圖] 與 [PDF, 圖] 在原版與精簡版 Rules 都允許；Gate 2B 維持原行為，不擅自收緊。
+  for (const attachments of [[retentionImage(1), pdf("p1"), retentionImage(2)], [pdf("p1", { sizeBytes: 5 * 1024 * 1024 })], [pdf("p1", { name: "a".repeat(120) })], [...retentionImages(2), pdf("p1")], [retentionImage(1), pdf("p1"), pdf("p2")], [pdf("p1"), retentionImage(1)]]) {
+    await assertSucceeds(setDoc(doc(userDb("userA"), "announcements/newA"), { ...announcementData(), retentionPolicy: "longTerm", attachments }));
+    await testEnvironment.clearFirestore();
+    await seed("authorizedPublishers/userA", profile("publisher", true));
+  }
+});
+
+test("R8 保存方式權限邊界：未登入、未授權、停用、其他單位與他人公告不可寫；本人與 systemAdmin 可寫", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await seed("authorizedPublishers/userB", profile("publisher", true));
+  await seed("authorizedPublishers/adminA", profile("systemAdmin", true));
+  await seed("authorizedPublishers/disabledA", profile("publisher", false));
+  await seed("authorizedPublishers/badRole", profile("viewer", true));
+  const data = (uid, overrides = {}) => ({ ...announcementData("權限", uid), retentionPolicy: "longTerm", ...overrides });
+  await assertFails(setDoc(doc(anonymousDb(), "announcements/anon"), data("anon")));
+  await assertFails(setDoc(doc(userDb("stranger"), "announcements/stranger"), data("stranger")));
+  await assertFails(setDoc(doc(userDb("disabledA"), "announcements/disabled"), data("disabledA")));
+  await assertFails(setDoc(doc(userDb("badRole"), "announcements/badRole"), data("badRole")));
+  await assertFails(setDoc(doc(userDb("userA"), "announcements/otherDept"), data("userA", { department: "教學組" })));
+  await assertFails(setDoc(doc(userDb("userA"), "announcements/spoofUid"), data("userB")));
+  await assertSucceeds(setDoc(doc(userDb("userA"), "announcements/own"), data("userA")));
+  await assertSucceeds(setDoc(doc(userDb("adminA"), "announcements/adminOwn"), data("adminA", { department: "教學組" })));
+
+  await seed("announcements/target", { ...announcementData("目標", "userA"), retentionPolicy: "autoCleanup" });
+  for (const database of [anonymousDb(), userDb("stranger"), userDb("disabledA"), userDb("badRole"), userDb("userB")]) {
+    await assertFails(updateDoc(doc(database, "announcements/target"), { retentionPolicy: "longTerm" }));
+  }
+  await assertSucceeds(updateDoc(doc(userDb("userA"), "announcements/target"), { retentionPolicy: "longTerm" }));
+  await assertSucceeds(updateDoc(doc(userDb("adminA"), "announcements/target"), { retentionPolicy: "autoCleanup" }));
+  await assertFails(updateDoc(doc(userDb("adminA"), "announcements/target"), { retentionPolicy: deleteField() }));
+  for (const database of [userDb("userA"), userDb("adminA")]) await assertFails(deleteDoc(doc(database, "announcements/target")));
+});
+
+test("R2 舊公告修改其他內容不需也不會補上保存方式；發布者可明確設定與切換", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await seed("announcements/legacy", announcementData());
+  const reference = doc(userDb("userA"), "announcements/legacy");
+  await assertSucceeds(updateDoc(reference, { title: "只改標題", contentUpdatedAt: "2026-11-06T00:00:00.000Z", updatedAt: "2026-11-06T00:00:00.000Z", contentUpdateCount: 1 }));
+  await assertSucceeds(updateDoc(reference, { lineNotificationLevel: "required" }));
+  await testEnvironment.withSecurityRulesDisabled(async context => {
+    const snapshot = await getDoc(doc(context.firestore(), "announcements/legacy"));
+    assert.equal("retentionPolicy" in snapshot.data(), false);
+  });
+  // 只改保存方式不需更新原文次數，也不影響其他欄位。
+  await assertSucceeds(updateDoc(reference, { retentionPolicy: "longTerm" }));
+  await assertSucceeds(updateDoc(reference, { retentionPolicy: "autoCleanup" }));
+  await assertFails(updateDoc(reference, { retentionPolicy: "forever" }));
+  await assertFails(updateDoc(reference, { retentionPolicy: null }));
+});
+
+test("R3 已設定的保存方式不得由前端移除；他人不可改，systemAdmin 可改", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await seed("authorizedPublishers/userB", profile("publisher", true));
+  await seed("authorizedPublishers/adminA", profile("systemAdmin", true));
+  await seed("announcements/set", { ...announcementData(), retentionPolicy: "autoCleanup" });
+  await assertFails(updateDoc(doc(userDb("userA"), "announcements/set"), { retentionPolicy: deleteField() }));
+  await assertFails(updateDoc(doc(userDb("userB"), "announcements/set"), { retentionPolicy: "longTerm" }));
+  await assertSucceeds(updateDoc(doc(userDb("adminA"), "announcements/set"), { retentionPolicy: "longTerm" }));
+  await assertSucceeds(updateDoc(doc(userDb("userA"), "announcements/set"), { title: "其他修改保留保存方式", contentUpdatedAt: "2026-11-06T00:00:00.000Z", updatedAt: "2026-11-06T00:00:00.000Z", contentUpdateCount: 1 }));
+  await testEnvironment.withSecurityRulesDisabled(async context => {
+    const snapshot = await getDoc(doc(context.firestore(), "announcements/set"));
+    assert.equal(snapshot.data().retentionPolicy, "longTerm");
+  });
+});
+
+test("R4 保存方式不影響下架欄位保護與禁止前端刪除", async () => {
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await seed("announcements/keep", { ...announcementData(), retentionPolicy: "longTerm" });
+  const reference = doc(userDb("userA"), "announcements/keep");
+  await assertFails(updateDoc(reference, { retentionPolicy: "autoCleanup", publicationStatus: "withdrawn" }));
+  await assertFails(deleteDoc(reference));
+});
+
 // ===== Wave 4：LINE 通知待辦 =====
 const noticeBase = (type, publisherUid = "userA", createdBy = publisherUid) => ({ type, publisherUid, status: "pending", createdBy, createdAt: serverTimestamp() });
 const heavyAnnouncement = () => ({
@@ -629,6 +826,7 @@ const heavyAnnouncement = () => ({
   lineNotificationLevel: "schoolwide",
   audienceNote: "尚未完成雙因子驗證設定的同仁",
   imageAudiences: { "image-1": ["七年級導師"], "image-2": ["八年級導師"], "image-3": ["九年級導師"], "image-4": ["專任教師", "行政"], "image-5": ["七年級導師", "八年級導師", "九年級導師"] },
+  retentionPolicy: "autoCleanup",
   attachments: [...Array.from({ length: 5 }, (_, index) => ({ id: `image-${index + 1}`, type: "image", url: `https://example.test/image-${index + 1}.webp`, name: `圖片${index + 1}.webp`, caption: "說明" })), pdfAttachment("pdf-1"), pdfAttachment("pdf-2")],
 });
 

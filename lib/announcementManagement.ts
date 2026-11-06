@@ -2,6 +2,7 @@ import { isImportantEventUsed, normalizeAudienceNote, normalizeAudiences, normal
 import { validateBasicDraft } from "./publishDraft.ts";
 import { normalizeAnnouncementContact } from "./departmentContacts.ts";
 import { sameImageAudiences } from "./imageAudiences.ts";
+import { retentionPolicyPatch } from "./announcementRetention.ts";
 
 export const MANAGE_DEPARTMENT_KEY = "manageDepartment";
 
@@ -29,7 +30,7 @@ export function filterManagedAnnouncements(items: Announcement[], department: st
 }
 
 export function validateAnnouncementCore(item: Announcement) {
-  return validateBasicDraft({ department: item.department, title: item.title, audiences: normalizeAudiences(item.audiences), lineNotificationLevel: item.lineNotificationLevel, audienceNote: item.audienceNote, content: item.content, contact: item.contact, attachments: item.attachments.filter(a => a.type === "image").map(a => ({ ...a, caption: a.caption ?? "", previewUrl: a.url })), importantEvents: item.importantEvents, deadlines: item.deadlines, links: item.links });
+  return validateBasicDraft({ department: item.department, title: item.title, audiences: normalizeAudiences(item.audiences), lineNotificationLevel: item.lineNotificationLevel, audienceNote: item.audienceNote, retentionPolicy: item.retentionPolicy, content: item.content, contact: item.contact, attachments: item.attachments.filter(a => a.type === "image").map(a => ({ ...a, caption: a.caption ?? "", previewUrl: a.url })), importantEvents: item.importantEvents, deadlines: item.deadlines, links: item.links });
 }
 
 export function updateAnnouncement(items: Announcement[], edited: Announcement, updatedAt: string) {
@@ -85,7 +86,7 @@ export function hasImageAudienceChanges(original: Announcement, edited: Announce
 export function applyManagedAnnouncementSave(original: Announcement, edited: Announcement, contentUpdatedAt: string | null): Announcement {
   const base = contentUpdatedAt ? applyAnnouncementUpdate(original, edited, contentUpdatedAt) : original;
   const { audienceNote: _previousNote, imageAudiences: _previousImageAudiences, ...rest } = base;
-  return { ...rest, ...normalizeLineSettings(edited), ...(edited.imageAudiences ? { imageAudiences: edited.imageAudiences } : {}) };
+  return { ...rest, ...normalizeLineSettings(edited), ...(edited.imageAudiences ? { imageAudiences: edited.imageAudiences } : {}), ...retentionPolicyPatch(original, edited) };
 }
 
 export function createFollowUp(type: FollowUp["type"], message: string, createdAt: string): FollowUp {

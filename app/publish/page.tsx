@@ -22,6 +22,8 @@ import { lineNoticeIds } from "@/lib/lineNotices";
 import { getPublicSiteUrl } from "@/lib/siteUrl";
 import { taipeiDateKey } from "@/lib/taipeiDate";
 import { LineNotificationSettings } from "@/components/line-notification-settings";
+import { RetentionPolicySettings } from "@/components/retention-policy-settings";
+import { DEFAULT_RETENTION_POLICY } from "@/lib/announcementRetention";
 import { ImportantDateReminder } from "@/components/important-date-reminder";
 import { ImageAudiencePicker } from "@/components/image-audience-picker";
 import { allowedImageIdentities, formatImageAudienceLabel, imageAudienceStatus } from "@/lib/imageAudiences";
@@ -34,7 +36,7 @@ import styles from "./publish.module.css";
 
 const emptyImportantEvents = () => Array.from({ length: 3 }, () => ({ date: "", time: "", title: "" }));
 const emptyDeadlines = () => Array.from({ length: 3 }, () => ({ date: "", time: "", label: "" }));
-const createEmptyDraft = (department: Department | "" = ""): BasicAnnouncementDraft => ({ department, title: "", audiences: [], lineNotificationLevel: DEFAULT_LINE_NOTIFICATION_LEVEL, audienceNote: "", content: "", contact: defaultContactForDepartment(department), attachments: [], pdfAttachments: [], importantEvents: emptyImportantEvents(), deadlines: emptyDeadlines(), links: [] });
+const createEmptyDraft = (department: Department | "" = ""): BasicAnnouncementDraft => ({ department, title: "", audiences: [], lineNotificationLevel: DEFAULT_LINE_NOTIFICATION_LEVEL, audienceNote: "", retentionPolicy: DEFAULT_RETENTION_POLICY, content: "", contact: defaultContactForDepartment(department), attachments: [], pdfAttachments: [], importantEvents: emptyImportantEvents(), deadlines: emptyDeadlines(), links: [] });
 
 export default function PublishPage() {
   return <AdminAuthGuard><PublishForm /></AdminAuthGuard>;
@@ -266,6 +268,7 @@ function PublishForm() {
           <label className={styles.field}><span>公告標題 <em>必填</em></span><Input name="title" value={draft.title} onChange={event => setDraft(current => ({ ...current, title: event.target.value }))} placeholder="例如：第一次段考命題範圍確認" aria-invalid={!!errors.title} aria-describedby={errors.title ? "title-error" : undefined} />{errors.title && <small id="title-error" className={styles.error}>{errors.title}</small>}</label>
           <fieldset className={styles.fieldset} data-validation-field="audiences"><legend>適用對象 <em>可複選，必填</em></legend><div className={styles.audienceGrid}>{AUDIENCES.map(audience => { const checked = draft.audiences.includes(audience); return <label key={audience} className={checked ? styles.checked : ""}><Checkbox checked={checked} onCheckedChange={value => toggleAudience(audience, value === true)} aria-invalid={!!errors.audiences} /><span>{audience}</span></label>})}</div>{errors.audiences && <small className={styles.error}>{errors.audiences}</small>}</fieldset>
           <LineNotificationSettings idPrefix="publish" level={draft.lineNotificationLevel} audienceNote={draft.audienceNote} audiences={draft.audiences} audienceNoteError={errors.audienceNote} onLevelChange={lineNotificationLevel => setDraft(current => ({ ...current, lineNotificationLevel }))} onAudienceNoteChange={audienceNote => setDraft(current => ({ ...current, audienceNote }))} />
+          <RetentionPolicySettings idPrefix="publish" value={draft.retentionPolicy} error={errors.retentionPolicy} onChange={retentionPolicy => setDraft(current => ({ ...current, retentionPolicy }))} />
           <label className={`${styles.field} ${styles.full}`}><span>完整公告內容 <em>必填</em></span><Textarea name="content" value={draft.content} onChange={event => setDraft(current => ({ ...current, content: event.target.value }))} placeholder={"可直接貼上原本準備發布到 LINE 的完整文字。\n\n段落、換行與編號都會保留。"} aria-invalid={!!errors.content} aria-describedby={errors.content ? "content-error" : undefined} />{errors.content && <small id="content-error" className={styles.error}>{errors.content}</small>}<small className={styles.hint}>支援長文字、換行、段落與編號。</small></label>
         </div>
       </section>

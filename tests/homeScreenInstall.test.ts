@@ -4,7 +4,8 @@ import test from "node:test";
 import { browserLocalStorage, getInstallGuidance, INSTALL_BANNER_DISMISSED_KEY, INSTALL_STEPS, LINE_INSTALL_STEPS, isIosDevice, isSafariBrowser, isStandaloneDisplay, readInstallBannerDismissed, writeInstallBannerDismissed } from "../lib/pwaInstall.ts";
 import { copyOfficialPublicSiteUrl, OFFICIAL_PUBLIC_SITE_URL } from "../lib/siteUrl.ts";
 
-const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+// Windows（core.autocrlf=true）工作目錄為 CRLF；統一為 LF 後再比對原始碼。
+const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const chrome = "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/140.0.0.0 Mobile Safari/537.36";
 const safari = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 Version/18.6 Mobile/15E148 Safari/604.1";
 const line = `${chrome} Line/15.15.1`;

@@ -4,6 +4,7 @@ import { isSupportedPdf, MAX_PDF_BYTES, MAX_PUBLISH_PDFS } from "./attachmentFil
 import { normalizeAnnouncementContact, validateAnnouncementContact, type AnnouncementContact } from "./departmentContacts.ts";
 import { imageAudiencesForSave, validateImageAudienceSelections } from "./imageAudiences.ts";
 import type { UserIdentity } from "./announcements.ts";
+import { isRetentionPolicy, resolveNewRetentionPolicy, type RetentionPolicy } from "./announcementRetention.ts";
 
 export interface BasicAnnouncementDraft {
   department: Department | "";
@@ -11,6 +12,8 @@ export interface BasicAnnouncementDraft {
   audiences: Audience[];
   lineNotificationLevel?: LineNotificationLevel;
   audienceNote?: string;
+  /** 保存方式；新公告未指定時預設為依公告期限自動清理。 */
+  retentionPolicy?: RetentionPolicy;
   content: string;
   contact?: AnnouncementContact;
   attachments: PublishImageAttachment[];
@@ -78,6 +81,7 @@ export function publishDraftToAnnouncement(draft: BasicAnnouncementDraft, id: st
     lineNotificationLevel: resolveLineNotificationLevel(draft.lineNotificationLevel),
     ...(normalizeAudienceNote(draft.audienceNote) ? { audienceNote: normalizeAudienceNote(draft.audienceNote) } : {}),
     ...(imageAudiencesForSave(draft.attachments.map(item => item.id), draft.imageAudienceSelections ?? {}) ? { imageAudiences: imageAudiencesForSave(draft.attachments.map(item => item.id), draft.imageAudienceSelections ?? {}) } : {}),
+    retentionPolicy: resolveNewRetentionPolicy(draft.retentionPolicy),
     content: draft.content,
     ...(normalizeAnnouncementContact(draft.contact) ? { contact: normalizeAnnouncementContact(draft.contact) } : {}),
     importantEvents: draft.importantEvents.filter(isImportantEventUsed).map(normalizeImportantEvent),
@@ -117,6 +121,7 @@ export function validateBasicDraft(draft: BasicAnnouncementDraft): DraftErrors {
   if (draft.audiences.length === 0) errors.audiences = "請至少選擇一個適用對象";
   if (draft.audiences.includes("全校教師") && draft.audiences.length > 1) errors.audiences = "全校教師不可與其他適用對象同時選擇";
   if (draft.lineNotificationLevel !== undefined && !isLineNotificationLevel(draft.lineNotificationLevel)) errors.lineNotificationLevel = "請選擇 LINE 通知等級";
+  if (draft.retentionPolicy !== undefined && !isRetentionPolicy(draft.retentionPolicy)) errors.retentionPolicy = "請選擇公告保存方式";
   const audienceNoteError = validateAudienceNote(draft.audienceNote);
   if (audienceNoteError) errors.audienceNote = audienceNoteError;
   if (!draft.content.trim()) errors.content = "請輸入完整公告內容";
