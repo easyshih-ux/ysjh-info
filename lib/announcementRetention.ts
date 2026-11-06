@@ -1,7 +1,8 @@
 /**
  * 公告保存方式（Gate 2：只儲存設定，不執行任何自動刪除）。
  *
- * - autoCleanup：依公告期限自動清理。未來以活動結束日或截止日為最後有效日期，
+ * - autoCleanup：依公告期限自動清理。未來以活動結束日或截止日為最後有效日期；
+ *   沒有設定日期欄位的公告以發布日期起算（標題或內文中的日期不會辨識）。
  *   滿 RETENTION_EXPIRY_MONTHS 個月後再經 RETENTION_GRACE_DAYS 天緩衝期，才符合永久刪除條件。
  * - longTerm：長期保留，不自動刪除（行政規定、常態性業務等）。
  * - 欄位不存在：舊公告，視為「尚未審查」，一律不得自動清理；由管理員集中審查（Gate 3）。
@@ -22,7 +23,7 @@ export const RETENTION_POLICY_LABELS: Record<RetentionPolicyStatus, string> = {
 };
 
 export const RETENTION_POLICY_DESCRIPTIONS: Record<RetentionPolicy, string> = {
-  autoCleanup: `功能啟用後，活動結束日或截止日滿 ${RETENTION_EXPIRY_MONTHS} 個月，再經 ${RETENTION_GRACE_DAYS} 天緩衝期才會清理`,
+  autoCleanup: `功能啟用後，活動結束日或截止日滿 ${RETENTION_EXPIRY_MONTHS} 個月，再經 ${RETENTION_GRACE_DAYS} 天緩衝期才會清理；未設定日期的公告依發布日期計算`,
   longTerm: "適用於行政規定、常態性業務等，不自動刪除",
 };
 

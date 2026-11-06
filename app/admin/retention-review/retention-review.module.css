@@ -11,7 +11,7 @@
 .shell{display:grid;gap:14px;padding:18px 14px 50px}
 .backLink{display:inline-flex;align-items:center;gap:5px;color:#49647d;font-size:14px;font-weight:700;text-decoration:none}
 .backLink svg{width:17px}
-.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.summary{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
 .summary>div{display:grid;gap:2px;border:1px solid #d6e0e7;border-radius:11px;background:white;padding:12px 14px}
 .summary strong{font-size:26px;line-height:1.1;color:#173b63}
 .summary span{color:#5f7184;font-size:13px;font-weight:700}
@@ -38,9 +38,16 @@
 .rowBody{display:grid;gap:4px;min-width:0;cursor:pointer}
 .rowBody strong{font-size:16px;line-height:1.4;overflow-wrap:anywhere}
 .rowMeta,.rowFacts{display:flex;flex-wrap:wrap;gap:4px 12px;color:#6b7d8e;font-size:13px}
-.dated,.undated{border-radius:999px;padding:1px 9px;font-weight:800}
+.dated,.undated,.invalid{border-radius:999px;padding:1px 9px;font-weight:800;white-space:nowrap}
 .dated{background:#e6f1fa;color:#1f4f7d}
-.undated{background:#f1eee6;color:#5f4f2a}
+.undated{background:#eaf3ee;color:#2d5a43}
+.invalid{background:#fff3dc;color:#7a4b00}
+.categoryGuide{display:grid;gap:6px;margin:0;border:1px solid #d6e0e7;border-radius:11px;background:white;padding:12px 14px;list-style:none;color:#4f6275;font-size:13px}
+.categoryGuide li{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px}
+.warning summary{cursor:pointer}
+.unlistable{display:grid;gap:6px;margin:8px 0 0;padding:0;list-style:none}
+.unlistable li{display:grid;gap:1px;border-top:1px solid #f0dfb5;padding-top:6px;font-size:13px}
+.unlistable span{overflow-wrap:anywhere}
 .invalidNote{color:#7a4b00;font-size:12px}
 .pager{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:10px;color:#5f7184;font-size:14px}
 .result{display:grid;gap:6px;border:1px solid #b9d3c4;border-radius:11px;background:#f1f8f4;padding:14px;color:#1f4a35}
@@ -53,4 +60,4 @@
 .confirmList dd{margin:0;font-weight:800}
 .dialogActions{justify-content:flex-end}
 @media(max-width:760px){.filters{grid-template-columns:1fr 1fr}.search{grid-column:1/-1}}
-@media(max-width:480px){.summary{grid-template-columns:1fr 1fr 1fr;gap:6px}.summary>div{padding:10px}.summary strong{font-size:22px}.filters{grid-template-columns:1fr}.actions>button{flex:1 1 100%}.page>header h1{font-size:24px}}
+@media(max-width:480px){.summary{grid-template-columns:1fr 1fr;gap:6px}.summary>div{padding:10px}.summary strong{font-size:22px}.filters{grid-template-columns:1fr}.actions>button{flex:1 1 100%}.page>header h1{font-size:24px}}

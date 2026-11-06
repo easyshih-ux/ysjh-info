@@ -1,15 +1,19 @@
 /**
- * Gate 3B：舊公告保存方式集中審查（純邏輯，不連線 Firebase）。
+ * Gate 3B／4A-2：舊公告保存方式集中審查（純邏輯，不連線 Firebase）。
  *
  * - 只處理「尚未審查」：Firestore 原始資料沒有合法 retentionPolicy。
  * - 期限判斷直接檢查原始資料，任何一筆日期格式異常即整篇判定為異常，不得設定自動清理。
  *   （讀取顯示用的 announcementFromFirestore 會略過異常日期，不能用來判斷期限。）
  * - 最後有效日期只取活動結束日（無結束日才用開始日）與截止日，不以發布、修改、補充或 LINE 日期替代。
+ * - 三類：有明確期限／無明確期限（結構化日期欄位為空，且發布日期完整有效）／日期異常。
+ *   無明確期限公告未來以發布日期計算；發布日期不完整或無法明確解讀者歸為日期異常。
+ *   標題或內文中的日期不會被辨識。
  * - 本模組不執行任何刪除。
  */
 import { announcementFromFirestore } from "./announcementFirestore.ts";
 import { isRetentionPolicy, type RetentionPolicy } from "./announcementRetention.ts";
 import type { Announcement } from "./announcements.ts";
+import { isDepartment } from "./departments.ts";
 
 export const RETENTION_REVIEW_PAGE_SIZE = 50;
 export const RETENTION_REVIEW_CHUNK_SIZE = 50;
@@ -55,8 +59,40 @@ export function lastEffectiveDateFromRaw(raw: unknown): EffectiveDateResult {
   return { kind: "dated", lastDate: dates.reduce((latest, date) => date > latest ? date : latest) };
 }
 
+/**
+ * 完整、有效且可明確解讀的發布時間：ISO 8601 日期＋時間＋時區（Z 或 ±HH:MM），
+ * 各欄位須在合法範圍且為真實存在的日期。僅 Date.parse 可解析（例如 "2026"、"Nov 6 2026"）不算通過。
+ */
+export function isStrictIsoDateTime(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?(Z|[+-](\d{2}):(\d{2}))$/.exec(value);
+  if (!match || !isValidCalendarDate(match[1])) return false;
+  const [hour, minute, second] = [Number(match[2]), Number(match[3]), Number(match[4] ?? 0)];
+  if (hour > 23 || minute > 59 || second > 59) return false;
+  if (match[5] !== "Z" && (Number(match[6]) > 14 || Number(match[7]) > 59)) return false;
+  return !Number.isNaN(Date.parse(value));
+}
+
+/**
+ * 審查與寫入共用的期限分類：
+ * - 有任何日期異常 → invalid（不推算、不改用發布日期）。
+ * - 有有效日期 → dated。
+ * - 結構化日期欄位為空：發布日期完整有效 → undated；否則 invalid（無法作為清理基準）。
+ */
+export function classifyRetentionDates(raw: unknown): EffectiveDateResult {
+  const effective = lastEffectiveDateFromRaw(raw);
+  if (effective.kind !== "undated") return effective;
+  if (!isRecord(raw) || !isStrictIsoDateTime(raw.publishedAt)) return { kind: "invalid", reason: "發布日期不完整或無法明確解讀，無法作為無期限公告的清理基準" };
+  return effective;
+}
+
 export function hasExplicitDeadline(effective: EffectiveDateResult): effective is { kind: "dated"; lastDate: string } {
   return effective.kind === "dated";
+}
+
+/** 可設定自動清理：有明確期限，或無明確期限但發布日期有效（classifyRetentionDates 已處理）。 */
+export function allowsAutoCleanup(effective: EffectiveDateResult) {
+  return effective.kind !== "invalid";
 }
 
 export function isUnreviewedRaw(raw: unknown) {
@@ -78,24 +114,51 @@ export interface RetentionReviewItem {
   effective: EffectiveDateResult;
 }
 
+export interface UnlistableReviewEntry {
+  id: string;
+  /** 原始標題（若為可顯示的字串）。 */
+  title?: string;
+  reasons: string[];
+}
+
 export interface RetentionReviewData {
   /** 讀到的公告文件總數；恆等於 items.length + unlistableCount + reviewedCount + deletingCount。 */
   totalCount: number;
   items: RetentionReviewItem[];
   /** 尚未審查、未刪除，但資料格式異常而無法列出的公告數。這些公告維持尚未審查。 */
   unlistableCount: number;
+  /** 無法列出的公告與原因，讓管理員能找到並交由維護者修正（長度恆等於 unlistableCount）。 */
+  unlistable: UnlistableReviewEntry[];
   deletingCount: number;
   reviewedCount: number;
 }
 
+/** 說明公告為何無法被讀取流程（announcementFromFirestore）列出；檢查項目與其必要欄位一致。 */
+export function describeUnlistableReasons(id: string, raw: unknown): string[] {
+  if (!isRecord(raw)) return ["公告資料格式異常"];
+  const reasons: string[] = [];
+  if (!id.trim()) reasons.push("公告 ID 異常");
+  if (!Number.isInteger(raw.academicYear)) reasons.push("學年度缺少或格式異常");
+  if (typeof raw.publishedAt !== "string" || !raw.publishedAt.trim() || Number.isNaN(Date.parse(raw.publishedAt))) reasons.push("發布日期缺少或格式異常");
+  if (!isDepartment(raw.department)) reasons.push("發布單位缺少或格式異常");
+  if (typeof raw.title !== "string" || !raw.title.trim()) reasons.push("標題缺少");
+  if (typeof raw.content !== "string") reasons.push("內容欄位格式異常");
+  return reasons.length > 0 ? reasons : ["資料格式異常"];
+}
+
 export function buildRetentionReviewData(documents: readonly { id: string; data: unknown }[]): RetentionReviewData {
   // 每篇文件只會落入一個分類：刪除中 → 已審查 → 尚未審查（可列出／格式異常）。
-  const result: RetentionReviewData = { totalCount: documents.length, items: [], unlistableCount: 0, deletingCount: 0, reviewedCount: 0 };
+  const result: RetentionReviewData = { totalCount: documents.length, items: [], unlistableCount: 0, unlistable: [], deletingCount: 0, reviewedCount: 0 };
   for (const { id, data } of documents) {
     if (isDeletingRaw(data)) { result.deletingCount++; continue; }
     if (!isUnreviewedRaw(data)) { result.reviewedCount++; continue; }
     const announcement = announcementFromFirestore(id, data);
-    if (!announcement) { result.unlistableCount++; continue; }
+    if (!announcement) {
+      result.unlistableCount++;
+      const title = isRecord(data) && typeof data.title === "string" && data.title.trim() ? data.title.trim().slice(0, 120) : undefined;
+      result.unlistable.push({ id, ...(title ? { title } : {}), reasons: describeUnlistableReasons(id, data) });
+      continue;
+    }
     result.items.push({
       id,
       title: announcement.title,
@@ -103,14 +166,14 @@ export function buildRetentionReviewData(documents: readonly { id: string; data:
       academicYear: announcement.academicYear,
       publishedAt: announcement.publishedAt,
       publicationStatus: announcement.publicationStatus === "withdrawn" ? "withdrawn" : "published",
-      effective: lastEffectiveDateFromRaw(data),
+      effective: classifyRetentionDates(data),
     });
   }
   result.items.sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));
   return result;
 }
 
-export type DeadlineFilter = "all" | "dated" | "undated";
+export type DeadlineFilter = "all" | "dated" | "undated" | "invalid";
 export interface RetentionReviewFilters {
   deadline: DeadlineFilter;
   department: string;
@@ -122,7 +185,7 @@ export const DEFAULT_RETENTION_REVIEW_FILTERS: RetentionReviewFilters = { deadli
 export function filterRetentionReviewItems(items: readonly RetentionReviewItem[], filters: RetentionReviewFilters) {
   const needle = filters.query.trim().toLocaleLowerCase("zh-Hant");
   return items
-    .filter(item => filters.deadline === "all" || (filters.deadline === "dated") === hasExplicitDeadline(item.effective))
+    .filter(item => filters.deadline === "all" || item.effective.kind === filters.deadline)
     .filter(item => filters.department === "all" || item.department === filters.department)
     .filter(item => filters.academicYear === "all" || item.academicYear === filters.academicYear)
     .filter(item => !needle || item.title.toLocaleLowerCase("zh-Hant").includes(needle))
@@ -144,17 +207,17 @@ export function paginate<T>(items: readonly T[], page: number, pageSize = RETENT
   return { page: current, pageCount, pageItems: items.slice((current - 1) * pageSize, current * pageSize) };
 }
 
-export interface SelectionSummary { total: number; dated: number; undated: number }
+export interface SelectionSummary { total: number; dated: number; undated: number; invalid: number }
 
 export function summarizeSelection(items: readonly RetentionReviewItem[]): SelectionSummary {
-  const dated = items.filter(item => hasExplicitDeadline(item.effective)).length;
-  return { total: items.length, dated, undated: items.length - dated };
+  const count = (kind: EffectiveDateResult["kind"]) => items.filter(item => item.effective.kind === kind).length;
+  return { total: items.length, dated: count("dated"), undated: count("undated"), invalid: count("invalid") };
 }
 
-/** 選取中只要有任何無明確期限（含日期異常）的公告，整次自動清理都不可送出。 */
+/** 選取中只要有任何日期異常的公告，整次自動清理都不可送出；無明確期限公告可以設定。 */
 export function autoCleanupBlockReason(summary: SelectionSummary): string | null {
   if (summary.total === 0) return "尚未選取公告。";
-  if (summary.undated > 0) return `選取中有 ${summary.undated} 篇無明確期限（或日期格式異常）的公告，不能設定「依公告期限自動清理」。請取消選取這些公告，或改設「長期保留」。`;
+  if (summary.invalid > 0) return `選取中有 ${summary.invalid} 篇日期異常的公告，不能設定「依公告期限自動清理」。請取消選取這些公告並先確認日期資料，或改設「長期保留」。`;
   return null;
 }
 
@@ -163,14 +226,14 @@ export function canSubmitRetentionBatch(policy: RetentionPolicy, summary: Select
   return policy === "longTerm" || autoCleanupBlockReason(summary) === null;
 }
 
-export type RetentionSkipReason = "missing" | "alreadyReviewed" | "deleting" | "noValidDate";
+export type RetentionSkipReason = "missing" | "alreadyReviewed" | "deleting" | "invalidDate";
 export type RetentionFailReason = "notAdmin" | "writeFailed" | "signedOut" | "serviceUnavailable" | "notProcessed";
 
 export const RETENTION_SKIP_REASON_LABELS: Record<RetentionSkipReason, string> = {
   missing: "公告已不存在",
   alreadyReviewed: "已有保存方式，未覆蓋",
   deleting: "公告正在永久刪除",
-  noValidDate: "沒有有效日期，不可設定自動清理",
+  invalidDate: "日期異常，不可設定自動清理",
 };
 export const RETENTION_FAIL_REASON_LABELS: Record<RetentionFailReason, string> = {
   notAdmin: "目前帳號不是啟用中的系統管理員",
@@ -262,7 +325,8 @@ export function evaluateRetentionWrite(exists: boolean, raw: unknown, policy: Re
   if (!exists || !isRecord(raw)) return { ok: false, reason: "missing" };
   if (isDeletingRaw(raw)) return { ok: false, reason: "deleting" };
   if (!isUnreviewedRaw(raw)) return { ok: false, reason: "alreadyReviewed" };
-  if (policy === "autoCleanup" && !hasExplicitDeadline(lastEffectiveDateFromRaw(raw))) return { ok: false, reason: "noValidDate" };
+  // 與審查清單使用同一個分類：日期異常（含無期限但發布日期無法明確解讀）不得設定自動清理。
+  if (policy === "autoCleanup" && !allowsAutoCleanup(classifyRetentionDates(raw))) return { ok: false, reason: "invalidDate" };
   return { ok: true };
 }
 

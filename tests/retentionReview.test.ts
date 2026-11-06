@@ -5,6 +5,7 @@ import {
   academicYearOptions, autoCleanupBlockReason, buildRetentionReviewData, canSubmitRetentionBatch, chunkIds, departmentOptions, evaluateRetentionWrite,
   filterRetentionReviewItems, DEFAULT_RETENTION_REVIEW_FILTERS, isEnabledSystemAdminProfile, isValidCalendarDate, lastEffectiveDateFromRaw, paginate,
   RETENTION_REVIEW_CHUNK_SIZE, RETENTION_REVIEW_PAGE_SIZE, summarizeRetentionOutcomes, summarizeSelection, type RetentionReviewItem,
+  classifyRetentionDates, isStrictIsoDateTime, describeUnlistableReasons,
   classifyRetentionTransactionError, processRetentionChunks, RetentionOperatorCheckError, retentionBatchStopped, type RetentionBatchOutcome,
 } from "../lib/retentionReview.ts";
 
@@ -36,13 +37,38 @@ test("3 最後有效日期：活動結束日（無結束日才用開始日）與
   assert.deepEqual(lastEffectiveDateFromRaw(raw({ importantEvents: undefined, deadlines: undefined })), undated);
 });
 
-test("4 沒有日期的公告不可批次設定 autoCleanup，可設定 longTerm", () => {
+test("4 （Gate 4A-2）真正無期限且發布日期有效的公告可以設定 autoCleanup，也可設定 longTerm", () => {
   const summary = summarizeSelection([item("a", undated)]);
-  assert.match(autoCleanupBlockReason(summary) ?? "", /1 篇無明確期限/);
-  assert.equal(canSubmitRetentionBatch("autoCleanup", summary), false);
+  assert.deepEqual(summary, { total: 1, dated: 0, undated: 1, invalid: 0 });
+  assert.equal(autoCleanupBlockReason(summary), null);
+  assert.equal(canSubmitRetentionBatch("autoCleanup", summary), true);
   assert.equal(canSubmitRetentionBatch("longTerm", summary), true);
-  assert.deepEqual(evaluateRetentionWrite(true, raw(), "autoCleanup"), { ok: false, reason: "noValidDate" });
+  for (const empty of [{}, { importantEvents: [], deadlines: [] }, { importantEvents: null, deadlines: null }, { importantEvents: undefined, deadlines: undefined }]) {
+    assert.deepEqual(classifyRetentionDates(raw(empty)), undated, JSON.stringify(empty));
+    assert.deepEqual(evaluateRetentionWrite(true, raw(empty), "autoCleanup"), { ok: true });
+  }
   assert.deepEqual(evaluateRetentionWrite(true, raw(), "longTerm"), { ok: true });
+});
+
+test("4b 無期限但發布日期不完整或無法明確解讀：歸為日期異常，不可設定 autoCleanup，可設定 longTerm", () => {
+  const badPublishedAt = [undefined, null, "", "2026", "2026-09-01", "2026/09/01 08:00", "Nov 6 2026", "2026-02-30T08:00:00Z", "2026-09-01T24:00:00Z", "2026-09-01T08:60:00Z", "2026-09-01T08:00:00", "2026-09-01T08:00:00+25:00", 1756713600000, { seconds: 1 }];
+  for (const publishedAt of badPublishedAt) {
+    const result = classifyRetentionDates(raw({ publishedAt }));
+    assert.equal(result.kind, "invalid", JSON.stringify(publishedAt));
+    assert.deepEqual(evaluateRetentionWrite(true, raw({ publishedAt }), "autoCleanup"), { ok: false, reason: "invalidDate" }, JSON.stringify(publishedAt));
+    assert.deepEqual(evaluateRetentionWrite(true, raw({ publishedAt }), "longTerm"), { ok: true });
+  }
+  for (const publishedAt of ["2026-09-01T00:00:00.000Z", "2026-09-01T08:30:00+08:00", "2026-09-01T08:30Z", "2028-02-29T23:59:59.999Z"]) {
+    assert.equal(isStrictIsoDateTime(publishedAt), true, publishedAt);
+    assert.deepEqual(classifyRetentionDates(raw({ publishedAt })), undated, publishedAt);
+  }
+  // 有明確期限的公告不以發布日期判斷：發布日期異常不影響其分類。
+  assert.deepEqual(classifyRetentionDates(raw({ publishedAt: "2026", deadlines: [{ date: "2026-11-13", label: "c" }] })), dated("2026-11-13"));
+});
+
+test("4c 標題或內文含日期、但結構化日期欄位為空：視為無明確期限（不辨識標題日期）", () => {
+  const result = classifyRetentionDates(raw({ title: "115-1放學後7年級班級教室異常狀況統計(115/8/31至115/10/30)", content: "請於 10/30 前完成" }));
+  assert.deepEqual(result, undated);
 });
 
 test("5 日期格式錯誤採保守處理：判定異常，不推算日期，不可設定 autoCleanup", () => {
@@ -62,7 +88,8 @@ test("5 日期格式錯誤採保守處理：判定異常，不推算日期，不
   for (const overrides of invalidCases) {
     const result = lastEffectiveDateFromRaw(raw(overrides));
     assert.equal(result.kind, "invalid", JSON.stringify(overrides));
-    assert.deepEqual(evaluateRetentionWrite(true, raw(overrides), "autoCleanup"), { ok: false, reason: "noValidDate" });
+    assert.equal(classifyRetentionDates(raw(overrides)).kind, "invalid", "日期異常不得被當成無期限");
+    assert.deepEqual(evaluateRetentionWrite(true, raw(overrides), "autoCleanup"), { ok: false, reason: "invalidDate" });
     assert.deepEqual(evaluateRetentionWrite(true, raw(overrides), "longTerm"), { ok: true });
   }
   // 讀取顯示流程會略過異常結束日；審查判斷不得因此退回較早的開始日。
@@ -78,13 +105,18 @@ test("6 有明確日期的公告可以設定 autoCleanup", () => {
   assert.deepEqual(evaluateRetentionWrite(true, raw({ deadlines: [{ date: "2026-11-13", label: "c" }] }), "autoCleanup"), { ok: true });
 });
 
-test("7～8 混合選取（含全選本頁）時，自動清理整次被阻止；長期保留不受影響", () => {
-  const pageItems = [item("a", dated()), item("b", undated), item("c", { kind: "invalid", reason: "x" }), item("d", dated())];
+test("7～8 混合選取（含全選本頁）：只要含日期異常，自動清理整次被阻止；有期限＋無期限可送出；長期保留不受影響", () => {
+  const invalid = { kind: "invalid" as const, reason: "x" };
+  const pageItems = [item("a", dated()), item("b", undated), item("c", invalid), item("d", dated()), item("e", invalid)];
   const summary = summarizeSelection(pageItems);
-  assert.deepEqual(summary, { total: 4, dated: 2, undated: 2 });
-  assert.match(autoCleanupBlockReason(summary) ?? "", /2 篇無明確期限/);
+  assert.deepEqual(summary, { total: 5, dated: 2, undated: 1, invalid: 2 });
+  assert.match(autoCleanupBlockReason(summary) ?? "", /2 篇日期異常/);
   assert.equal(canSubmitRetentionBatch("autoCleanup", summary), false);
   assert.equal(canSubmitRetentionBatch("longTerm", summary), true);
+  const datedAndUndated = summarizeSelection([item("a", dated()), item("b", undated)]);
+  assert.equal(autoCleanupBlockReason(datedAndUndated), null);
+  assert.equal(canSubmitRetentionBatch("autoCleanup", datedAndUndated), true);
+  assert.equal(canSubmitRetentionBatch("autoCleanup", summarizeSelection([item("c", invalid)])), false);
   assert.equal(canSubmitRetentionBatch("longTerm", summarizeSelection([])), false);
 });
 
@@ -143,13 +175,13 @@ test("11 只有啟用中的 systemAdmin 才通過交易內身分檢查", () => {
 test("13 成功、略過、失敗數量與可重試項目統計正確；14 重複 ID 不重複處理", () => {
   const summary = summarizeRetentionOutcomes([
     { id: "a", status: "success" }, { id: "b", status: "success" },
-    { id: "c", status: "skipped", reason: "alreadyReviewed" }, { id: "d", status: "skipped", reason: "noValidDate" }, { id: "e", status: "skipped", reason: "alreadyReviewed" },
+    { id: "c", status: "skipped", reason: "alreadyReviewed" }, { id: "d", status: "skipped", reason: "invalidDate" }, { id: "e", status: "skipped", reason: "alreadyReviewed" },
     { id: "f", status: "failed", reason: "writeFailed" },
   ]);
   assert.equal(summary.success, 2);
   assert.equal(summary.skipped, 3);
   assert.equal(summary.failed, 1);
-  assert.deepEqual(summary.skippedByReason, { alreadyReviewed: 2, noValidDate: 1 });
+  assert.deepEqual(summary.skippedByReason, { alreadyReviewed: 2, invalidDate: 1 });
   assert.deepEqual(summary.failedByReason, { writeFailed: 1 });
   assert.deepEqual(summary.retryableIds, ["f"]);
   assert.equal(RETENTION_REVIEW_CHUNK_SIZE, 50);
@@ -196,7 +228,8 @@ test("3C-1 統計：每篇文件只落入一個分類，總數恆等於各分類
   assert.equal(data.items.length + data.unlistableCount + data.reviewedCount + data.deletingCount, data.totalCount);
   assert.deepEqual({ listed: data.items.length, unlistable: data.unlistableCount, reviewed: data.reviewedCount, deleting: data.deletingCount }, { listed: 3, unlistable: 2, reviewed: 2, deleting: 3 });
   assert.equal(new Set(data.items.map(entry => entry.id)).size, data.items.length);
-  assert.deepEqual(buildRetentionReviewData([]), { totalCount: 0, items: [], unlistableCount: 0, deletingCount: 0, reviewedCount: 0 });
+  assert.deepEqual(buildRetentionReviewData([]), { totalCount: 0, items: [], unlistableCount: 0, unlistable: [], deletingCount: 0, reviewedCount: 0 });
+  assert.equal(data.unlistable.length, data.unlistableCount);
 });
 
 test("3C-2 錯誤分類：只有與特定公告有關的失敗可逐篇重試；登入、網路、服務與未知錯誤一律停止", () => {
@@ -270,4 +303,45 @@ test("3C-8 介面：摘要顯示完整分類、停止與權限提示；確認視
   assert.match(view, /本次將為 \{pendingCount\} 篇公告設定保存方式。此操作不會立即刪除公告，目前自動清理功能尚未啟用。/);
   assert.match(view, /設定結果：\{RETENTION_POLICY_LABELS\[result\.policy\]\}/);
   assert.match(source("lib/retentionReviewFirestore.ts"), /throw new RetentionOperatorCheckError\(error\)/);
+});
+
+// ===== Gate 4A-2：三類分類、篩選與格式異常公告的原因 =====
+test("4A2-1 清單分三類：有明確期限／無明確期限／日期異常，篩選各自獨立", () => {
+  const data = buildRetentionReviewData(docs(
+    ["dated", raw({ deadlines: [{ date: "2026-11-13", label: "c" }] })],
+    ["undated", raw()],
+    ["badDate", raw({ importantEvents: [{ date: "2026-09-10", endDate: "2026-09-01", title: "a" }] })],
+    ["badPublished", raw({ publishedAt: "2026-09-01 08:00" })],
+  ));
+  const kinds = Object.fromEntries(data.items.map(entry => [entry.id, entry.effective.kind]));
+  assert.deepEqual(kinds, { dated: "dated", undated: "undated", badDate: "invalid", badPublished: "invalid" });
+  assert.deepEqual(summarizeSelection(data.items), { total: 4, dated: 1, undated: 1, invalid: 2 });
+  for (const [filter, expected] of [["dated", ["dated"]], ["undated", ["undated"]], ["invalid", ["badDate", "badPublished"]]] as const) {
+    assert.deepEqual(filterRetentionReviewItems(data.items, { ...DEFAULT_RETENTION_REVIEW_FILTERS, deadline: filter }).map(entry => entry.id).sort(), [...expected].sort(), filter);
+  }
+});
+
+test("4A2-2 無法列出的格式異常公告：保留標題、ID 與具體原因，讓管理員能找到", () => {
+  const data = buildRetentionReviewData(docs(
+    ["noTitle", raw({ title: "" })],
+    ["badPublished", raw({ title: "研習通知", publishedAt: "not a date" })],
+    ["badYearDept", raw({ title: "舊公告", academicYear: "114", department: "" })],
+  ));
+  assert.equal(data.unlistableCount, 3);
+  const byId = Object.fromEntries(data.unlistable.map(entry => [entry.id, entry]));
+  assert.deepEqual(byId.noTitle, { id: "noTitle", reasons: ["標題缺少"] });
+  assert.deepEqual(byId.badPublished, { id: "badPublished", title: "研習通知", reasons: ["發布日期缺少或格式異常"] });
+  assert.deepEqual(byId.badYearDept.reasons, ["學年度缺少或格式異常", "發布單位缺少或格式異常"]);
+  assert.deepEqual(describeUnlistableReasons("x", "not a record"), ["公告資料格式異常"]);
+});
+
+test("4A2-3 介面：三類摘要與說明、日期異常阻擋、無期限依發布日期提示、格式異常清單", () => {
+  const view = source("app/admin/retention-review/retention-review-view.tsx");
+  assert.match(view, /<span>日期異常<\/span>/);
+  assert.match(view, /<option value="invalid">日期異常<\/option>/);
+  assert.match(view, /無明確期限<\/span>發布日期有效即可設定自動清理；未來依發布日期計算清理時間，標題或內文中的日期不會自動辨識/);
+  assert.match(view, /pendingPolicy === "autoCleanup" && pendingSummary\.invalid > 0 &&/);
+  assert.match(view, /<div><dt>日期異常<\/dt><dd>\{pendingSummary\.invalid\} 篇<\/dd><\/div>/);
+  assert.match(view, /data\.unlistable\.map\(entry =>/);
+  assert.match(source("lib/announcementRetention.ts"), /未設定日期的公告依發布日期計算/);
 });

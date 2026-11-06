@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { RETENTION_POLICY_LABELS, type RetentionPolicy } from "@/lib/announcementRetention";
 import {
   academicYearOptions, autoCleanupBlockReason, canSubmitRetentionBatch, DEFAULT_RETENTION_REVIEW_FILTERS, departmentOptions, filterRetentionReviewItems,
-  formatReviewDate, hasExplicitDeadline, paginate, RETENTION_FAIL_REASON_LABELS, RETENTION_REVIEW_PAGE_SIZE, RETENTION_SKIP_REASON_LABELS, summarizeRetentionOutcomes,
+  formatReviewDate, paginate, RETENTION_FAIL_REASON_LABELS, RETENTION_REVIEW_PAGE_SIZE, RETENTION_SKIP_REASON_LABELS, summarizeRetentionOutcomes,
   summarizeSelection, type DeadlineFilter, type RetentionBatchOutcome, type RetentionBatchSummary, type RetentionReviewData, type RetentionReviewFilters, type RetentionReviewItem,
 } from "@/lib/retentionReview";
 import styles from "./retention-review.module.css";
@@ -91,12 +91,21 @@ export function RetentionReviewView({ data, formatPublishedAt, onApply, onReload
         <div><strong>{totals.total}</strong><span>篇可在此審查</span></div>
         <div><strong>{totals.dated}</strong><span>有明確期限</span></div>
         <div><strong>{totals.undated}</strong><span>無明確期限</span></div>
+        <div><strong>{totals.invalid}</strong><span>日期異常</span></div>
       </section>
+      <ul className={styles.categoryGuide} aria-label="期限分類說明">
+        <li><span className={styles.dated}>有明確期限</span>可設定自動清理或長期保留；未來以最後活動或截止日起算。</li>
+        <li><span className={styles.undated}>無明確期限</span>發布日期有效即可設定自動清理；未來依發布日期計算清理時間，標題或內文中的日期不會自動辨識。</li>
+        <li><span className={styles.invalid}>日期異常</span>暫不允許自動清理，需先確認日期資料；可改設長期保留。</li>
+      </ul>
       <p className={styles.hint} aria-label="公告總數分類">全部公告 {data.totalCount} 篇：尚未審查 {data.items.length + data.unlistableCount} 篇（可在此審查 {data.items.length}、資料格式異常 {data.unlistableCount}）、已審查 {data.reviewedCount} 篇、永久刪除進行中 {data.deletingCount} 篇。</p>
-      {data.unlistableCount > 0 && <p className={styles.warning} role="status">另有 {data.unlistableCount} 篇尚未審查的公告資料格式異常，無法在此列出。這些公告維持「尚未審查」，不會被自動清理；請聯絡系統維護者檢查。</p>}
+      {data.unlistableCount > 0 && <details className={styles.warning}>
+        <summary>另有 {data.unlistableCount} 篇尚未審查的公告資料格式異常，無法在此設定。這些公告維持「尚未審查」，不會被自動清理；請將下列公告交由系統維護者檢查（點此查看）。</summary>
+        <ul className={styles.unlistable}>{data.unlistable.map(entry => <li key={entry.id}><strong>{entry.title ?? "（無標題）"}</strong><span>公告 ID：{entry.id}</span><span>原因：{entry.reasons.join("、")}</span></li>)}</ul>
+      </details>}
 
       <section className={styles.filters} aria-label="篩選">
-        <label>期限分類<select value={filters.deadline} onChange={event => changeFilters({ deadline: event.target.value as DeadlineFilter })}><option value="all">全部</option><option value="dated">有明確期限</option><option value="undated">無明確期限</option></select></label>
+        <label>期限分類<select value={filters.deadline} onChange={event => changeFilters({ deadline: event.target.value as DeadlineFilter })}><option value="all">全部</option><option value="dated">有明確期限</option><option value="undated">無明確期限</option><option value="invalid">日期異常</option></select></label>
         <label>發布單位<select value={filters.department} onChange={event => changeFilters({ department: event.target.value })}><option value="all">全部單位</option>{departments.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
         <label>學年度<select value={String(filters.academicYear)} onChange={event => changeFilters({ academicYear: event.target.value === "all" ? "all" : Number(event.target.value) })}><option value="all">不限</option>{years.map(value => <option key={value} value={value}>{value} 學年度</option>)}</select></label>
         <label className={styles.search}>標題關鍵字<span><Search aria-hidden="true" /><Input value={filters.query} onChange={event => changeFilters({ query: event.target.value })} placeholder="搜尋公告標題" /></span></label>
@@ -104,7 +113,7 @@ export function RetentionReviewView({ data, formatPublishedAt, onApply, onReload
 
       <section className={styles.toolbar} aria-label="選取與設定">
         <div className={styles.selectionRow}>
-          <span className={styles.count} aria-live="polite">已選取 {selection.total} 篇{selection.total > 0 && `（有期限 ${selection.dated}、無期限 ${selection.undated}）`}</span>
+          <span className={styles.count} aria-live="polite">已選取 {selection.total} 篇{selection.total > 0 && `（有期限 ${selection.dated}、無期限 ${selection.undated}、日期異常 ${selection.invalid}）`}</span>
           <Button variant="outline" size="sm" onClick={selectPage} disabled={pageItems.length === 0 || allPageSelected || submitting}>選取本頁全部（{pageItems.length}）</Button>
           <Button variant="outline" size="sm" onClick={clearSelection} disabled={selection.total === 0 || submitting}>清除選取</Button>
         </div>
@@ -143,8 +152,10 @@ export function RetentionReviewView({ data, formatPublishedAt, onApply, onReload
             <div><dt>選取總數</dt><dd>{pendingCount} 篇</dd></div>
             <div><dt>有明確期限</dt><dd>{pendingSummary.dated} 篇</dd></div>
             <div><dt>無明確期限</dt><dd>{pendingSummary.undated} 篇</dd></div>
+            <div><dt>日期異常</dt><dd>{pendingSummary.invalid} 篇</dd></div>
           </dl>
-          {pendingPolicy === "autoCleanup" && pendingSummary.undated > 0 && <p className={styles.block} role="alert">包含 {pendingSummary.undated} 篇無明確期限（或日期格式異常）的公告，不能設定「依公告期限自動清理」。請返回取消選取，或改設「長期保留」。</p>}
+          {pendingPolicy === "autoCleanup" && pendingSummary.undated > 0 && pendingSummary.invalid === 0 && <p className={styles.hint}>無明確期限的 {pendingSummary.undated} 篇，未來將依發布日期計算清理時間；標題或內文中的日期不會自動辨識。</p>}
+          {pendingPolicy === "autoCleanup" && pendingSummary.invalid > 0 && <p className={styles.block} role="alert">包含 {pendingSummary.invalid} 篇日期異常的公告，不能設定「依公告期限自動清理」。請返回取消選取並先確認日期資料，或改設「長期保留」。</p>}
           <p className={styles.hint}>已被其他人設定保存方式的公告會略過，不會被覆蓋。</p>
           {progress && <p className={styles.hint} aria-live="polite">{progress}</p>}
           <div className={styles.dialogActions}>
@@ -159,8 +170,8 @@ export function RetentionReviewView({ data, formatPublishedAt, onApply, onReload
 
 function ReviewRow({ item, checked, disabled, onToggle, formatPublishedAt }: { item: RetentionReviewItem; checked: boolean; disabled: boolean; onToggle: (id: string, checked: boolean) => void; formatPublishedAt: (value: string) => string }) {
   const effective = item.effective;
-  const dated = hasExplicitDeadline(effective);
-  const lastDate = effective.kind === "dated" ? formatReviewDate(effective.lastDate) : "—";
+  const lastDate = effective.kind === "dated" ? formatReviewDate(effective.lastDate) : effective.kind === "undated" ? "—（依發布日期計算）" : "—";
+  const badge = effective.kind === "dated" ? { className: styles.dated, label: "有明確期限" } : effective.kind === "undated" ? { className: styles.undated, label: "無明確期限" } : { className: styles.invalid, label: "日期異常" };
   const checkboxId = `review-${item.id}`;
   return <li className={checked ? styles.checked : undefined}>
     <Checkbox id={checkboxId} checked={checked} disabled={disabled} onCheckedChange={value => onToggle(item.id, value === true)} aria-label={`選取「${item.title}」`} />
@@ -168,11 +179,11 @@ function ReviewRow({ item, checked, disabled, onToggle, formatPublishedAt }: { i
       <span className={styles.rowMeta}><span>{item.department}</span><span>{item.academicYear} 學年度</span><span>發布 {formatPublishedAt(item.publishedAt)}</span>{item.publicationStatus === "withdrawn" && <span>已下架</span>}</span>
       <strong>{item.title}</strong>
       <span className={styles.rowFacts}>
-        <span className={dated ? styles.dated : styles.undated}>{dated ? "有明確期限" : item.effective.kind === "invalid" ? "無明確期限（日期格式異常）" : "無明確期限"}</span>
+        <span className={badge.className}>{badge.label}</span>
         <span>最後有效日期：{lastDate}</span>
         <span>目前：{RETENTION_POLICY_LABELS.unreviewed}</span>
       </span>
-      {item.effective.kind === "invalid" && <small className={styles.invalidNote}>{item.effective.reason}，無法可靠判定期限。</small>}
+      {effective.kind === "invalid" && <small className={styles.invalidNote}>{effective.reason}，暫不允許自動清理。</small>}
     </label>
   </li>;
 }

@@ -49,11 +49,13 @@ async function readAll(ids) {
 const byId = outcomes => Object.fromEntries(outcomes.map(outcome => [outcome.id, outcome.status === "success" ? "success" : `${outcome.status}:${outcome.reason}`]));
 const withoutRetention = data => { const copy = { ...data }; delete copy.retentionPolicy; return copy; };
 
-test("G1 systemAdmin 批次設定自動清理：只更新有期限者，其餘依原因略過，且只修改 retentionPolicy", async () => {
+test("G1 systemAdmin 批次設定自動清理：有期限與無期限（發布日期有效）成功，日期異常依原因略過，且只修改 retentionPolicy", async () => {
   const entries = {
     dated114: withDeadline(),
     datedEvent: announcement({ academicYear: 112, importantEvents: [{ date: "2024-03-01", endDate: "2024-03-05", title: "研習" }] }),
     undated: announcement(),
+    undatedTitleDate: announcement({ title: "115-1放學後7年級班級教室異常狀況統計(115/8/31至115/10/30)" }),
+    undatedBadPublished: announcement({ publishedAt: "2025-10-01 08:00" }),
     badDate: announcement({ importantEvents: [{ date: "2025-10-01", endDate: "2025-13-01", title: "壞日期" }] }),
     reviewed: withDeadline({ retentionPolicy: "longTerm" }),
     deleting: withDeadline({ deletionStartedAt: "2026-11-06T00:00:00.000Z", publicationStatus: "withdrawn" }),
@@ -63,15 +65,15 @@ test("G1 systemAdmin 批次設定自動清理：只更新有期限者，其餘�
   const ids = [...Object.keys(entries), "missing"];
   const outcomes = await applyRetentionPolicyBatch(userDb("adminA"), "adminA", ids, "autoCleanup");
   assert.deepEqual(byId(outcomes), {
-    dated114: "success", datedEvent: "success", withdrawn: "success",
-    undated: "skipped:noValidDate", badDate: "skipped:noValidDate", reviewed: "skipped:alreadyReviewed", deleting: "skipped:deleting", missing: "skipped:missing",
+    dated114: "success", datedEvent: "success", withdrawn: "success", undated: "success", undatedTitleDate: "success",
+    undatedBadPublished: "skipped:invalidDate", badDate: "skipped:invalidDate", reviewed: "skipped:alreadyReviewed", deleting: "skipped:deleting", missing: "skipped:missing",
   });
   const after = await readAll(ids);
-  for (const id of ["dated114", "datedEvent", "withdrawn"]) {
+  for (const id of ["dated114", "datedEvent", "withdrawn", "undated", "undatedTitleDate"]) {
     assert.equal(after[id].retentionPolicy, "autoCleanup");
     assert.deepEqual(withoutRetention(after[id]), entries[id], `${id} 其他欄位必須完全不變`);
   }
-  for (const id of ["undated", "badDate", "reviewed", "deleting"]) assert.deepEqual(after[id], entries[id], `${id} 不得被修改`);
+  for (const id of ["undatedBadPublished", "badDate", "reviewed", "deleting"]) assert.deepEqual(after[id], entries[id], `${id} 不得被修改`);
   assert.equal(after.missing, null, "不存在的公告不得被建立");
 });
 
