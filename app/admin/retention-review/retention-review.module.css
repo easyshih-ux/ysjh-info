@@ -1,0 +1,56 @@
+.page{min-height:100dvh;background:#eef2f5;color:#172536}
+.page>header{background:#173b63;color:white;border-bottom:4px solid #c9a34e}
+.page>header>div,.shell{max-width:980px;margin:auto}
+.page>header>div{display:grid;gap:2px;padding:24px 18px}
+.page>header a{display:flex;align-items:center;gap:5px;width:max-content;color:#dbe6ef;font-size:14px;font-weight:700;text-decoration:none}
+.page>header a svg{width:17px}
+.page>header p{margin:18px 0 0;color:#b9c9d9;font-size:12px;font-weight:800}
+.page>header h1{margin:2px 0;font-size:28px}
+.page>header span{color:#d5e1eb}
+.notEnabled{justify-self:start;margin-top:10px;border-radius:7px;background:#e8f0f7;padding:6px 10px;color:#17324d;font-size:14px}
+.shell{display:grid;gap:14px;padding:18px 14px 50px}
+.backLink{display:inline-flex;align-items:center;gap:5px;color:#49647d;font-size:14px;font-weight:700;text-decoration:none}
+.backLink svg{width:17px}
+.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.summary>div{display:grid;gap:2px;border:1px solid #d6e0e7;border-radius:11px;background:white;padding:12px 14px}
+.summary strong{font-size:26px;line-height:1.1;color:#173b63}
+.summary span{color:#5f7184;font-size:13px;font-weight:700}
+.warning{margin:0;border-left:4px solid #c9a34e;background:#fff8e7;padding:10px 12px;color:#685328;font-size:14px}
+.filters{display:grid;grid-template-columns:1fr 1fr 1fr 1.5fr;gap:12px}
+.filters label{display:grid;gap:5px;font-weight:700;font-size:14px}
+.filters select{height:42px;border:1px solid #cbd6df;border-radius:7px;background:white;padding:0 10px}
+.search>span{position:relative;display:block}
+.search svg{position:absolute;left:11px;top:12px;width:18px;color:#6d7e8e}
+.search input{height:42px;padding-left:38px;background:white}
+.toolbar{display:grid;gap:8px;border:1px solid #d6e0e7;border-radius:11px;background:white;padding:14px}
+.selectionRow,.actions,.resultActions,.dialogActions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.count{margin-right:auto;font-weight:800}
+.hint{margin:0;color:#6b7d8e;font-size:13px}
+.primary{background:#173b63;color:white}
+.primary:hover{background:#1f4a7a}
+.block{margin:0;border:1px solid #f0c36d;border-radius:8px;background:#fff8e6;padding:10px 12px;color:#7a4b00;font-size:14px;font-weight:700}
+.error{margin:0;border-left:4px solid #b43d3d;background:#fff0f0;color:#7c2929;padding:10px 12px}
+.empty{margin:0;border:1px solid #d6e0e7;border-radius:11px;background:white;padding:16px;color:#5f7184}
+.list{display:grid;gap:9px;margin:0;padding:0;list-style:none}
+.list>li{display:grid;grid-template-columns:auto 1fr;align-items:start;gap:12px;border:1px solid #d6e0e7;border-radius:11px;background:white;padding:14px}
+.list>li>button{margin-top:3px}
+.list>li.checked{border-color:#2f6fae;background:#f3f8fc}
+.rowBody{display:grid;gap:4px;min-width:0;cursor:pointer}
+.rowBody strong{font-size:16px;line-height:1.4;overflow-wrap:anywhere}
+.rowMeta,.rowFacts{display:flex;flex-wrap:wrap;gap:4px 12px;color:#6b7d8e;font-size:13px}
+.dated,.undated{border-radius:999px;padding:1px 9px;font-weight:800}
+.dated{background:#e6f1fa;color:#1f4f7d}
+.undated{background:#f1eee6;color:#5f4f2a}
+.invalidNote{color:#7a4b00;font-size:12px}
+.pager{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:10px;color:#5f7184;font-size:14px}
+.result{display:grid;gap:6px;border:1px solid #b9d3c4;border-radius:11px;background:#f1f8f4;padding:14px;color:#1f4a35}
+.result h2{margin:0;font-size:16px}
+.result p,.result ul{margin:0}
+.result ul{padding-left:20px;font-size:14px}
+.confirmList{display:grid;gap:6px;margin:0}
+.confirmList>div{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #e3e9ee;padding-bottom:6px}
+.confirmList dt{color:#5f7184}
+.confirmList dd{margin:0;font-weight:800}
+.dialogActions{justify-content:flex-end}
+@media(max-width:760px){.filters{grid-template-columns:1fr 1fr}.search{grid-column:1/-1}}
+@media(max-width:480px){.summary{grid-template-columns:1fr 1fr 1fr;gap:6px}.summary>div{padding:10px}.summary strong{font-size:22px}.filters{grid-template-columns:1fr}.actions>button{flex:1 1 100%}.page>header h1{font-size:24px}}
