@@ -3,10 +3,10 @@ import { onSchedule } from "firebase-functions/v2/scheduler";
 import { createFirestoreRetentionCleanupReader, retentionCleanupLogSummary, runRetentionCleanup } from "./retentionCleanupJob.js";
 
 /**
- * Gate 4B-3A：每日自動清理排程（第二代 Scheduled Function）。
+ * Gate 4B-3A／4B-3B-2：每日自動清理排程（第二代 Scheduled Function）。
  *
- * ⚠️ 本檔「刻意未」從 index.ts 匯出，因此不會被 firebase deploy 部署，也不會建立 Cloud Scheduler 工作。
- *    啟用前需另行授權，在 index.ts 加上 `export { retentionCleanupDaily } from "./retentionCleanupSchedule.js";`。
+ * 自 Gate 4B-3B-2 起由 index.ts 匯出；部署時請只部署此函式：
+ *   npx firebase deploy --only functions:retentionCleanupDaily --project ysjh-public-affairs
  *
  * - 每天臺灣時間 03:00，地區 asia-east1，不自動重試（避免同日重複觸發）。
  * - 實際行為由 systemSettings/retentionCleanup 的 mode 決定：預設（缺少設定）為 off。

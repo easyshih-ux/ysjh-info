@@ -9,7 +9,8 @@ import {
   RETENTION_CLEANUP_MAX_PER_RUN, type RetentionCleanupReader,
 } from "../src/retentionCleanupJob.ts";
 
-const source = (path: string) => readFileSync(new URL(`../src/${path}`, import.meta.url), "utf8");
+// Windows（core.autocrlf=true）工作目錄為 CRLF；統一為 LF 後再比對原始碼。
+const source = (path: string) => readFileSync(new URL(`../src/${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const NOW = Date.parse("2027-01-20T01:00:00.000Z"); // 臺灣 2027-01-20
 const ts = (iso: string) => ({ toMillis: () => Date.parse(iso) });
 const announcement = (overrides: Record<string, unknown> = {}) => ({
@@ -136,7 +137,7 @@ test("正式 Firestore 讀取器只使用 get()，任何寫入或刪除都會使
   assert.equal(report.eligible, 1);
 });
 
-test("dry-run 與排程程式碼不含刪除或寫入能力；排程設定正確且未從 index.ts 匯出", () => {
+test("dry-run 與排程程式碼不含刪除或寫入能力；index.ts 只匯出排程函式，不匯出內部刪除或執行邏輯", () => {
   const job = source("retentionCleanupJob.ts");
   const schedule = source("retentionCleanupSchedule.ts");
   for (const code of [job, schedule]) {
@@ -144,8 +145,11 @@ test("dry-run 與排程程式碼不含刪除或寫入能力；排程設定正確
   }
   assert.match(schedule, /schedule: "0 3 \* \* \*", timeZone: "Asia\/Taipei", region: "asia-east1", retryCount: 0/);
   const index = source("index.ts");
-  assert.doesNotMatch(index, /retentionCleanup/, "排程尚未授權部署，不得從 index.ts 匯出");
+  // Gate 4B-3B-2：只匯出排程函式；不得匯出 dry-run 執行邏輯以外的清理入口或內部刪除函式。
+  const retentionExports = index.split("\n").filter(line => /^export[^\n]*retention/i.test(line));
+  assert.deepEqual(retentionExports, ['export { retentionCleanupDaily } from "./retentionCleanupSchedule.js";']);
   assert.doesNotMatch(index, /export[^\n]*permanentlyDeleteAnnouncement/, "內部刪除函式不得成為 Cloud Function 入口");
+  assert.doesNotMatch(index, /retentionCleanupJob|runRetentionCleanup/, "index.ts 不直接引用執行邏輯");
 });
 
 // ===== 共用永久刪除函式 =====
@@ -257,4 +261,15 @@ test("日誌摘要：錯誤最多 20 筆且每筆截斷；不合法的 mode 只�
   assert.equal(summary.startedAtTaipei, "2027-01-20 00:30:00 (Asia/Taipei)", "UTC 16:30 為臺灣隔天 00:30");
   assert.equal(formatTaipeiDateTime(Date.parse("2026-12-31T15:59:59Z")), "2026-12-31 23:59:59");
   assert.equal(retentionCleanupLogSummary({ ...report, requestedMode: undefined }).requestedMode, "(missing)");
+});
+
+test("index.ts 匯出的排程函式：部署設定為每天 03:00、Asia/Taipei、asia-east1、不重試", async () => {
+  const { retentionCleanupDaily } = await import("../src/index.ts");
+  const endpoint = (retentionCleanupDaily as unknown as { __endpoint: Record<string, unknown> }).__endpoint;
+  const trigger = endpoint.scheduleTrigger as Record<string, unknown>;
+  assert.equal(trigger.schedule, "0 3 * * *");
+  assert.equal(trigger.timeZone, "Asia/Taipei");
+  assert.deepEqual(endpoint.region, ["asia-east1"]);
+  assert.equal((trigger.retryConfig as Record<string, unknown>).retryCount, 0);
+  assert.equal(endpoint.platform, "gcfv2");
 });

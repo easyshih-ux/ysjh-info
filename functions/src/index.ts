@@ -55,6 +55,8 @@ export const syncFollowUpSummary = onDocumentWritten(
 
 export { syncFollowUpSummaryChange } from "./followUpSummary.js";
 export { getAdminUsageStatistics } from "./adminUsageStatistics.js";
+// Gate 4B-3B-2：每日自動清理排程（僅 off／dryRun；live 一律拒絕，無刪除能力）。
+export { retentionCleanupDaily } from "./retentionCleanupSchedule.js";
 
 export async function manageAnnouncementLifecycleHandler(
   request: { auth?: { uid: string } | null; data: unknown },
