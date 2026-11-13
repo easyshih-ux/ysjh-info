@@ -17,10 +17,11 @@ import { createRetentionDeleter } from "./retentionCleanupLive.js";
  */
 
 /**
- * 正式刪除的程式碼層級開關。⚠️ 維持 false：即使設定被改為 live，排程也只會回報 rejectedLive，
- * 不建立刪除器、不掃描、不刪除。正式啟用須另行授權，修改此常數為 true 並重新部署此函式。
+ * 正式刪除的程式碼層級開關。Gate 4C（2026-11-13）經管理員授權改為 true。
+ * 仍需 systemSettings/retentionCleanup 的 mode 為 live 才會刪除；mode 為 dryRun 或 off 時不刪除。
+ * 緊急停用：把設定 mode 改為 dryRun 或 off（不需重新部署）；必要時再將此常數改回 false 並重新部署。
  */
-export const RETENTION_CLEANUP_LIVE_ALLOWED = false;
+export const RETENTION_CLEANUP_LIVE_ALLOWED = true;
 
 export const retentionCleanupDaily = onSchedule(
   { schedule: "0 3 * * *", timeZone: "Asia/Taipei", region: "asia-east1", retryCount: 0 },

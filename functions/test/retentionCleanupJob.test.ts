@@ -138,19 +138,19 @@ test("正式 Firestore 讀取器只使用 get()，任何寫入或刪除都會使
   assert.equal(report.eligible, 1);
 });
 
-test("執行邏輯不含寫入或刪除；排程只在程式碼開關為 true 時建立刪除器，且開關維持 false；index.ts 只匯出排程函式", async () => {
+test("執行邏輯不含寫入或刪除；排程只在程式碼開關為 true 時建立刪除器（Gate 4C 經授權開啟）；index.ts 只匯出排程函式", async () => {
   const job = source("retentionCleanupJob.ts");
   const schedule = source("retentionCleanupSchedule.ts");
   assert.doesNotMatch(job, /announcementDeletion|permanentlyDeleteAnnouncement\(|recursiveDelete|deleteFiles|getStorage|runTransaction|\.batch\(|\.set\(|\.update\(|\.delete\(|\.add\(|deletionStartedAt:/);
   assert.match(job, /^import type \{ RetentionDeleter, RetentionDeletionOutcome \} from "\.\/retentionCleanupLive\.js";$/m, "執行邏輯只引用刪除器的型別");
-  // 排程：刪除功能只能透過開關建立；開關必須為 false。
-  assert.match(schedule, /^export const RETENTION_CLEANUP_LIVE_ALLOWED = false;$/m);
+  // 排程：刪除功能只能透過開關建立；Gate 4C（2026-11-13）經管理員授權將開關設為 true。
+  assert.match(schedule, /^export const RETENTION_CLEANUP_LIVE_ALLOWED = true;$/m);
   assert.match(schedule, /const deleter = RETENTION_CLEANUP_LIVE_ALLOWED\n\s*\? createRetentionDeleter\(/);
   assert.match(schedule, /runRetentionCleanup\([^\n]*\{ allowLive: RETENTION_CLEANUP_LIVE_ALLOWED, deleter \}\)/);
   assert.equal(schedule.match(/createRetentionDeleter\(/g)?.length, 1);
   assert.doesNotMatch(schedule, /permanentlyDeleteAnnouncement|recursiveDelete|deleteFiles|runTransaction|\.set\(|\.update\(|\.delete\(|deletionStartedAt:/);
   const { RETENTION_CLEANUP_LIVE_ALLOWED } = await import("../src/retentionCleanupSchedule.ts");
-  assert.equal(RETENTION_CLEANUP_LIVE_ALLOWED, false, "正式刪除開關必須維持關閉，啟用須另行授權");
+  assert.equal(RETENTION_CLEANUP_LIVE_ALLOWED, true, "Gate 4C 經授權開啟；實際刪除仍需設定 mode 為 live");
   assert.match(schedule, /schedule: "0 3 \* \* \*", timeZone: "Asia\/Taipei", region: "asia-east1", retryCount: 0/);
   const index = source("index.ts");
   // Gate 4B-3B-2：只匯出排程函式；不得匯出 dry-run 執行邏輯以外的清理入口或內部刪除函式。
