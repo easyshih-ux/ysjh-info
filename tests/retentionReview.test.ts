@@ -194,7 +194,9 @@ test("頁面：前端 systemAdmin 檢查、入口只給 systemAdmin、切換篩�
   assert.match(page, /<AdminAuthGuard><RetentionReviewGate \/><\/AdminAuthGuard>/);
   assert.match(page, /if \(publisher\.role !== "systemAdmin"\) \{\n\s*return [^\n]*此功能僅供系統管理員使用/);
   const admin = source("app/admin/page.tsx");
-  assert.match(admin, /\{isSystemAdmin && <Link href="\/admin\/retention-review">/);
+  // 監控頁 Gate 3 起，入口移到 systemAdmin 專屬的「進階管理」區（網址不變）。
+  assert.match(admin, /\{isSystemAdmin && <>\n[^]*?進階管理[^]*?<Link href="\/admin\/retention-review">[^]*?<\/>\}/);
+  assert.equal(admin.match(/href="\/admin\/retention-review"/g)?.length, 1, "入口只出現一次");
   const view = source("app/admin/retention-review/retention-review-view.tsx");
   assert.match(view, /const changeFilters = [^\n]*setSelected\(new Set\(\)\)/);
   assert.match(view, /const changePage = [^\n]*setSelected\(new Set\(\)\)/);

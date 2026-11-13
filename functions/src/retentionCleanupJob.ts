@@ -95,6 +95,41 @@ async function readOrNull(read: () => Promise<unknown[]>, errors: string[], labe
   }
 }
 
+/**
+ * 逐篇判斷清理資格（排程與監控頁共用，確保兩者判斷一致）。
+ * 非 autoCleanup 或刪除中的公告一定會被跳過，不必讀取子集合（以空陣列傳入不影響跳過結果）。
+ * 單篇子集合讀取失敗 → 以 null 傳入判斷，該篇跳過（unavailable），錯誤記入 errors。
+ */
+export async function evaluateAnnouncementsForCleanup(
+  reader: Pick<RetentionCleanupReader, "readFollowUps" | "readLineNotices">,
+  announcements: readonly { id: string; data: unknown }[],
+  today: string,
+  errors: string[],
+): Promise<RetentionCleanupDecision[]> {
+  const decisions: RetentionCleanupDecision[] = [];
+  for (const { id, data } of announcements) {
+    const shouldRead = needsSubcollections(data);
+    const input: RetentionCleanupInput = {
+      id, data, today,
+      followUps: shouldRead ? await readOrNull(() => reader.readFollowUps(id), errors, `followUps/${id}`) : [],
+      lineNotices: shouldRead ? await readOrNull(() => reader.readLineNotices(id), errors, `lineNotices/${id}`) : [],
+    };
+    decisions.push(evaluateRetentionCleanup(input));
+  }
+  return decisions;
+}
+
+/** 符合資格者依最終清理日期由早到晚（同日依 ID）排序；排程與監控頁共用。 */
+export function planRetentionDeletions(decisions: readonly RetentionCleanupDecision[]): RetentionCleanupPlanItem[] {
+  return decisions
+    .filter(decision => decision.eligible && decision.finalCleanupDate)
+    .map((decision): RetentionCleanupPlanItem => ({
+      id: decision.id, finalCleanupDate: decision.finalCleanupDate as string, category: decision.category,
+      basisDate: decision.basisDate, baseCleanupDate: decision.baseCleanupDate, latestUpdateDate: decision.latestUpdateDate, protectionDate: decision.protectionDate,
+    }))
+    .sort((a, b) => a.finalCleanupDate.localeCompare(b.finalCleanupDate) || a.id.localeCompare(b.id));
+}
+
 export async function runRetentionCleanup(reader: RetentionCleanupReader, nowMilliseconds: number, options: RetentionCleanupRunOptions = {}): Promise<RetentionCleanupRunReport> {
   const today = taipeiDateKeyFromMillis(nowMilliseconds);
   const report: RetentionCleanupRunReport = {
@@ -131,28 +166,12 @@ export async function runRetentionCleanup(reader: RetentionCleanupReader, nowMil
     return report;
   }
 
-  for (const { id, data } of announcements) {
-    // 非 autoCleanup 或刪除中的公告一定會被跳過，不必讀取子集合（以空陣列傳入不影響跳過結果）。
-    const shouldRead = needsSubcollections(data);
-    const input: RetentionCleanupInput = {
-      id, data, today,
-      followUps: shouldRead ? await readOrNull(() => reader.readFollowUps(id), report.errors, `followUps/${id}`) : [],
-      lineNotices: shouldRead ? await readOrNull(() => reader.readLineNotices(id), report.errors, `lineNotices/${id}`) : [],
-    };
-    report.decisions.push(evaluateRetentionCleanup(input));
-  }
-
+  report.decisions = await evaluateAnnouncementsForCleanup(reader, announcements, today, report.errors);
   const summary = summarizeRetentionCleanup(report.decisions);
   report.scanned = summary.total;
   report.eligible = summary.eligible;
   report.skippedByReason = summary.skippedByReason;
-  const plan = report.decisions
-    .filter(decision => decision.eligible && decision.finalCleanupDate)
-    .map((decision): RetentionCleanupPlanItem => ({
-      id: decision.id, finalCleanupDate: decision.finalCleanupDate as string, category: decision.category,
-      basisDate: decision.basisDate, baseCleanupDate: decision.baseCleanupDate, latestUpdateDate: decision.latestUpdateDate, protectionDate: decision.protectionDate,
-    }))
-    .sort((a, b) => a.finalCleanupDate.localeCompare(b.finalCleanupDate) || a.id.localeCompare(b.id));
+  const plan = planRetentionDeletions(report.decisions);
   report.wouldDeleteToday = plan.slice(0, settings.maxDeletesPerRun);
   report.deferred = plan.slice(settings.maxDeletesPerRun);
 

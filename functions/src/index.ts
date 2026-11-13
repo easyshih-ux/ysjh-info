@@ -55,8 +55,10 @@ export const syncFollowUpSummary = onDocumentWritten(
 
 export { syncFollowUpSummaryChange } from "./followUpSummary.js";
 export { getAdminUsageStatistics } from "./adminUsageStatistics.js";
-// Gate 4B-3B-2：每日自動清理排程（僅 off／dryRun；live 一律拒絕，無刪除能力）。
+// 每日自動清理排程（模式由 systemSettings/retentionCleanup 決定；Gate 4C 起可於 live 模式刪除到期公告）。
 export { retentionCleanupDaily } from "./retentionCleanupSchedule.js";
+// 自動清理監控：systemAdmin 專用的唯讀狀態查詢（不刪除、不寫入、不觸發排程）。
+export { getRetentionCleanupStatus } from "./retentionCleanupStatus.js";
 
 export async function manageAnnouncementLifecycleHandler(
   request: { auth?: { uid: string } | null; data: unknown },

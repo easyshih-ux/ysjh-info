@@ -153,9 +153,12 @@ test("執行邏輯不含寫入或刪除；排程只在程式碼開關為 true �
   assert.equal(RETENTION_CLEANUP_LIVE_ALLOWED, true, "Gate 4C 經授權開啟；實際刪除仍需設定 mode 為 live");
   assert.match(schedule, /schedule: "0 3 \* \* \*", timeZone: "Asia\/Taipei", region: "asia-east1", retryCount: 0/);
   const index = source("index.ts");
-  // Gate 4B-3B-2：只匯出排程函式；不得匯出 dry-run 執行邏輯以外的清理入口或內部刪除函式。
+  // 只匯出排程函式與唯讀監控查詢；不得匯出執行邏輯、正式刪除流程或內部刪除函式。
   const retentionExports = index.split("\n").filter(line => /^export[^\n]*retention/i.test(line));
-  assert.deepEqual(retentionExports, ['export { retentionCleanupDaily } from "./retentionCleanupSchedule.js";']);
+  assert.deepEqual(retentionExports, [
+    'export { retentionCleanupDaily } from "./retentionCleanupSchedule.js";',
+    'export { getRetentionCleanupStatus } from "./retentionCleanupStatus.js";',
+  ]);
   assert.doesNotMatch(index, /export[^\n]*permanentlyDeleteAnnouncement/, "內部刪除函式不得成為 Cloud Function 入口");
   assert.doesNotMatch(index, /retentionCleanupJob|runRetentionCleanup/, "index.ts 不直接引用執行邏輯");
 });
