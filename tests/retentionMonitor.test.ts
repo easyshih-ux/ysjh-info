@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   classifyRetentionRow, countRowStates, daysBetween, filterRetentionRows, formatDateKey, formatTaipeiDateTime, paginateRows,
   RETENTION_MODE_INFO, RETENTION_PREVIEW_PAGE_SIZE, RETENTION_ROW_STATE_LABELS, retentionReasonLabels, type RetentionStatusAnnouncement,
+  assessRetentionRunHistory, latestExpectedRunSlot, retentionRunResultInfo, RETENTION_RUN_RESULT_LABELS,
 } from "../lib/retentionMonitor.ts";
 
 const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
@@ -90,7 +91,8 @@ test("M7 監控頁：systemAdmin 守門、只呼叫唯讀 callable、沒有刪�
     assert.doesNotMatch(text, /永久刪除<\/|刪除公告<\/|>刪除</);
   }
   assert.match(view, /僅重新檢查，不會刪除或修改公告。/);
-  assert.match(view, /執行紀錄尚未啟用/);
+  assert.match(view, /歷史紀錄尚未開始累積/);
+  assert.doesNotMatch(view, /執行紀錄尚未啟用/, "Gate 5A 起改為「尚未開始累積」");
   assert.match(view, /60 天內到期/);
   assert.match(view, /全部公告/);
 });
@@ -124,4 +126,69 @@ test("M9 前端載入的 functions 原始碼不得依賴 firebase-admin／fireba
   }
   assert.ok(visited.has("functions/src/retentionCleanupStatusTypes.ts"));
   assert.ok(!visited.has("functions/src/retentionCleanupStatus.ts"));
+});
+
+test("M10 執行結果中文化：六種已知結果；缺少或未知一律「狀態待確認」，絕不顯示成功", () => {
+  const expected = { completed: "正常完成", completedWithErrors: "完成但有異常", stoppedAfterFailure: "發生錯誤，已停止", off: "清理已停用", rejected: "執行遭拒絕", failed: "執行失敗" };
+  assert.deepEqual(RETENTION_RUN_RESULT_LABELS, expected);
+  for (const [result, label] of Object.entries(expected)) assert.deepEqual([retentionRunResultInfo(result).label, retentionRunResultInfo(result).known], [label, true]);
+  assert.equal(retentionRunResultInfo("completed").tone, "ok");
+  assert.equal(retentionRunResultInfo("stoppedAfterFailure").tone, "error");
+  assert.equal(retentionRunResultInfo("off").tone, "neutral", "off 不是錯誤");
+  for (const value of [null, undefined, "", "success", "COMPLETED", "toString", "__proto__"]) {
+    const info = retentionRunResultInfo(value as string | null);
+    assert.deepEqual(info, { label: "狀態待確認", tone: "unknown", known: false }, String(value));
+  }
+});
+
+// 臺灣時間 → UTC ISO（臺灣固定 UTC+8）
+const taipei = (local: string) => new Date(Date.parse(`${local}+08:00`)).toISOString();
+const runAt = (local: string) => ({ startedAt: taipei(local) });
+
+test("M11 03:00 前後與 05:00 寫入緩衝的時間判斷", () => {
+  // 11/14 04:59 → 今天 03:00 的紀錄還在緩衝內，只要求 11/13 03:00
+  assert.equal(new Date(latestExpectedRunSlot(Date.parse(taipei("2026-11-14T04:59:59")))).toISOString(), taipei("2026-11-13T03:00:00"));
+  // 11/14 05:00 起要求 11/14 03:00
+  assert.equal(new Date(latestExpectedRunSlot(Date.parse(taipei("2026-11-14T05:00:00")))).toISOString(), taipei("2026-11-14T03:00:00"));
+  // 臺灣 00:30（UTC 仍是前一天 16:30）→ 要求前一天 03:00
+  assert.equal(new Date(latestExpectedRunSlot(Date.parse(taipei("2026-11-14T00:30:00")))).toISOString(), taipei("2026-11-13T03:00:00"));
+  const yesterday = [runAt("2026-11-13T03:00:04")];
+  assert.equal(assessRetentionRunHistory(yesterday, taipei("2026-11-14T03:01:00")).kind, "current", "03:00 剛過不提醒");
+  assert.equal(assessRetentionRunHistory(yesterday, taipei("2026-11-14T04:59:00")).kind, "current", "緩衝內不提醒");
+  assert.equal(assessRetentionRunHistory(yesterday, taipei("2026-11-14T05:00:00")).kind, "overdue", "05:00 仍沒有今天的紀錄才提醒");
+  assert.equal(assessRetentionRunHistory([runAt("2026-11-14T03:00:02"), ...yesterday], taipei("2026-11-14T05:00:00")).kind, "current");
+  assert.equal(assessRetentionRunHistory([runAt("2026-11-14T02:59:58")], taipei("2026-11-14T09:00:00")).kind, "current", "提早幾秒觸發仍算當天");
+  assert.equal(assessRetentionRunHistory([runAt("2026-11-14T02:30:00")], taipei("2026-11-14T09:00:00")).kind, "overdue", "超過容許範圍的舊紀錄不算");
+});
+
+test("M12 延遲只提醒：沒有紀錄不提醒；off 與失敗紀錄都代表排程有執行；時間無法判讀另行提醒", () => {
+  assert.deepEqual(assessRetentionRunHistory([], taipei("2027-03-01T12:00:00")), { kind: "notStarted" }, "尚未部署或尚未執行：不誤報");
+  const now = taipei("2026-11-14T10:00:00");
+  const offToday = [{ startedAt: taipei("2026-11-14T03:00:03"), result: "off" }];
+  assert.equal(assessRetentionRunHistory(offToday, now).kind, "current", "off 模式的正常紀錄不視為故障");
+  assert.equal(assessRetentionRunHistory([{ startedAt: taipei("2026-11-14T03:00:03"), result: "stoppedAfterFailure" }], now).kind, "current", "延遲提醒只看是否有新紀錄");
+  const stale = assessRetentionRunHistory([runAt("2026-11-11T03:00:03"), runAt("2026-11-12T03:00:03")], now);
+  assert.deepEqual(stale, { kind: "overdue", latestStartedAt: taipei("2026-11-12T03:00:03"), expectedSlot: taipei("2026-11-14T03:00:00") }, "以最新一筆判斷，不依賴排序");
+  assert.deepEqual(assessRetentionRunHistory([{ startedAt: null }, { startedAt: "bad" }], now), { kind: "unreadable" });
+  assert.equal(assessRetentionRunHistory([runAt("2026-11-11T03:00:03")], "not-a-date").kind, "current", "伺服器時間無效時不提醒");
+});
+
+test("M13 介面：結果標籤與延遲提醒文字；提醒不宣稱清理失敗", () => {
+  const view = source("app/admin/retention-monitor/retention-monitor-view.tsx");
+  assert.match(view, /<ResultBadge result=\{latestRun\.result\} \/>/);
+  assert.match(view, /<ResultBadge result=\{run\.result\} \/>/);
+  assert.match(view, /近期未取得新的執行紀錄，建議確認排程狀態/);
+  assert.match(view, /assessRetentionRunHistory\(data\.runs, data\.generatedAt\)/, "以伺服器時間判斷");
+  assert.doesNotMatch(view, /自動清理失敗<|清理失敗了|排程異常</);
+  assert.match(view, /不代表自動清理失敗/);
+});
+
+test("M14 例外紀錄（數量為 null）：介面不顯示 0、不顯示正常完成，改為「無法確認」", () => {
+  const view = source("app/admin/retention-monitor/retention-monitor-view.tsx");
+  assert.match(view, /if \(run\.scanned === null && run\.deleted === null && run\.failed === null\) return `\$\{mode\}：處理篇數無法確認，請查閱 Cloud Logging`;/);
+  assert.match(view, /run\.scanned === null \? "本次處理結果無法確認，請查閱 Cloud Logging。" : "本次沒有處理任何公告。"/);
+  assert.match(view, /掃描 \{run\.scanned \?\? "—"\}/);
+  assert.match(view, /刪除 \{run\.deleted \?\? "—"\}/);
+  assert.match(view, /失敗 \{run\.failed \?\? "—"\}/);
+  assert.deepEqual(retentionRunResultInfo("failed"), { label: "執行失敗", tone: "error", known: true });
 });

@@ -110,3 +110,70 @@ export const RETENTION_RUN_OUTCOME_LABELS: Record<string, string> = {
   race_unclaimed: "處理期間資料變動，已還原",
   failed: "失敗（交由管理員處理）",
 };
+
+/** 執行結果（Gate 5 紀錄的 result）中文化；只翻譯，不修改原始值。 */
+export const RETENTION_RUN_RESULT_LABELS: Record<string, string> = {
+  completed: "正常完成",
+  completedWithErrors: "完成但有異常",
+  stoppedAfterFailure: "發生錯誤，已停止",
+  off: "清理已停用",
+  rejected: "執行遭拒絕",
+  failed: "執行失敗",
+};
+export type RetentionRunResultTone = "ok" | "warning" | "error" | "neutral" | "unknown";
+const RESULT_TONES: Record<string, RetentionRunResultTone> = {
+  completed: "ok", completedWithErrors: "warning", stoppedAfterFailure: "error", off: "neutral", rejected: "warning", failed: "error",
+};
+export const RETENTION_RUN_RESULT_UNKNOWN_LABEL = "狀態待確認";
+
+/** 缺少或未知的 result 一律顯示「狀態待確認」，不推定為成功。 */
+export function retentionRunResultInfo(result: string | null | undefined): { label: string; tone: RetentionRunResultTone; known: boolean } {
+  if (typeof result === "string" && Object.hasOwn(RETENTION_RUN_RESULT_LABELS, result)) return { label: RETENTION_RUN_RESULT_LABELS[result], tone: RESULT_TONES[result], known: true };
+  return { label: RETENTION_RUN_RESULT_UNKNOWN_LABEL, tone: "unknown", known: false };
+}
+
+/** 排程時間：每天臺灣時間 03:00（臺灣固定 UTC+8）。 */
+export const RETENTION_SCHEDULE_HOUR_TAIPEI = 3;
+/** 寫入緩衝：03:00 執行後到 05:00 前都不提醒（涵蓋排程延遲、冷啟動與清理處理時間）。 */
+export const RETENTION_RUN_RECORD_GRACE_MILLISECONDS = 2 * 3_600_000;
+/** 排程可能提早幾秒觸發，紀錄時間稍早於 03:00 仍視為該次執行。 */
+export const RETENTION_RUN_EARLY_TOLERANCE_MILLISECONDS = 10 * 60_000;
+const DAY = 86_400_000;
+const TAIPEI_OFFSET = 8 * 3_600_000;
+
+/**
+ * 「此刻應該已經有紀錄」的最近一次排程時間（UTC 毫秒）。
+ * 今天 03:00 的紀錄要到今天 05:00 之後才要求；在那之前只要求昨天 03:00 的紀錄。
+ */
+export function latestExpectedRunSlot(nowMilliseconds: number) {
+  const taipeiDayStart = Math.floor((nowMilliseconds + TAIPEI_OFFSET) / DAY) * DAY - TAIPEI_OFFSET;
+  const todaySlot = taipeiDayStart + RETENTION_SCHEDULE_HOUR_TAIPEI * 3_600_000;
+  return nowMilliseconds >= todaySlot + RETENTION_RUN_RECORD_GRACE_MILLISECONDS ? todaySlot : todaySlot - DAY;
+}
+
+export type RetentionRunHistoryHealth =
+  | { kind: "notStarted" }
+  | { kind: "current"; latestStartedAt: string }
+  | { kind: "overdue"; latestStartedAt: string; expectedSlot: string }
+  | { kind: "unreadable" };
+
+/**
+ * 歷史紀錄延遲提醒（只提醒，不宣稱清理失敗）：
+ * - 沒有任何紀錄 → notStarted（尚未部署或尚未執行第一次；不提醒）。
+ *   沒有可靠的「開始記錄時間」資料來源，因此不硬編碼日期，而以「是否已有任何紀錄」作為開始累積的依據。
+ * - 任何結果（含 off、失敗）都代表排程有執行；只看最新一筆的開始時間。
+ * - 最新紀錄早於「應有紀錄的最近一次 03:00」（扣除提早容許）→ overdue。
+ * - 有紀錄但時間都無法判讀 → unreadable。
+ * now 使用 callable 回傳的伺服器時間（generatedAt），不依賴使用者裝置時鐘。
+ */
+export function assessRetentionRunHistory(runs: readonly Pick<RetentionRunSummary, "startedAt">[], nowIso: string): RetentionRunHistoryHealth {
+  if (runs.length === 0) return { kind: "notStarted" };
+  const times = runs.map(run => (run.startedAt ? Date.parse(run.startedAt) : Number.NaN)).filter(value => Number.isFinite(value));
+  if (times.length === 0) return { kind: "unreadable" };
+  const latest = Math.max(...times);
+  const latestStartedAt = new Date(latest).toISOString();
+  const now = Date.parse(nowIso);
+  if (!Number.isFinite(now)) return { kind: "current", latestStartedAt };
+  const slot = latestExpectedRunSlot(now);
+  return latest < slot - RETENTION_RUN_EARLY_TOLERANCE_MILLISECONDS ? { kind: "overdue", latestStartedAt, expectedSlot: new Date(slot).toISOString() } : { kind: "current", latestStartedAt };
+}

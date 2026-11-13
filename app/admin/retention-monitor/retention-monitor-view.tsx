@@ -5,8 +5,8 @@ import { useMemo, useState } from "react";
 import { ArrowLeft, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
-  classifyRetentionRow, countRowStates, daysBetween, filterRetentionRows, formatDateKey, formatTaipeiDateTime, paginateRows,
-  RETENTION_MODE_INFO, RETENTION_PREVIEW_PAGE_SIZE, RETENTION_ROW_STATE_LABELS, RETENTION_RUN_OUTCOME_LABELS, retentionReasonLabels,
+  assessRetentionRunHistory, classifyRetentionRow, countRowStates, daysBetween, filterRetentionRows, formatDateKey, formatTaipeiDateTime, paginateRows,
+  RETENTION_MODE_INFO, RETENTION_PREVIEW_PAGE_SIZE, RETENTION_ROW_STATE_LABELS, RETENTION_RUN_OUTCOME_LABELS, retentionReasonLabels, retentionRunResultInfo,
   type RetentionCleanupStatus, type RetentionPreviewFilter, type RetentionRowState, type RetentionRunSummary, type RetentionStatusAnnouncement,
 } from "@/lib/retentionMonitor";
 import styles from "./retention-monitor.module.css";
@@ -35,6 +35,7 @@ export function RetentionMonitorView({ state, onRefresh }: { state: RetentionMon
 function ReadyView({ data, refreshing, refreshError, onRefresh }: { data: RetentionCleanupStatus; refreshing: boolean; refreshError?: string; onRefresh: () => void }) {
   const mode = RETENTION_MODE_INFO[data.settings.mode];
   const latestRun = data.runs[0];
+  const history = assessRetentionRunHistory(data.runs, data.generatedAt);
   return <>
     <section className={styles.section} aria-labelledby="status-title">
       <h2 id="status-title">自動清理狀態</h2>
@@ -50,10 +51,12 @@ function ReadyView({ data, refreshing, refreshError, onRefresh }: { data: Retent
           <span>最近一次執行</span>
           {latestRun ? <>
             <strong>{runTime(latestRun)}</strong>
+            <ResultBadge result={latestRun.result} />
             <small>{runResultText(latestRun)}{(latestRun.errorCount ?? 0) > 0 ? `；錯誤 ${latestRun.errorCount} 筆` : "；無錯誤"}</small>
-          </> : <><strong>執行紀錄尚未啟用</strong><small>每日排程目前只寫入系統日誌；網站執行紀錄將於後續階段啟用。</small></>}
+          </> : <><strong>歷史紀錄尚未開始累積</strong><small>排程執行後才會產生第一筆紀錄；尚無紀錄不代表清理失敗。</small></>}
         </div>
       </div>
+      <HistoryNotice history={history} />
       {data.errors.length > 0 && <p className={styles.warning} role="status">本次查詢有 {data.errors.length} 項資料讀取異常（受影響的公告已列為安全阻擋，不會被清理）：{data.errors.slice(0, 3).join("；")}</p>}
     </section>
 
@@ -81,8 +84,34 @@ function runTime(run: RetentionRunSummary) {
   return formatted !== "—" ? formatted : run.startedAtTaipei ? run.startedAtTaipei.replace(" (Asia/Taipei)", "").slice(0, 16).replaceAll("-", "/") : "—";
 }
 
+/** 執行結果中文標籤：缺少或未知一律「狀態待確認」，不推定為成功。 */
+function ResultBadge({ result }: { result: string | null }) {
+  const info = retentionRunResultInfo(result);
+  return <span className={`${styles.resultBadge} ${styles[`result_${info.tone}`]}`}>{info.label}</span>;
+}
+
+/** 歷史紀錄延遲提醒：只提醒確認排程，不宣稱清理失敗；尚無紀錄時不提醒。 */
+function HistoryNotice({ history }: { history: ReturnType<typeof assessRetentionRunHistory> }) {
+  if (history.kind === "overdue") return <div className={styles.warning} role="status">
+    <strong>近期未取得新的執行紀錄，建議確認排程狀態</strong>
+    <p>最近一筆紀錄：{formatTaipeiDateTime(history.latestStartedAt)}；預期應已有 {formatTaipeiDateTime(history.expectedSlot)} 的執行紀錄（排程 03:00 執行，05:00 前視為寫入緩衝）。這只是提醒，不代表自動清理失敗。</p>
+  </div>;
+  if (history.kind === "unreadable") return <div className={styles.warning} role="status">
+    <strong>執行紀錄的時間無法判讀，建議確認排程狀態</strong>
+    <p>這只是提醒，不代表自動清理失敗。</p>
+  </div>;
+  return null;
+}
+
+/** 紀錄中的執行模式中文化（最近一次執行卡片與紀錄列表共用）。 */
+function runModeLabel(mode: string | null) {
+  return mode === "live" ? "正式清理" : mode === "dryRun" ? "模擬檢查" : mode === "off" ? "已停止" : "未知模式";
+}
+
 function runResultText(run: RetentionRunSummary) {
-  const mode = run.mode === "live" ? "正式清理" : run.mode === "dryRun" ? "模擬檢查" : run.mode === "off" ? "已停止" : (run.mode ?? "未知模式");
+  const mode = runModeLabel(run.mode);
+  // 數量無法確認（例如清理途中發生未預期例外）時不顯示任何數字，避免被讀成 0。
+  if (run.scanned === null && run.deleted === null && run.failed === null) return `${mode}：處理篇數無法確認，請查閱 Cloud Logging`;
   const parts = [`${mode}：掃描 ${run.scanned ?? "—"} 篇`];
   if (run.deleted !== null) parts.push(`刪除 ${run.deleted} 篇`);
   parts.push(`跳過 ${run.skipped ?? "—"} 篇`);
@@ -139,19 +168,20 @@ function RunsSection({ runs }: { runs: RetentionRunSummary[] }) {
   return <section className={styles.section} aria-labelledby="runs-title">
     <h2 id="runs-title">最近執行紀錄</h2>
     {runs.length === 0 ? <div className={styles.empty}>
-      <strong>執行紀錄尚未啟用</strong>
-      <p>每日排程目前只把結果寫入系統日誌（Cloud Logging）。網站上的執行紀錄將在後續階段啟用，屆時會顯示最近 30 次的執行時間、模式、掃描數、刪除數、跳過數與失敗數。</p>
+      <strong>歷史紀錄尚未開始累積</strong>
+      <p>排程每天臺灣時間 03:00 執行，完成後會新增一筆紀錄，這裡會顯示最近 30 次的執行時間、結果、模式、掃描數、刪除數、跳過數與失敗數。若剛完成部署，第一筆紀錄會在下一次排程執行後出現。尚無紀錄不代表自動清理失敗。</p>
     </div> : <ul className={styles.runs} aria-label="最近執行紀錄">{runs.map(run => <li key={run.id}>
       <details>
         <summary>
           <span>{runTime(run)}</span>
-          <span>{run.mode === "live" ? "正式清理" : run.mode === "dryRun" ? "模擬檢查" : run.mode ?? "—"}</span>
+          <ResultBadge result={run.result} />
+          <span>{runModeLabel(run.mode)}</span>
           <span>掃描 {run.scanned ?? "—"}</span>
           <span>刪除 {run.deleted ?? "—"}</span>
           <span>跳過 {run.skipped ?? "—"}</span>
           <span className={(run.failed ?? 0) > 0 ? styles.failed : undefined}>失敗 {run.failed ?? "—"}</span>
         </summary>
-        {run.results.length === 0 ? <p className={styles.hint}>本次沒有處理任何公告。</p>
+        {run.results.length === 0 ? <p className={styles.hint}>{run.scanned === null ? "本次處理結果無法確認，請查閱 Cloud Logging。" : "本次沒有處理任何公告。"}</p>
           : <ul className={styles.runResults}>{run.results.map(result => <li key={result.id}><code>{result.id}</code>{RETENTION_RUN_OUTCOME_LABELS[result.outcome] ?? result.outcome}{result.detail ? `（${result.detail}）` : ""}</li>)}</ul>}
       </details>
     </li>)}</ul>}

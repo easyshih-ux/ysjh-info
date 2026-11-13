@@ -30,6 +30,8 @@ export interface RetentionRunSummary {
   startedAtTaipei: string | null;
   status: string | null;
   mode: string | null;
+  /** Gate 5 起的整體結果（completed、stoppedAfterFailure…）；舊紀錄或缺少時為 null，前端不得推定為成功。 */
+  result: string | null;
   scanned: number | null;
   eligible: number | null;
   skipped: number | null;

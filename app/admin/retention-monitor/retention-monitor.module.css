@@ -24,6 +24,8 @@
 .mode_off strong{color:#4f5f6e}
 .notice{margin:0;border-radius:8px;background:white;padding:14px;color:#49647d}
 .warning{margin:0;border-left:4px solid #c9a34e;background:#fff8e7;padding:10px 12px;color:#685328;font-size:14px}
+.warning strong{display:block;color:#5c4316}
+.warning p{margin:4px 0 0}
 .error{display:grid;gap:8px;justify-items:start;margin:0;border-left:4px solid #b43d3d;background:#fff0f0;color:#7c2929;padding:10px 12px}
 .error p{margin:0}
 .hint{margin:0;color:#6b7d8e;font-size:13px}
@@ -65,3 +67,9 @@
 .runResults code{margin-right:6px;font-size:12px}
 @media(max-width:860px){.statusGrid{grid-template-columns:1fr 1fr}.row{grid-template-columns:1fr 1fr}.rowMain{grid-column:1/-1}}
 @media(max-width:480px){.statusGrid{grid-template-columns:1fr}.row{grid-template-columns:1fr}.page>header h1{font-size:24px}.card strong{font-size:18px}}
+.resultBadge{display:inline-block;justify-self:start;width:max-content;max-width:100%;border-radius:999px;padding:1px 9px;font-size:13px;font-weight:800;line-height:1.6;white-space:nowrap}
+.result_ok{background:#e9f3ec;color:#2d5a43}
+.result_warning{background:#fff3dc;color:#7a4b00}
+.result_error{background:#fde8e6;color:#9b2c22}
+.result_neutral{background:#eceff3;color:#4f5f6e}
+.result_unknown{background:#f1f3f5;color:#4f5f6e;outline:1px dashed #9aa8b5;outline-offset:-1px}

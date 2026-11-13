@@ -1202,3 +1202,16 @@ test("62 Gate 4 create 必為 active 且不可帶 withdrawn metadata，撤回不
   await assertFails(updateDoc(doc(database, "announcements/own"), { latestFollowUp: deleteField() }));
   await assertFails(updateDoc(doc(database, "announcements/own"), { hasRelatedFollowUp: true }));
 });
+
+test("63 Gate 5 自動清理執行紀錄 retentionCleanupRuns：任何前端（含 systemAdmin、未登入）都不能讀寫，只能由後端 Admin SDK 寫入", async () => {
+  await seed("authorizedPublishers/adminA", profile("systemAdmin", true));
+  await seed("authorizedPublishers/userA", profile("publisher", true));
+  await seed("retentionCleanupRuns/2027-01-19T19-00-05.123Z", { runId: "2027-01-19T19-00-05.123Z", status: "live", scanned: 1 });
+  for (const database of [anonymousDb(), userDb("userA"), userDb("adminA")]) {
+    await assertFails(getDoc(doc(database, "retentionCleanupRuns/2027-01-19T19-00-05.123Z")));
+    await assertFails(getDocs(collection(database, "retentionCleanupRuns")));
+    await assertFails(setDoc(doc(database, "retentionCleanupRuns/forged"), { runId: "forged", status: "live" }));
+    await assertFails(updateDoc(doc(database, "retentionCleanupRuns/2027-01-19T19-00-05.123Z"), { scanned: 0 }));
+    await assertFails(deleteDoc(doc(database, "retentionCleanupRuns/2027-01-19T19-00-05.123Z")));
+  }
+});

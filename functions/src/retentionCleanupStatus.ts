@@ -6,6 +6,7 @@ import {
   createFirestoreRetentionCleanupReader, evaluateAnnouncementsForCleanup, formatTaipeiDateTime, parseRetentionCleanupSettings,
   planRetentionDeletions, RETENTION_CLEANUP_LOG_MAX_ERRORS, type RetentionCleanupReader,
 } from "./retentionCleanupJob.js";
+import { RETENTION_CLEANUP_RUNS_COLLECTION } from "./retentionCleanupRunRecord.js";
 
 /**
  * 自動清理監控（方案 C，Gate 2）：systemAdmin 專用的「唯讀」狀態查詢。
@@ -20,7 +21,8 @@ const REGION = "asia-east1";
 export const RETENTION_STATUS_CACHE_TTL_MILLISECONDS = 5 * 60 * 1000;
 export const RETENTION_STATUS_REFRESH_INTERVAL_MILLISECONDS = 60 * 1000;
 export const RETENTION_STATUS_MAX_RUNS = 30;
-export const RETENTION_CLEANUP_RUNS_COLLECTION = "retentionCleanupRuns";
+// 執行紀錄集合名稱與寫入端（排程）共用同一個常數。
+export { RETENTION_CLEANUP_RUNS_COLLECTION } from "./retentionCleanupRunRecord.js";
 // 回傳格式與排程常數定義於不依賴 firebase 套件的共用檔，前端可安全載入型別。
 export { RETENTION_CLEANUP_SCHEDULE } from "./retentionCleanupStatusTypes.js";
 export type { RetentionCleanupStatus, RetentionRunSummary, RetentionStatusAnnouncement } from "./retentionCleanupStatusTypes.js";
@@ -175,6 +177,7 @@ export function parseRunSummary({ id, data }: { id: string; data: unknown }): Re
     startedAtTaipei: stringOrNull(record.startedAtTaipei, 40),
     status: stringOrNull(record.status, 20),
     mode: stringOrNull(record.mode, 20),
+    result: stringOrNull(record.result, 30),
     scanned: numberOrNull(record.scanned),
     eligible: numberOrNull(record.eligible),
     skipped: numberOrNull(record.skipped),
