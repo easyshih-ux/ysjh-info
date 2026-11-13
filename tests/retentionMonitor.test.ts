@@ -105,3 +105,21 @@ test("M8 後台導覽：主要功能區有自動清理監控，舊公告審查�
   assert.match(advanced, /href="\/admin\/retention-review"/);
   for (const href of ["/publish", "/manage", "/admin/analytics", "/admin/publishers", "/"]) assert.match(main, new RegExp(`href="${href.replace(/\//g, "\\/")}"`));
 });
+
+test("M9 前端載入的 functions 原始碼不得依賴 firebase-admin／firebase-functions（CI 只安裝根目錄套件）", () => {
+  const visited = new Set<string>();
+  const queue = ["lib/retentionMonitor.ts"];
+  while (queue.length) {
+    const file = queue.shift() as string;
+    if (visited.has(file)) continue;
+    visited.add(file);
+    const text = source(file);
+    assert.doesNotMatch(text, /from "firebase-admin|from "firebase-functions/, `${file} 不得 import firebase-admin／firebase-functions`);
+    for (const [, spec] of text.matchAll(/from "(\.{1,2}\/[^"]+)"/g)) {
+      const resolved = new URL(spec.replace(/\.js$/, ".ts"), new URL(`../${file}`, import.meta.url)).pathname.replace(/^.*?\/ysjh-info\//, "");
+      if (resolved.startsWith("functions/")) queue.push(resolved);
+    }
+  }
+  assert.ok(visited.has("functions/src/retentionCleanupStatusTypes.ts"));
+  assert.ok(!visited.has("functions/src/retentionCleanupStatus.ts"));
+});

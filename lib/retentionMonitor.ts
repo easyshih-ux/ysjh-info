@@ -1,7 +1,7 @@
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { getFirebaseApp } from "./firebaseClient.ts";
 import { RETENTION_CLEANUP_SKIP_REASONS } from "../functions/src/retentionCleanup.ts";
-import type { RetentionCleanupStatus, RetentionRunSummary, RetentionStatusAnnouncement } from "../functions/src/retentionCleanupStatus.ts";
+import type { RetentionCleanupStatus, RetentionRunSummary, RetentionStatusAnnouncement } from "../functions/src/retentionCleanupStatusTypes.ts";
 
 export type { RetentionCleanupStatus, RetentionRunSummary, RetentionStatusAnnouncement };
 

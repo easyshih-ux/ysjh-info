@@ -1,6 +1,7 @@
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
-import { summarizeRetentionCleanup, taipeiDateKeyFromMillis, type RetentionCleanupDecision } from "./retentionCleanup.js";
+import { summarizeRetentionCleanup, taipeiDateKeyFromMillis } from "./retentionCleanup.js";
+import { RETENTION_CLEANUP_SCHEDULE, type RetentionCleanupStatus, type RetentionRunSummary, type RetentionStatusAnnouncement } from "./retentionCleanupStatusTypes.js";
 import {
   createFirestoreRetentionCleanupReader, evaluateAnnouncementsForCleanup, formatTaipeiDateTime, parseRetentionCleanupSettings,
   planRetentionDeletions, RETENTION_CLEANUP_LOG_MAX_ERRORS, type RetentionCleanupReader,
@@ -20,54 +21,9 @@ export const RETENTION_STATUS_CACHE_TTL_MILLISECONDS = 5 * 60 * 1000;
 export const RETENTION_STATUS_REFRESH_INTERVAL_MILLISECONDS = 60 * 1000;
 export const RETENTION_STATUS_MAX_RUNS = 30;
 export const RETENTION_CLEANUP_RUNS_COLLECTION = "retentionCleanupRuns";
-export const RETENTION_CLEANUP_SCHEDULE = { cron: "0 3 * * *", timeZone: "Asia/Taipei", label: "每天 03:00（臺灣時間）" } as const;
-
-export interface RetentionStatusAnnouncement {
-  id: string;
-  title: string;
-  department: string;
-  publicationStatus: string;
-  retentionPolicy: string | null;
-  category: RetentionCleanupDecision["category"];
-  basisDate: string | null;
-  baseCleanupDate: string | null;
-  latestUpdateDate: string | null;
-  protectionDate: string | null;
-  finalCleanupDate: string | null;
-  eligible: boolean;
-  skipReasons: string[];
-}
-
-export interface RetentionRunSummary {
-  id: string;
-  runDate: string | null;
-  startedAt: string | null;
-  startedAtTaipei: string | null;
-  status: string | null;
-  mode: string | null;
-  scanned: number | null;
-  eligible: number | null;
-  skipped: number | null;
-  deleted: number | null;
-  failed: number | null;
-  errorCount: number | null;
-  results: { id: string; outcome: string; detail?: string }[];
-}
-
-export interface RetentionCleanupStatus {
-  generatedAt: string;
-  generatedAtTaipei: string;
-  today: string;
-  cached: boolean;
-  refreshThrottled: boolean;
-  nextRefreshAt: string;
-  settings: { mode: "off" | "dryRun" | "live"; requestedMode: string; maxDeletesPerRun: number };
-  schedule: typeof RETENTION_CLEANUP_SCHEDULE;
-  summary: { scanned: number; eligible: number; skipped: number; skippedByReason: Partial<Record<string, number>>; wouldDeleteToday: string[]; deferredCount: number };
-  announcements: RetentionStatusAnnouncement[];
-  runs: RetentionRunSummary[];
-  errors: string[];
-}
+// 回傳格式與排程常數定義於不依賴 firebase 套件的共用檔，前端可安全載入型別。
+export { RETENTION_CLEANUP_SCHEDULE } from "./retentionCleanupStatusTypes.js";
+export type { RetentionCleanupStatus, RetentionRunSummary, RetentionStatusAnnouncement } from "./retentionCleanupStatusTypes.js";
 
 type StatusValue = Omit<RetentionCleanupStatus, "cached" | "refreshThrottled" | "nextRefreshAt">;
 export interface RetentionStatusCache { entry: { value: StatusValue; computedAt: number } | null; pending: Promise<StatusValue> | null }
