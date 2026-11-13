@@ -107,6 +107,8 @@ test("M8 後台導覽：主要功能區有自動清理監控，舊公告審查�
 });
 
 test("M9 前端載入的 functions 原始碼不得依賴 firebase-admin／firebase-functions（CI 只安裝根目錄套件）", () => {
+  // 以專案根目錄為基準計算相對路徑，不依賴資料夾名稱（CI 路徑為 /home/runner/work/ysjh-info/ysjh-info/）。
+  const repoRoot = new URL("../", import.meta.url).pathname;
   const visited = new Set<string>();
   const queue = ["lib/retentionMonitor.ts"];
   while (queue.length) {
@@ -116,7 +118,7 @@ test("M9 前端載入的 functions 原始碼不得依賴 firebase-admin／fireba
     const text = source(file);
     assert.doesNotMatch(text, /from "firebase-admin|from "firebase-functions/, `${file} 不得 import firebase-admin／firebase-functions`);
     for (const [, spec] of text.matchAll(/from "(\.{1,2}\/[^"]+)"/g)) {
-      const resolved = new URL(spec.replace(/\.js$/, ".ts"), new URL(`../${file}`, import.meta.url)).pathname.replace(/^.*?\/ysjh-info\//, "");
+      const resolved = new URL(spec.replace(/\.js$/, ".ts"), new URL(`../${file}`, import.meta.url)).pathname.slice(repoRoot.length);
       if (resolved.startsWith("functions/")) queue.push(resolved);
     }
   }
