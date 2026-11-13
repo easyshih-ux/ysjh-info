@@ -1,13 +1,16 @@
 import type { Firestore } from "firebase-admin/firestore";
 import { evaluateRetentionCleanup, summarizeRetentionCleanup, taipeiDateKeyFromMillis, type RetentionCleanupDecision, type RetentionCleanupInput } from "./retentionCleanup.js";
+import type { RetentionDeleter, RetentionDeletionOutcome } from "./retentionCleanupLive.js";
 
 /**
- * Gate 4B-3A：自動清理排程的執行邏輯（目前只支援 off 與 dryRun）。
+ * Gate 4B-3A／4B-4：自動清理排程的執行邏輯。
  *
  * 安全設計：
- * - 只接收唯讀的 RetentionCleanupReader；本模組沒有任何刪除或寫入的相依物件，dry-run 在結構上無法刪除。
+ * - 只接收唯讀的 RetentionCleanupReader；本模組本身不 import 任何寫入或刪除功能。
  * - 模式來自 systemSettings/retentionCleanup；缺少或不合法一律視為 off。
- * - live 在本階段一律拒絕：不掃描、不判斷、不刪除，只回報 rejectedLive。
+ * - dryRun 不會呼叫刪除器（即使呼叫端有提供）。
+ * - live 只有在呼叫端「同時」傳入 allowLive: true 與刪除器時才會執行；否則一律拒絕（rejectedLive），不掃描也不刪除。
+ *   正式刪除時依最終清理日期由早到晚，最多處理 maxDeletesPerRun 篇；任一篇失敗即停止，其餘列為 notAttempted。
  * - 單篇補充提醒或 LINE 通知讀取失敗 → 以 null 傳入判斷，該篇跳過（unavailable），不中斷其他公告。
  * - 報告只回傳給呼叫端（目前僅寫入 Cloud Logging）；本階段不寫入任何 Firestore 資料。
  */
@@ -54,7 +57,7 @@ export interface RetentionCleanupPlanItem {
 export interface RetentionCleanupRunReport {
   today: string;
   startedAt: string;
-  status: "off" | "dryRun" | "rejectedLive" | "failed";
+  status: "off" | "dryRun" | "live" | "rejectedLive" | "failed";
   mode: RetentionCleanupMode;
   requestedMode: unknown;
   maxDeletesPerRun: number;
@@ -66,7 +69,17 @@ export interface RetentionCleanupRunReport {
   deferred: RetentionCleanupPlanItem[];
   skippedByReason: Partial<Record<string, number>>;
   decisions: RetentionCleanupDecision[];
+  /** live：每篇實際處理結果（刪除、標記時跳過、競爭撤銷、失敗）。 */
+  liveResults: RetentionDeletionOutcome[];
+  /** live：因前一篇失敗而停止、未處理的公告。 */
+  notAttempted: string[];
   errors: string[];
+}
+
+export interface RetentionCleanupRunOptions {
+  /** 必須明確為 true，live 才會執行。 */
+  allowLive?: boolean;
+  deleter?: RetentionDeleter;
 }
 
 const needsSubcollections = (data: unknown) => typeof data === "object" && data !== null && !Array.isArray(data)
@@ -82,11 +95,11 @@ async function readOrNull(read: () => Promise<unknown[]>, errors: string[], labe
   }
 }
 
-export async function runRetentionCleanup(reader: RetentionCleanupReader, nowMilliseconds: number): Promise<RetentionCleanupRunReport> {
+export async function runRetentionCleanup(reader: RetentionCleanupReader, nowMilliseconds: number, options: RetentionCleanupRunOptions = {}): Promise<RetentionCleanupRunReport> {
   const today = taipeiDateKeyFromMillis(nowMilliseconds);
   const report: RetentionCleanupRunReport = {
     today, startedAt: new Date(nowMilliseconds).toISOString(), status: "off", mode: "off", requestedMode: undefined,
-    maxDeletesPerRun: RETENTION_CLEANUP_MAX_PER_RUN, scanned: 0, eligible: 0, wouldDeleteToday: [], deferred: [], skippedByReason: {}, decisions: [], errors: [],
+    maxDeletesPerRun: RETENTION_CLEANUP_MAX_PER_RUN, scanned: 0, eligible: 0, wouldDeleteToday: [], deferred: [], skippedByReason: {}, decisions: [], liveResults: [], notAttempted: [], errors: [],
   };
 
   let settings: RetentionCleanupSettings;
@@ -100,14 +113,15 @@ export async function runRetentionCleanup(reader: RetentionCleanupReader, nowMil
   Object.assign(report, { mode: settings.mode, requestedMode: settings.requestedMode, maxDeletesPerRun: settings.maxDeletesPerRun });
 
   if (settings.mode === "off") return report;
-  if (settings.mode === "live") {
-    // Gate 4B-3A：正式刪除尚未授權，live 一律拒絕，不掃描也不刪除。
+  const deleter = settings.mode === "live" && options.allowLive === true ? options.deleter : undefined;
+  if (settings.mode === "live" && !deleter) {
+    // 正式刪除未在程式中啟用（allowLive）或未提供刪除器：一律拒絕，不掃描也不刪除。
     report.status = "rejectedLive";
     report.errors.push("live mode is not enabled in this version; no announcements were scanned or deleted");
     return report;
   }
 
-  report.status = "dryRun";
+  report.status = deleter ? "live" : "dryRun";
   let announcements: { id: string; data: unknown }[];
   try {
     announcements = await reader.listAnnouncements();
@@ -141,6 +155,24 @@ export async function runRetentionCleanup(reader: RetentionCleanupReader, nowMil
     .sort((a, b) => a.finalCleanupDate.localeCompare(b.finalCleanupDate) || a.id.localeCompare(b.id));
   report.wouldDeleteToday = plan.slice(0, settings.maxDeletesPerRun);
   report.deferred = plan.slice(settings.maxDeletesPerRun);
+
+  if (deleter) {
+    for (const [index, item] of report.wouldDeleteToday.entries()) {
+      let outcome: RetentionDeletionOutcome;
+      try {
+        outcome = await deleter.deleteIfStillEligible(item.id, today);
+      } catch (error) {
+        outcome = { id: item.id, outcome: "failed", stage: "delete", message: (error instanceof Error ? error.message : String(error)).slice(0, 200) };
+      }
+      report.liveResults.push(outcome);
+      if (outcome.outcome === "failed") {
+        // 任一篇失敗即停止，避免連續錯誤；該篇若已標記，交由管理員處理。
+        report.notAttempted = report.wouldDeleteToday.slice(index + 1).map(next => next.id);
+        report.errors.push(`live stopped after failure on ${item.id} (${outcome.stage})`);
+        break;
+      }
+    }
+  }
   return report;
 }
 
@@ -190,6 +222,17 @@ export function retentionCleanupLogSummary(report: RetentionCleanupRunReport) {
     skipped: report.scanned - report.eligible,
     maxDeletesPerRun: report.maxDeletesPerRun,
     wouldDeleteToday: report.wouldDeleteToday,
+    ...(report.status === "live" ? {
+      liveCounts: {
+        deleted: report.liveResults.filter(result => result.outcome === "deleted").length,
+        skippedAtClaim: report.liveResults.filter(result => result.outcome === "skipped_at_claim").length,
+        raceUnclaimed: report.liveResults.filter(result => result.outcome === "race_unclaimed").length,
+        failed: report.liveResults.filter(result => result.outcome === "failed").length,
+        notAttempted: report.notAttempted.length,
+      },
+      liveResults: report.liveResults,
+      notAttempted: report.notAttempted,
+    } : {}),
     deferredCount: report.deferred.length,
     skippedByReason: report.skippedByReason,
     errorCount: report.errors.length,

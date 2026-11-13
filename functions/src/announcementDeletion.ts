@@ -1,4 +1,5 @@
 import { FieldValue, type DocumentReference, type Firestore, type Transaction } from "firebase-admin/firestore";
+import { getStorage } from "firebase-admin/storage";
 
 /**
  * 公告永久刪除（後端內部共用）。這是一般函式，不是 Cloud Functions 觸發器，也不從 index.ts 匯出，
@@ -14,6 +15,27 @@ import { FieldValue, type DocumentReference, type Firestore, type Transaction } 
 export interface AnnouncementDeletionCleanup {
   cleanupSubcollections: (announcementRef: DocumentReference) => Promise<void>;
   cleanupStorage: (announcementId: string) => Promise<void>;
+}
+
+/** 列出公告的所有子集合並遞迴刪除；未來新增的公告專屬子集合也會一併清除。 */
+export async function deleteAnnouncementSubcollections(firestore: Firestore, announcementRef: DocumentReference) {
+  // 列出所有子集合，未來新增的公告專屬子集合也會一併清除。
+  for (const subcollection of await announcementRef.listCollections()) {
+    await firestore.recursiveDelete(subcollection);
+  }
+}
+
+/** 刪除 Storage 中該公告的所有附件（圖片與 PDF 都在 announcements/{id}/ 之下）。 */
+export async function deleteAnnouncementStoragePrefix(announcementId: string) {
+  await getStorage().bucket().deleteFiles({ prefix: `announcements/${announcementId}/` });
+}
+
+/** 手動刪除與排程共用的預設清理實作。 */
+export function defaultAnnouncementCleanup(firestore: Firestore): AnnouncementDeletionCleanup {
+  return {
+    cleanupSubcollections: announcementRef => deleteAnnouncementSubcollections(firestore, announcementRef),
+    cleanupStorage: deleteAnnouncementStoragePrefix,
+  };
 }
 
 export class AnnouncementDeletionCleanupError extends Error {

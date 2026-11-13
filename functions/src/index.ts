@@ -5,7 +5,7 @@ import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { isDepartment, isFixedDepartment, isPublisherRequestDepartment } from "./departments.js";
 import { syncFollowUpSummaryChange } from "./followUpSummary.js";
-import { AnnouncementDeletionCleanupError, permanentlyDeleteAnnouncement } from "./announcementDeletion.js";
+import { AnnouncementDeletionCleanupError, deleteAnnouncementStoragePrefix, deleteAnnouncementSubcollections, permanentlyDeleteAnnouncement } from "./announcementDeletion.js";
 
 initializeApp();
 
@@ -154,17 +154,6 @@ export async function cleanupFailedAnnouncementUploadHandler(
   }
   await cleanupStorage(announcementId, callerUid);
   return { success: true, cleaned: true };
-}
-
-async function deleteAnnouncementSubcollections(firestore: Firestore, announcementRef: DocumentReference) {
-  // 列出所有子集合，未來新增的公告專屬子集合也會一併清除。
-  for (const subcollection of await announcementRef.listCollections()) {
-    await firestore.recursiveDelete(subcollection);
-  }
-}
-
-async function deleteAnnouncementStoragePrefix(announcementId: string) {
-  await getStorage().bucket().deleteFiles({ prefix: `announcements/${announcementId}/` });
 }
 
 async function deleteFailedUploadObjects(announcementId: string, uploaderUid: string) {

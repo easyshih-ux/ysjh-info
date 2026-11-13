@@ -27,8 +27,11 @@ const request = (uid: string, action: string, data: Data = {}) => ({ auth: uid ?
 const noSubcollections = async () => {};
 async function denied(promise: Promise<unknown>) { await assert.rejects(promise, error => (error as { code?: string }).code === "permission-denied"); }
 
+// 清理函式已移至 announcementDeletion.ts（手動刪除與排程共用）；兩檔一起檢查，斷言不變。
+const cleanupSources = () => ["../src/index.ts", "../src/announcementDeletion.ts"].map(path => readFileSync(new URL(path, import.meta.url), "utf8")).join("\n");
+
 test("Storage cleanup 僅使用目標公告 prefix，失敗上傳另核對 uploader UID", () => {
-  const source = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
+  const source = cleanupSources();
   assert.match(source, /deleteFiles\(\{ prefix: `announcements\/\$\{announcementId\}\/` \}\)/);
   assert.match(source, /getFiles\(\{ prefix: `announcements\/\$\{announcementId\}\/` \}\)/);
   assert.match(source, /metadata\.metadata\?\.uploaderUid === uploaderUid/);
@@ -183,7 +186,7 @@ test("刪除中的公告不可復原、重新上架、啟動或結束催繳", as
   assert.equal(value.get("announcements/a1")?.publicationStatus, "withdrawn");
 });
 test("預設子集合清理會列出全部子集合並遞迴刪除", () => {
-  const source = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
+  const source = cleanupSources();
   assert.match(source, /announcementRef\.listCollections\(\)/);
   assert.match(source, /firestore\.recursiveDelete\(subcollection\)/);
 });

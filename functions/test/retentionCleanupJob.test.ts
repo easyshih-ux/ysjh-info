@@ -8,6 +8,7 @@ import {
   createFirestoreRetentionCleanupReader, formatTaipeiDateTime, parseRetentionCleanupSettings, retentionCleanupLogSummary, RETENTION_CLEANUP_LOG_MAX_ERRORS, revalidateBeforeDeletion, runRetentionCleanup,
   RETENTION_CLEANUP_MAX_PER_RUN, type RetentionCleanupReader,
 } from "../src/retentionCleanupJob.ts";
+import type { RetentionDeleter, RetentionDeletionOutcome } from "../src/retentionCleanupLive.ts";
 
 // Windows（core.autocrlf=true）工作目錄為 CRLF；統一為 LF 後再比對原始碼。
 const source = (path: string) => readFileSync(new URL(`../src/${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
@@ -137,12 +138,19 @@ test("正式 Firestore 讀取器只使用 get()，任何寫入或刪除都會使
   assert.equal(report.eligible, 1);
 });
 
-test("dry-run 與排程程式碼不含刪除或寫入能力；index.ts 只匯出排程函式，不匯出內部刪除或執行邏輯", () => {
+test("執行邏輯不含寫入或刪除；排程只在程式碼開關為 true 時建立刪除器，且開關維持 false；index.ts 只匯出排程函式", async () => {
   const job = source("retentionCleanupJob.ts");
   const schedule = source("retentionCleanupSchedule.ts");
-  for (const code of [job, schedule]) {
-    assert.doesNotMatch(code, /announcementDeletion|permanentlyDeleteAnnouncement\(|recursiveDelete|deleteFiles|getStorage|runTransaction|\.batch\(|\.set\(|\.update\(|\.delete\(|\.add\(|deletionStartedAt:/);
-  }
+  assert.doesNotMatch(job, /announcementDeletion|permanentlyDeleteAnnouncement\(|recursiveDelete|deleteFiles|getStorage|runTransaction|\.batch\(|\.set\(|\.update\(|\.delete\(|\.add\(|deletionStartedAt:/);
+  assert.match(job, /^import type \{ RetentionDeleter, RetentionDeletionOutcome \} from "\.\/retentionCleanupLive\.js";$/m, "執行邏輯只引用刪除器的型別");
+  // 排程：刪除功能只能透過開關建立；開關必須為 false。
+  assert.match(schedule, /^export const RETENTION_CLEANUP_LIVE_ALLOWED = false;$/m);
+  assert.match(schedule, /const deleter = RETENTION_CLEANUP_LIVE_ALLOWED\n\s*\? createRetentionDeleter\(/);
+  assert.match(schedule, /runRetentionCleanup\([^\n]*\{ allowLive: RETENTION_CLEANUP_LIVE_ALLOWED, deleter \}\)/);
+  assert.equal(schedule.match(/createRetentionDeleter\(/g)?.length, 1);
+  assert.doesNotMatch(schedule, /permanentlyDeleteAnnouncement|recursiveDelete|deleteFiles|runTransaction|\.set\(|\.update\(|\.delete\(|deletionStartedAt:/);
+  const { RETENTION_CLEANUP_LIVE_ALLOWED } = await import("../src/retentionCleanupSchedule.ts");
+  assert.equal(RETENTION_CLEANUP_LIVE_ALLOWED, false, "正式刪除開關必須維持關閉，啟用須另行授權");
   assert.match(schedule, /schedule: "0 3 \* \* \*", timeZone: "Asia\/Taipei", region: "asia-east1", retryCount: 0/);
   const index = source("index.ts");
   // Gate 4B-3B-2：只匯出排程函式；不得匯出 dry-run 執行邏輯以外的清理入口或內部刪除函式。
@@ -272,4 +280,63 @@ test("index.ts 匯出的排程函式：部署設定為每天 03:00、Asia/Taipei
   assert.deepEqual(endpoint.region, ["asia-east1"]);
   assert.equal((trigger.retryConfig as Record<string, unknown>).retryCount, 0);
   assert.equal(endpoint.platform, "gcfv2");
+});
+
+// ===== Gate 4B-4：live 模式（假的刪除器）=====
+
+function fakeDeleter(behavior: (id: string) => RetentionDeletionOutcome | Error = id => ({ id, outcome: "deleted", finalCleanupDate: "2026-12-15" })) {
+  const calls: string[] = [];
+  const deleter: RetentionDeleter = { deleteIfStillEligible: async (id, today) => { calls.push(`${id}@${today}`); const result = behavior(id); if (result instanceof Error) throw result; return result; } };
+  return { deleter, calls };
+}
+const dueAnnouncements = (count: number) => Array.from({ length: count }, (_, index) => ({ id: `d${index}`, data: announcement({ deadlines: [{ date: `2026-08-${String(index + 1).padStart(2, "0")}`, label: "x" }] }) }));
+
+test("live：沒有 allowLive 或沒有刪除器一律拒絕；dryRun 與 off 即使提供刪除器也不呼叫", async () => {
+  // 三種組合：只給刪除器、allowLive 為 false＋刪除器、allowLive 為 true 但沒有刪除器。
+  for (const [allowLive, withDeleter] of [[undefined, true], [false, true], [true, false]] as const) {
+    const { reader, calls } = fakeReader({ settings: { mode: "live" }, announcements: dueAnnouncements(2) });
+    const probe = fakeDeleter();
+    const report = await runRetentionCleanup(reader, NOW, { ...(allowLive === undefined ? {} : { allowLive }), ...(withDeleter ? { deleter: probe.deleter } : {}) });
+    assert.equal(report.status, "rejectedLive", JSON.stringify({ allowLive, withDeleter }));
+    assert.deepEqual(calls, ["settings"]);
+    assert.deepEqual(probe.calls, []);
+  }
+  for (const mode of ["dryRun", "off"]) {
+    const probe = fakeDeleter();
+    const report = await runRetentionCleanup(fakeReader({ settings: { mode }, announcements: dueAnnouncements(2) }).reader, NOW, { allowLive: true, deleter: probe.deleter });
+    assert.equal(report.status, mode);
+    assert.deepEqual(probe.calls, [], `${mode} 不得呼叫刪除器`);
+  }
+});
+
+test("live：依最終清理日期由早到晚處理，最多 maxDeletesPerRun 篇，延後的不處理", async () => {
+  const probe = fakeDeleter();
+  const report = await runRetentionCleanup(fakeReader({ settings: { mode: "live", maxDeletesPerRun: 3 }, announcements: dueAnnouncements(5).reverse() }).reader, NOW, { allowLive: true, deleter: probe.deleter });
+  assert.equal(report.status, "live");
+  assert.deepEqual(probe.calls, ["d0@2027-01-20", "d1@2027-01-20", "d2@2027-01-20"]);
+  assert.deepEqual(report.deferred.map(item => item.id), ["d3", "d4"]);
+  const summary = retentionCleanupLogSummary(report);
+  assert.deepEqual(summary.liveCounts, { deleted: 3, skippedAtClaim: 0, raceUnclaimed: 0, failed: 0, notAttempted: 0 });
+});
+
+test("live：標記時跳過與競爭撤銷不中斷；任一篇失敗（或刪除器拋錯）即停止，其餘列為未處理", async () => {
+  const mixed = fakeDeleter(id => id === "d0" ? { id, outcome: "skipped_at_claim", reasons: ["retention_long_term"] } : id === "d1" ? { id, outcome: "race_unclaimed", reasons: ["line_notice_pending"] } : id === "d2" ? { id, outcome: "failed", stage: "delete", message: "storage down" } : { id, outcome: "deleted", finalCleanupDate: "x" });
+  const report = await runRetentionCleanup(fakeReader({ settings: { mode: "live" }, announcements: dueAnnouncements(5) }).reader, NOW, { allowLive: true, deleter: mixed.deleter });
+  assert.deepEqual(mixed.calls.map(call => call.split("@")[0]), ["d0", "d1", "d2"]);
+  assert.deepEqual(report.notAttempted, ["d3", "d4"]);
+  assert.match(report.errors.join(), /live stopped after failure on d2 \(delete\)/);
+  assert.deepEqual(retentionCleanupLogSummary(report).liveCounts, { deleted: 0, skippedAtClaim: 1, raceUnclaimed: 1, failed: 1, notAttempted: 2 });
+  const throwing = fakeDeleter(() => new Error("unexpected"));
+  const thrown = await runRetentionCleanup(fakeReader({ settings: { mode: "live" }, announcements: dueAnnouncements(2) }).reader, NOW, { allowLive: true, deleter: throwing.deleter });
+  assert.deepEqual(thrown.liveResults, [{ id: "d0", outcome: "failed", stage: "delete", message: "unexpected" }]);
+  assert.deepEqual(thrown.notAttempted, ["d1"]);
+});
+
+test("日誌：dryRun 摘要不含 live 欄位；live 摘要含每篇結果但不含公告內容", async () => {
+  const dry = retentionCleanupLogSummary(await runRetentionCleanup(fakeReader({ settings: { mode: "dryRun" }, announcements: dueAnnouncements(1) }).reader, NOW));
+  assert.equal("liveResults" in dry, false);
+  const secret = "機密內容";
+  const live = retentionCleanupLogSummary(await runRetentionCleanup(fakeReader({ settings: { mode: "live" }, announcements: [{ id: "s1", data: announcement({ title: secret, content: secret }) }] }).reader, NOW, { allowLive: true, deleter: fakeDeleter().deleter }));
+  assert.deepEqual((live as { liveResults: unknown[] }).liveResults, [{ id: "s1", outcome: "deleted", finalCleanupDate: "2026-12-15" }]);
+  assert.equal(JSON.stringify(live).includes(secret), false);
 });
